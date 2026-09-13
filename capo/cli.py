@@ -25,6 +25,8 @@ def parser():
         "CAPO_HOME", str(Path.home() / ".local/share/capo"))))
     root.add_argument("--github-auth", choices=("default", "keyring"), default="default",
                       help="Use normal gh authentication, or explicitly prefer its saved keyring login")
+    root.add_argument("--providers-config", type=Path,
+                      help="Private JSON transport configuration (or CAPO_PROVIDERS_CONFIG)")
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Check executables without invoking models")
     add = commands.add_parser("add", help="Queue a local development objective")
@@ -44,6 +46,8 @@ def parser():
     issue.add_argument("--check", action="append", required=True)
     issue.add_argument("--workers", nargs="+", choices=("codex", "grok"), default=["codex", "grok"])
     issue.add_argument("--reviewer", choices=("auto", "claude", "codex", "grok"), default="auto")
+    issue.add_argument("--self-improvement", action="store_true",
+                       help="Freeze Capo's regression suite for an issue about Capo itself")
     improve = commands.add_parser("improve", help="Queue a Capo improvement with frozen regression tests")
     improve.add_argument("request", nargs="?", default="Identify and implement one small reliability improvement in Capo.")
     improve.add_argument("--repo", type=Path, default=Path(__file__).resolve().parent.parent)
@@ -77,6 +81,7 @@ def parser():
 
 
 def add_objective(store, args, request, source=None, kind="development"):
+    from .transport import load_config
     repo = args.repo.expanduser().resolve()
     repo = Path(git(repo, "rev-parse", "--show-toplevel"))
     if git(repo, "status", "--porcelain"):
@@ -97,6 +102,7 @@ def add_objective(store, args, request, source=None, kind="development"):
             if existing.get("source") == source and existing["repo"] == str(repo):
                 return existing
     data = store.create({"request": request, "source": source, "repo": str(repo), "kind": kind,
+                         "providers_config": load_config(getattr(args, "providers_config", None)),
                          "team_name": team_name,
                          "base": git(repo, "rev-parse", "HEAD"), "checks": checks,
                          "max_calls": getattr(args, "max_calls", 24),
@@ -109,7 +115,9 @@ def add_objective(store, args, request, source=None, kind="development"):
     return data
 
 
-def doctor():
+def doctor(config_path=None):
+    from .transport import load_config, health
+    config = load_config(config_path)
     results = {}
     for tool in ("claude", "codex", "grok", "gh", "git"):
         executable = shutil.which(tool)
@@ -123,8 +131,17 @@ def doctor():
         results[tool] = {"path": executable, "version": version}
     results["note"] = ("Presence does not verify authentication or remaining subscription quota. "
                        "Provider configuration can override authentication; verify it before live runs.")
+    vm_ok = None
+    if config.get("grok", {}).get("transport") == "lima":
+        try:
+            results["grok_vm"] = health(config["grok"])
+            vm_ok = all(results["grok_vm"].get(key) for key in ("binary_ok", "bubblewrap", "login_file_present"))
+        except (ValueError, OSError, subprocess.SubprocessError) as exc:
+            results["grok_vm"] = {"error": str(exc)}
+            vm_ok = False
     print(json.dumps(results, indent=2))
-    return 0 if all(results[name]["path"] for name in ("claude", "codex", "grok", "git")) else 1
+    required = ("claude", "codex", "git") if vm_ok is not None else ("claude", "codex", "grok", "git")
+    return 0 if all(results[name]["path"] for name in required) and vm_ok is not False else 1
 
 
 def recover(store, objective_id):
@@ -132,6 +149,11 @@ def recover(store, objective_id):
         data = store.get(objective_id)
         if data["status"] != "running":
             raise ValueError("Only an interrupted running objective needs recovery")
+        from .transport import reconcile
+        for record in (store.home / "artifacts" / objective_id).rglob("remote.json"):
+            if not record.with_name("remote-exit.json").exists():
+                status = reconcile(record)
+                record.with_name("remote-exit.json").write_text(json.dumps(status))
         for record in (store.home / "artifacts" / objective_id).rglob("process.json"):
             if record.with_name("exit.json").exists():
                 continue
@@ -152,11 +174,16 @@ def recover(store, objective_id):
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    store = None
     try:
         if args.command == "doctor":
-            return doctor()
+            return doctor(args.providers_config)
         if args.command == "slack":
             from .slack import serve
+            if args.providers_config:
+                from .transport import load_config
+                load_config(args.providers_config)
+                os.environ["CAPO_PROVIDERS_CONFIG"] = str(args.providers_config.expanduser().resolve())
             serve(args.home, args.config)
             return 0
         if args.command == "slack-setup":
@@ -171,7 +198,13 @@ def main(argv=None):
             result = add_improvement(store, args)
         elif args.command == "issue":
             issue = GitHub(args.github_auth).issue(args.github, args.number)
-            result = add_objective(store, args, f"{issue['title']}\n\n{issue['body']}", issue["url"])
+            request = f"{issue['title']}\n\n{issue['body']}"
+            if args.self_improvement:
+                from .improvement import add_improvement
+                args.request, args.source = request, issue["url"]
+                result = add_improvement(store, args)
+            else:
+                result = add_objective(store, args, request, issue["url"])
         elif args.command == "run":
             result = Runtime(store).run(args.id, retry=args.retry)
         elif args.command == "list":
@@ -197,3 +230,6 @@ def main(argv=None):
     except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as exc:
         print(f"capo: {exc}", file=sys.stderr)
         return 1
+    finally:
+        if store is not None:
+            store.db.close()

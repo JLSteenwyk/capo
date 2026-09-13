@@ -88,6 +88,34 @@ class PublicationCase(unittest.TestCase):
                          self.objective["accepted_tree"])
         self.assertEqual(self.prepare(), result)
 
+    def test_prepare_reconciles_crash_before_ledger_save(self):
+        original = self.store.save
+        def fail_once(data, kind):
+            if kind == "publication_prepared":
+                raise RuntimeError("simulated crash")
+            return original(data, kind)
+        with patch.object(self.store, "save", side_effect=fail_once):
+            with self.assertRaises(RuntimeError):
+                self.prepare()
+        draft = self.prepare()
+        self.assertEqual(draft["status"], "prepared")
+        self.assertEqual(self.prepare(), draft)
+
+    def test_followup_invalidates_prepared_approval(self):
+        draft = self.prepare()
+        updated = self.store.add_followup(self.objective["id"], "event-one", "Also cover negative inputs")
+        self.assertEqual(updated["status"], "queued")
+        self.assertNotIn("accepted_tree", updated)
+        with self.assertRaises(ValueError):
+            publish(self.store, updated["id"], draft["digest"], self.gateway)
+        self.assertEqual(self.gateway.pushes, 0)
+
+    def test_published_objective_rejects_followup(self):
+        draft = self.prepare()
+        publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+        with self.assertRaisesRegex(ValueError, "new objective"):
+            self.store.add_followup(self.objective["id"], "event-one", "Change it")
+
     def test_different_target_repository_refused(self):
         with self.assertRaisesRegex(ValueError, "match the source"):
             prepare(self.store, self.objective["id"], "other/project", "main")

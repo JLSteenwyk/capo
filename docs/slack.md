@@ -1,6 +1,6 @@
 # Human communication through Slack
 
-Capo's primary conversational interface is Slack; the CLI remains available for setup, recovery, and explicit publication. This installation uses **#capo in the SPARKITscience workspace**, accepts objectives **only from its owner**, and displays **SPARKITscience** as the configurable team identity. The owner's supplied member ID is saved in private local configuration rather than committed to this repository.
+Capo's primary conversational interface is Slack; the CLI remains available for setup and recovery. This installation uses **#capo in the SPARKITscience workspace**, accepts objectives **only from its owner**, and displays **SPARKITscience** as the configurable team identity. The owner's supplied member ID is saved in private local configuration rather than committed to this repository.
 
 The adapter uses Slack Socket Mode, so the agent computer opens the connection to Slack without a public webhook server. [Slack Socket Mode documentation](https://docs.slack.dev/tools/bolt-python/concepts/socket-mode/).
 
@@ -21,7 +21,7 @@ python3 -m venv .venv
 
 Use the same `CAPO_HOME` as your CLI. The service checks that its bot token belongs to the configured workspace. Startup performs Slack authentication and opens a real connection; no connection or message is sent by merely installing the package or running tests.
 
-The sample uses Claude and Codex explicitly because of the documented Grok sandbox failure on the current Mac. On a compatible host, configure `"workers": ["codex", "grok"]` and `"reviewer": "auto"` for the full team. Capo does not silently replace an unavailable provider.
+The sample explicitly selects Claude and Codex. After configuring and verifying the Grok Linux VM transport described in the Grok setup documentation, configure `"workers": ["codex", "grok"]` and `"reviewer": "auto"` for the full team. Capo does not silently replace an unavailable provider.
 
 ## Use
 
@@ -32,23 +32,37 @@ Mention the bot in the configured channel:
 @SPARKITscience improve capo: Identify and fix one small reliability problem.
 @SPARKITscience status OBJECTIVE_ID
 @SPARKITscience cancel OBJECTIVE_ID
+@SPARKITscience prepare OBJECTIVE_ID
+@SPARKITscience approve OBJECTIVE_ID EXACT_DIGEST_FROM_PREVIEW
+@SPARKITscience sync OBJECTIVE_ID
 @SPARKITscience help
 ```
 
 The repository alias selects a locally configured checkout and trusted verification commands. Text after the colon is the objective. Messages cannot set arbitrary paths, verification commands, provider credentials, or permission policy. Self-improvement must be enabled for the alias.
 
-The bot replies in the originating thread with an objective ID, stage updates, and a terminal status. It starts one queued Slack objective at a time. To queue without starting automatically, set `auto_run` to false and use `capo run` from the CLI. Completed changes can be prepared and published using the normal CLI; subsequent Slack `status` responses include the recorded PR URL.
+The bot replies in the originating thread with an objective ID, stage updates, and a terminal status. It starts one queued Slack objective at a time. To queue without starting automatically, set `auto_run` to false and use `capo run` from the CLI. Completed changes can be reviewed and published through Slack when the repository alias has `allow_publication: true`. The default is false. `publication_base` selects the target branch (default `main`), and `github_auth` selects `default` or `keyring`; neither can be changed through messages. `prepare OBJECTIVE_ID` sends the full candidate diff, PR title/body, target repository/branch, commit, and approval digest into the requesting thread. Nothing is pushed by preparation. Only after the entire preview has been delivered does `approve OBJECTIVE_ID DIGEST` authorize pushing that exact verified commit and creating its draft PR. It never merges. Oversized previews require CLI review and publication. `sync OBJECTIVE_ID` reads PR and CI state; `status` includes the recorded PR URL.
 
-Cancellation stops a queued objective or the active child owned by this service. An uncertain running objective after a service crash requires CLI inspection and recovery. A stopped service terminates its active child when it receives Ctrl-C or SIGTERM. The service never automatically retries blocked, cancelled, or uncertain running work.
+Reply in an objective's original thread, mentioning the bot, to clarify or change instructions:
+
+```text
+@SPARKITscience clarify: Keep the existing public function signature.
+@SPARKITscience Also cover an empty input in the tests.
+```
+
+Follow-ups are stored independently of worker checkpoints, deduplicated by event ID, and incorporated by Claude at a safe boundary. New input invalidates an unpublished completed candidate's approval and resumes work in the same candidate checkout, preserving previous changes and cumulative execution limits. Blocked/cancelled work can also receive follow-ups; exhausted limits still require explicit operator reconciliation. Follow-ups cannot alter trusted check commands or policy. Once publication has started, create a new objective after integrating the published changes. This avoids silently amending an approved PR.
+
+Every command and follow-up requires an @mention; the bot does not subscribe to ordinary channel history. When Claude cannot plan without indispensable information, it pauses the objective in `awaiting_input` and sends a specific question to the thread. Reply with an @mention to resume planning in the same checkout. Waiting does not consume additional worker calls; the original limits still apply. `status` repeats the pending question, and `cancel` can stop a waiting objective.
+
+Cancellation stops a queued objective or the active child owned by this service. A restarted service checks the supervisor’s kernel lock before launching work, including when a surviving runner is at a queued checkpoint. It does not adopt or kill a process based solely on a saved PID. An uncertain running objective after a service crash requires CLI inspection and recovery; use `status` to inspect work that finished while Slack was disconnected. SIGKILL cannot run cleanup, so inspect tracked local and remote processes before recovery. A stopped service terminates its active child when it receives Ctrl-C or SIGTERM. The service never automatically retries blocked, cancelled, or uncertain running work without new owner instructions.
 
 ## Identity and delivery behavior
 
-Authorization happens before an incoming event enters the queue and again before dispatch. Workspace ID, channel ID, owner ID, event type, and bot/subtype checks must all pass. Unauthorized users receive no response and create no objectives. Only owner-originated objectives from this configured channel can be inspected or cancelled through this adapter.
+Authorization happens before an incoming event enters the queue and again before dispatch. Workspace ID, channel ID, owner ID, event type, and bot/subtype checks must all pass. Unauthorized users receive no response and create no objectives. Only owner-originated objectives from this configured channel can be inspected, followed up, cancelled, or published through this adapter.
 
-Incoming Slack event IDs are persisted and deduplicated. A repeated event cannot create a second objective. A crash between dispatch and sending a reply can produce a duplicate status message on retry; there is no claim of exactly-once Slack notification delivery. Source code and raw logs are not automatically uploaded to Slack. Slack tokens are removed from child worker and verification environments.
+Incoming Slack event IDs are persisted and deduplicated. A repeated event cannot create a second objective. A crash between dispatch and sending a reply can produce a duplicate status message on retry; there is no claim of exactly-once Slack notification delivery. Source code is sent only when the owner explicitly requests a publication preview. Raw logs are not automatically uploaded to Slack. Slack tokens are removed from child worker and verification environments.
 
-## Later communication features
+## Current limits
 
-The current interface supports goal intake, status, cancellation, and a thread for updates. Freeform follow-up instructions, clarification questions, approval buttons, artifact uploads, scheduled briefings, and DMs are not implemented. Add them through the same identity checks and durable state contracts. Publishing or merging through Slack must bind to an inspectable exact candidate, just like the CLI publication path.
+Approval uses explicit digest commands rather than buttons. Scheduled briefings, DMs, and file uploads are not implemented. Source-code previews are split into bounded messages; a delivery failure leaves approval disabled until a complete retry succeeds. Notification delivery can repeat after a crash, while objective creation and follow-up ingestion are deduplicated. Publication uses the same immutable verification and remote reconciliation gates as the CLI.
 
-Slack app details follow the official [Socket Mode](https://docs.slack.dev/tools/bolt-python/concepts/socket-mode/) and [app mention](https://docs.slack.dev/reference/events/app_mention/) interfaces. A live workspace connection remains pending configuration and credentials.
+Slack app details follow the official [Socket Mode](https://docs.slack.dev/tools/bolt-python/concepts/socket-mode/) and [app mention](https://docs.slack.dev/reference/events/app_mention/) interfaces. Automated tests use fake Slack and GitHub clients; a real workspace connection must be verified separately after local credentials are configured.

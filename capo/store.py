@@ -23,6 +23,9 @@ class Store:
                 objective_id TEXT NOT NULL, time REAL NOT NULL,
                 kind TEXT NOT NULL, data TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS followups (
+                event_id TEXT PRIMARY KEY, objective_id TEXT NOT NULL, text TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS slack_inbox (
                 id TEXT PRIMARY KEY, data TEXT NOT NULL, handled INTEGER NOT NULL DEFAULT 0
             );
@@ -69,3 +72,30 @@ class Store:
     def finish_slack(self, event_id):
         with self.db:
             self.db.execute("UPDATE slack_inbox SET handled=1 WHERE id=?", (event_id,))
+
+    def followups(self, objective_id):
+        return [dict(row) for row in self.db.execute(
+            "SELECT event_id,text FROM followups WHERE objective_id=? ORDER BY rowid", (objective_id,))]
+
+    def add_followup(self, objective_id, event_id, text):
+        if not text.strip():
+            raise ValueError("Follow-up must contain text")
+        with self.db:
+            # Serialize with supervisor saves while reopening a terminal objective.
+            self.db.execute("BEGIN IMMEDIATE")
+            objective = self.get(objective_id)
+            if objective.get("publication", {}).get("status") in ("publishing", "published"):
+                raise ValueError("Published work requires a new objective after integrating its changes")
+            inserted = self.db.execute("INSERT OR IGNORE INTO followups VALUES (?,?,?)",
+                                      (event_id, objective_id, text)).rowcount
+            if inserted and objective["status"] in ("completed", "blocked", "cancelled", "awaiting_input"):
+                objective["status"] = "queued"
+                for key in ("accepted_tree", "publication", "verification", "error", "slack_review_digest"):
+                    objective.pop(key, None)
+                now = time.time()
+                self.db.execute("UPDATE objectives SET data=?,updated=? WHERE id=?",
+                                (json.dumps(objective), now, objective_id))
+            if inserted:
+                self.db.execute("INSERT INTO events(objective_id,time,kind,data) VALUES (?,?,?,?)",
+                    (objective_id, time.time(), "followup_received", json.dumps({"event_id": event_id})))
+        return self.get(objective_id)

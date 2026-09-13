@@ -1,0 +1,7 @@
+{
+  "grok": {
+    "transport": "lima",
+    "vm": "capo-grok",
+    "binary": "~/.grok/bin/grok"
+  }
+}

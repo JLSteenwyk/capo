@@ -120,6 +120,126 @@ class SlackCase(unittest.TestCase):
             self.assertNotIn("SLACK_APP_TOKEN", process.call_args.kwargs["env"])
             self.assertNotIn("SLACK_BOT_TOKEN", process.call_args.kwargs["env"])
 
+    def test_thread_followup_is_durable_and_deduplicated(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        body = self.body("clarify: Keep the greeting short", "Ev456")
+        body["event"]["thread_ts"] = "123.456"
+        self.service.dispatch("Ev456", body)
+        self.service.dispatch("Ev456", body)
+        self.assertEqual(self.store.followups(objective["id"]),
+                         [{"event_id": "Ev456", "text": "Keep the greeting short"}])
+        self.assertEqual(len(self.store.list()), 1)
+
+    def test_followup_after_completion_is_not_mistaken_for_runner_failure(self):
+        from unittest.mock import Mock
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective["status"] = "completed"
+        self.store.save(objective, "fixture")
+        self.store.add_followup(objective["id"], "EvFollowup", "Also cover empty input")
+        self.service.active = Mock(pid=1234)
+        self.service.active.poll.return_value = 0
+        self.service.active_id = objective["id"]
+        self.service.tick()
+        self.assertEqual(self.store.get(objective["id"])["status"], "queued")
+        self.assertIn("follow-up is queued", self.client.messages[-1]["text"])
+
+    def test_clarification_is_reported_and_answer_requeues_objective(self):
+        from unittest.mock import Mock
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective.update(status="awaiting_input", question="Should empty input return zero?")
+        self.store.save(objective, "clarification_requested")
+        self.service.active = Mock(pid=1234)
+        self.service.active.poll.return_value = 0
+        self.service.active_id = objective["id"]
+        self.service.tick()
+        self.assertIn("Should empty input return zero?", self.client.messages[-1]["text"])
+        self.assertEqual(self.store.get(objective["id"])["status"], "awaiting_input")
+        body = self.body("Yes, return zero", "EvAnswer")
+        body["event"]["thread_ts"] = "123.456"
+        self.service.dispatch("EvAnswer", body)
+        self.assertEqual(self.store.get(objective["id"])["status"], "queued")
+        self.assertEqual(self.store.followups(objective["id"])[0]["text"], "Yes, return zero")
+
+    def test_dispatch_itself_rechecks_owner(self):
+        body = self.body()
+        body["event"]["user"] = "UOTHER"
+        with self.assertRaisesRegex(ValueError, "Unauthorized"):
+            self.service.dispatch("Ev123", body)
+
+    def test_publication_requires_explicit_configuration(self):
+        self.service.dispatch("Ev123", self.body())
+        identifier = self.store.list()[0]["id"]
+        with self.assertRaisesRegex(ValueError, "not enabled"):
+            self.service.dispatch("Ev456", self.body("prepare " + identifier))
+
+    def test_approval_requires_successfully_delivered_preview_and_exact_digest(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        identifier = objective["id"]
+        self.config["repositories"]["project"]["allow_publication"] = True
+        git(self.repo, "remote", "add", "origin", "https://github.com/example/project.git")
+        digest = "a" * 64
+        publication = {"digest": digest, "status": "prepared", "payload": {
+            "repository": "example/project", "base_branch": "main", "commit": "b" * 40,
+            "title": "Improve greeting", "body": "One check passed."}}
+        objective["publication"] = publication
+        self.store.save(objective, "fixture")
+        directory = self.store.home / "artifacts" / identifier
+        directory.mkdir(parents=True)
+        (directory / "changes.patch").write_text("-hello\n+hello world\n")
+        with patch("capo.github.publish") as publish:
+            with self.assertRaisesRegex(ValueError, "First request"):
+                self.service.dispatch("Ev456", self.body(f"approve {identifier} {digest}"))
+            publish.assert_not_called()
+        ingest(self.store.home, self.config, self.body("prepare " + identifier, "EvPrepare"))
+        with patch("capo.github.prepare", return_value=publication):
+            self.service.process_messages()
+        self.assertIn("+hello world", self.client.messages[-1]["text"])
+        self.assertEqual(self.store.get(identifier)["slack_review_digest"], digest)
+        with patch("capo.github.publish", return_value={"pr": {"url": "https://github.com/example/project/pull/1"}}) as publish:
+            self.service.dispatch("EvApprove", self.body(f"approve {identifier} {digest}"))
+            self.assertEqual(publish.call_args.args[2], digest)
+            with self.assertRaisesRegex(ValueError, "First request"):
+                self.service.dispatch("EvBad", self.body(f"approve {identifier} {'c' * 64}"))
+
+    def test_failed_preview_delivery_does_not_authorize_publication(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective["publication"] = {"digest": "a" * 64}
+        self.store.save(objective, "fixture")
+        ingest(self.store.home, self.config, self.body("help", "EvPreview"))
+        def dispatch(*_):
+            self.service.pending_review = (objective["id"], "a" * 64)
+            return "Review the candidate"
+        with patch.object(self.service, "dispatch", side_effect=dispatch), \
+             patch.object(self.service, "reply", side_effect=RuntimeError("delivery failed")):
+            with self.assertRaises(RuntimeError):
+                self.service.process_messages()
+        self.assertNotIn("slack_review_digest", self.store.get(objective["id"]))
+        self.assertTrue(self.store.pending_slack())
+
+    def test_large_replies_are_sent_completely_without_truncation(self):
+        text = "<" * 7000
+        self.service.reply(self.body()["event"], text)
+        self.assertEqual("".join(row["text"] for row in self.client.messages), "&lt;" * 7000)
+        self.assertTrue(all(len(row["text"]) <= 15000 for row in self.client.messages))
+
+    def test_restarted_service_does_not_spawn_during_live_supervisor_checkpoint(self):
+        from capo.runtime import exclusive
+        self.service.dispatch("Ev123", self.body())
+        self.config["auto_run"] = True
+        # Runtime holds this lock across its queued checkpoints and live calls.
+        with exclusive(self.store.home), patch("capo.slack.subprocess.Popen") as process:
+            restarted = SlackService(self.store, self.config, self.client)
+            restarted.tick()
+            process.assert_not_called()
+        with patch("capo.slack.subprocess.Popen") as process:
+            restarted.tick()
+            process.assert_called_once()
+
     def test_configuration_refuses_empty_owner(self):
         self.config["owner_user_id"] = ""
         with self.assertRaises(ValueError):

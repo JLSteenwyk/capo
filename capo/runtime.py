@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .contracts import DECISION, IMPLEMENTATION, PLAN, REVIEW, validate
-from .improvement import verify_baseline
+from .improvement import verify_baseline, verify_governance_changes
 from .providers import Providers, run_process
 from .repository import apply_changes, changed_diff, create_workspace, git, snapshot
 
@@ -27,12 +27,31 @@ def exclusive(home):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+class FollowupPending(Exception):
+    """New owner input invalidates an in-flight planning or acceptance result."""
+
+
 class Runtime:
     def __init__(self, store, providers=None):
         self.store = store
         self.providers = providers
 
+    def check_followups(self, objective):
+        if self.store.followups(objective["id"]) != objective.get("followups", []):
+            raise FollowupPending()
+
+    def incorporate_followups(self, objective):
+        objective["followups"] = self.store.followups(objective["id"])
+        objective["plan"] = None
+        objective["next_task"] = 0
+        objective["status"] = "queued"
+        for key in ("accepted_tree", "verification", "publication", "error", "slack_review_digest", "question"):
+            objective.pop(key, None)
+        self.store.save(objective, "followups_incorporated")
+
     def call(self, objective, provider, role, schema, context):
+        self.check_followups(objective)
+        context = dict(context, owner_followups=objective.get("followups", []))
         if objective["calls"] >= objective["max_calls"]:
             raise ValueError("Objective worker-call budget exhausted")
         objective["calls"] += 1
@@ -48,6 +67,7 @@ class Runtime:
                   + json.dumps(context))
         result = self.providers.call(provider, prompt, schema,
                                      Path(objective["workspace"]), directory)
+        self.check_followups(objective)
         validate(result, schema)
         self.store.save(objective, "attempt_finished")
         return result
@@ -82,19 +102,41 @@ class Runtime:
     def run(self, objective_id, retry=False):
         with exclusive(self.store.home):
             objective = self.store.get(objective_id)
-            if objective["status"] == "completed":
-                return objective
             if objective["status"] == "running":
                 raise ValueError("Interrupted attempt needs reconciliation. Inspect artifacts and use recover first.")
             if objective["status"] in ("blocked", "cancelled") and not retry:
                 raise ValueError("Inspect the failure, then use run --retry to continue")
-            self.providers = self.providers or Providers(objective["timeout"])
+            from .transport import reconcile
+            attempt_root = self.store.home / "artifacts" / objective_id
+            for record in attempt_root.rglob("process.json"):
+                if not record.with_name("exit.json").exists():
+                    pid = json.loads(record.read_text())["pid"]
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        continue
+                    raise ValueError(f"Process {pid} may still be active; inspect it before retry")
+            for record in attempt_root.rglob("remote.json"):
+                receipt = record.with_name("remote-exit.json")
+                if not receipt.exists():
+                    terminal = reconcile(record)
+                    receipt.write_text(json.dumps(terminal))
+            if self.store.followups(objective["id"]) != objective.get("followups", []):
+                self.incorporate_followups(objective)
+            if objective["status"] in ("completed", "awaiting_input"):
+                return objective
+            self.providers = self.providers or Providers(objective["timeout"], config=objective.get("providers_config"))
             objective["supervisor_pid"] = os.getpid()
             self.store.save(objective, "supervisor_started")
             previous_handler = signal.getsignal(signal.SIGTERM)
             signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
             try:
-                result = self.execute(objective)
+                while True:
+                    try:
+                        result = self.execute(objective)
+                        break
+                    except FollowupPending:
+                        self.incorporate_followups(objective)
             except KeyboardInterrupt:
                 objective["status"] = "cancelled"
                 objective["error"] = "Interrupted by operator"
@@ -120,7 +162,12 @@ class Runtime:
             create_workspace(objective["repo"], workspace, objective["base"])
             objective["status"] = "queued"
             self.store.save(objective, "workspace_ready")
-        git(workspace, "rev-parse", "--show-toplevel")
+        if Path(git(workspace, "rev-parse", "--show-toplevel")).resolve() != workspace.resolve():
+            raise ValueError("Workspace is not an isolated repository")
+        if git(workspace, "rev-parse", "HEAD") != objective["base"]:
+            raise ValueError("Workspace HEAD differs from the objective base; reconcile before retry")
+        if git(workspace, "remote"):
+            raise ValueError("Workspace initialization is incomplete: remove remotes after inspecting the checkout")
         context = {"objective": objective["request"], "repository": snapshot(workspace),
                    "available_implementation_workers": objective.get("workers", ["codex", "grok"]),
                    "reviewer": objective.get("reviewer", "auto"),
@@ -129,7 +176,18 @@ class Runtime:
             plan = self.call(objective, "claude", "planner", PLAN, dict(context,
                 instructions="Plan 1-6 sequential implementation tasks. Choose codex or grok for each. "
                 "Give concrete acceptance criteria. This first version handles small text/code changes; "
-                "protected configuration and omitted files cannot be edited."))
+                "protected configuration and omitted files cannot be edited. "
+                "If indispensable information is missing and cannot be inferred safely, return tasks=[] "
+                "and put one concise question for the owner in summary. Do not ask for credentials. "
+                "Otherwise make reasonable decisions and proceed."))
+            if not plan["tasks"] and plan["summary"].strip():
+                with self.store.db:
+                    self.store.db.execute("BEGIN IMMEDIATE")
+                    self.check_followups(objective)
+                    objective["status"] = "awaiting_input"
+                    objective["question"] = plan["summary"].strip()
+                    self.store.save(objective, "clarification_requested")
+                return objective
             if not 1 <= len(plan["tasks"]) <= 6 or not plan["acceptance"]:
                 raise ValueError("Plan needs 1-6 tasks and acceptance criteria")
             for task in plan["tasks"]:
@@ -153,6 +211,7 @@ class Runtime:
                 for change in report["changes"]:
                     if change["path"] in current["omitted"]:
                         raise ValueError(f"Cannot edit an omitted file: {change['path']}")
+                verify_governance_changes(objective, report["changes"])
                 apply_changes(workspace, report["changes"])
                 objective["next_task"] = index + 1
                 objective["status"] = "queued"
@@ -193,6 +252,7 @@ class Runtime:
                 "all checks passed, and review approved. Explain remaining work otherwise."})
             if changed_diff(workspace, objective["base"]) != diff:
                 raise ValueError("Acceptance step changed the candidate")
+            self.check_followups(objective)
             objective["verification"] = {"checks": checks, "reviews": reviews, "decision": decision}
             objective["round"] += 1
             if all(check["passed"] for check in checks) and all(r["approved"] for r in reviews) and decision["accepted"]:
@@ -206,7 +266,10 @@ class Runtime:
                           f"Verification: {len(checks)} checks passed. Reviewers: {', '.join(reviewers)}.\n\n"
                           "Changes are staged locally for inspection and commit.\n")
                 (artifacts / "delivery.md").write_text(report)
-                self.store.save(objective, "completed")
+                with self.store.db:
+                    self.store.db.execute("BEGIN IMMEDIATE")
+                    self.check_followups(objective)
+                    self.store.save(objective, "completed")
                 return objective
             objective["feedback"] = json.dumps(objective["verification"])
             objective["next_task"] = 0

@@ -53,6 +53,9 @@ def add_improvement(store, args):
         "Do not weaken permissions, credential handling, resource limits, review gates, or regression checks. "
         "Implement a bounded improvement and explain evidence. Changes run in a separate candidate clone; "
         "the running supervisor is not replaced.", source=getattr(args, "source", None), kind="self_improvement")
+    if objective.get("regression_baseline"):
+        verify_baseline(objective)
+        return objective
     directory = store.home / "baselines" / objective["id"]
     try:
         directory.mkdir(parents=True, exist_ok=False)
@@ -82,3 +85,33 @@ def add_improvement(store, args):
         store.save(objective, "baseline_failed")
         raise
     return objective
+
+
+CORE_ENFORCEMENT = frozenset({
+    "capo/runtime.py", "capo/repository.py", "capo/improvement.py", "capo/providers.py",
+    "capo/process.py", "capo/watchdog.py", "capo/transport.py", "capo/guest.py",
+    "capo/github.py", "capo/store.py", "capo/slack.py", "capo/cli.py", "capo/contracts.py",
+    "capo/__init__.py", "capo/__main__.py", "pyproject.toml", "setup.py", "setup.cfg",
+    "sitecustomize.py", "usercustomize.py",
+})
+
+
+def verify_governance_changes(objective, changes):
+    """Keep autonomous proposals outside existing Capo enforcement modules.
+
+    Detect the pinned source tree as well as the objective kind so using `add`
+    instead of `improve` cannot turn off this boundary.
+    """
+    is_capo = objective.get("kind") == "self_improvement"
+    if not is_capo:
+        repo = objective.get("workspace") or objective["repo"]
+        names = git(repo, "ls-tree", "-r", "--name-only", objective["base"], "--",
+                    "capo/runtime.py", "tests").splitlines()
+        is_capo = "capo/runtime.py" in names and any(name.startswith("tests/") for name in names)
+    if not is_capo:
+        return
+    from pathlib import PurePosixPath
+    for change in changes:
+        name = str(PurePosixPath(change["path"])).lower()
+        if any(name == protected or protected.startswith(name + "/") for protected in CORE_ENFORCEMENT):
+            raise ValueError("Core enforcement changes require owner review outside autonomous apply: " + name)

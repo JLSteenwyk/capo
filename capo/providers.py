@@ -1,80 +1,10 @@
 """CLI contracts. Auth remains with each provider; no API client is used."""
 
 import json
-import os
-import signal
-import subprocess
-import time
 from pathlib import Path
 
 
-class WorkerError(RuntimeError):
-    pass
-
-
-def run_process(argv, cwd, directory, timeout, stdin=None):
-    """Persist output to files, bound duration, and terminate child process groups."""
-    directory.mkdir(parents=True, exist_ok=True)
-    environment = os.environ.copy()
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    # Prefer existing CLI subscription authentication over ambient API keys.
-    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "XAI_API_KEY",
-                "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"):
-        environment.pop(key, None)
-    started = time.time()
-    with (directory / "stdout.txt").open("w") as out, (directory / "stderr.txt").open("w") as err:
-        process = subprocess.Popen(argv, cwd=cwd, env=environment, stdin=subprocess.PIPE,
-                                   stdout=out, stderr=err, text=True, start_new_session=True)
-        (directory / "process.json").write_text(json.dumps({
-            "pid": process.pid, "started": started, "command": argv[0]}))
-        try:
-            deadline = time.monotonic() + timeout
-            pending_input = stdin
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise subprocess.TimeoutExpired(argv, timeout)
-                if sum((directory / name).stat().st_size for name in ("stdout.txt", "stderr.txt")) > 8_000_000:
-                    raise WorkerError(f"Attempt exceeded its 8 MB log limit; inspect {directory}")
-                try:
-                    process.communicate(pending_input, timeout=min(0.25, remaining))
-                    break
-                except subprocess.TimeoutExpired:
-                    pending_input = None
-        except BaseException:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait()
-            # The parent may exit on TERM while a child ignores it.
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            raise
-    # Background descendants are outside the bounded attempt contract.
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    (directory / "exit.json").write_text(json.dumps({
-        "returncode": process.returncode, "seconds": time.time() - started}))
-    if sum((directory / name).stat().st_size for name in ("stdout.txt", "stderr.txt")) > 8_000_000:
-        raise WorkerError(f"Attempt exceeded its 8 MB log limit; inspect {directory}")
-    if (directory / "stdout.txt").stat().st_size > 4_000_000:
-        raise WorkerError(f"Output exceeds 4 MB; inspect {directory}")
-    output = (directory / "stdout.txt").read_text(errors="replace")
-    if process.returncode:
-        raise WorkerError(f"{Path(argv[0]).name} exited {process.returncode}; inspect {directory}")
-    return output
+from .process import WorkerError, run_process
 
 
 def decode_json(text):
@@ -88,8 +18,10 @@ def decode_json(text):
 
 
 class Providers:
-    def __init__(self, timeout=900):
+    def __init__(self, timeout=900, config=None):
+        from .transport import load_config, validate_config
         self.timeout = timeout
+        self.config = load_config() if config is None else validate_config(config)
 
     def call(self, provider, prompt, schema, cwd, directory):
         directory.mkdir(parents=True, exist_ok=True)
@@ -122,7 +54,12 @@ class Providers:
             argv = ["grok", "--prompt-file", str(prompt_file), "--output-format", "json",
                     "--json-schema", json.dumps(schema), "--tools", "",
                     "--no-subagents", "--sandbox", "read-only", "--permission-mode", "dontAsk"]
-            envelope = decode_json(run_process(argv, cwd, directory, self.timeout))
+            if self.config.get("grok", {}).get("transport") == "lima":
+                from .transport import run_grok
+                output = run_grok(self.config["grok"], prompt, schema, directory, self.timeout)
+            else:
+                output = run_process(argv, cwd, directory, self.timeout)
+            envelope = decode_json(output)
             if (envelope.get("is_error") or envelope.get("error")
                     or envelope.get("type") == "error"
                     or envelope.get("stopReason", "end_turn") != "end_turn"):

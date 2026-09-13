@@ -38,8 +38,25 @@ Run each request with a deadline. A missing sandbox dependency or authentication
 
 The copied guest login was removed after testing. Credentials, prompts, and run artifacts were not committed.
 
-## Remaining integration
+## Configure Capo's integrated transport
 
-This validates a Linux execution route, not automatic VM routing in Capo. The existing adapter still invokes local `grok`. A production VM transport needs explicit configuration, task staging, bounded remote-process cancellation, result retrieval, and authentication lifecycle handling. Do not replace the local executable with an unbounded SSH wrapper.
+Copy `integrations/grok/providers.example.json` to a private configuration directory. Set its VM name and guest executable path, then select it explicitly:
+
+```sh
+export CAPO_PROVIDERS_CONFIG="$HOME/.config/capo/providers.json"
+python3 -m capo doctor
+python3 -m capo add "Your development objective" --repo /path/to/project --check 'python3 -m unittest discover -s tests'
+python3 -m capo run OBJECTIVE_ID
+```
+
+Alternatively pass `--providers-config /path/to/providers.json` before the subcommand. Transport configuration is captured when an objective is queued, so a later environment change cannot silently reroute that objective. The Slack service uses the same selection for newly queued objectives. Local transport remains the default.
+
+Capo checks that the VM is running, has no host mounts or forwarded sockets/agents, and has Grok, bubblewrap, and a login file. A login file is not proof of valid authentication: the actual request may still fail and will surface that failure. The adapter does not copy credentials or fall back to an API key. Sign in inside the guest and use the CLI's normal logout when retiring a dedicated guest login.
+
+Each attempt stages only its prompt and schema in a private guest directory; repository context is already in the prompt. The worker has tools disabled and the native read-only sandbox enabled. A host heartbeat, connection EOF, cancellation marker, and remote deadline bound execution. Normal completion removes guest prompts and attempt logs, retaining a small terminal receipt. Provider-managed session history may remain in the private guest home.
+
+Host artifacts retain output, process metadata, a unique remote attempt identity, and its terminal receipt. Timeout/cancellation includes a bounded reconciliation grace period. Recovery checks the guest receipt and fences delayed starts before permitting retry. An unreachable guest blocks recovery; restore connectivity or restart the guest and reconcile. Never assume an expired host deadline proves remote completion.
+
+`doctor` performs read-only health checks without model calls. Start and stop the VM explicitly with Lima. No general desktop controller is installed.
 
 This small test does not establish hostile-code containment, long-running reliability, remaining subscription capacity, or a complete Claude/Codex/Grok objective across machines.

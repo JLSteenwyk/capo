@@ -139,11 +139,21 @@ def prepare(store, objective_id, repo, base_branch, title=None):
                 + f".\n\nTeam: {objective.get('team_name', 'SPARKITscience')}. Capo objective: `{objective_id}`.\n")
         if objective.get("source", "") and objective["source"].startswith("https://github.com/"):
             body += f"\nRelated issue: {objective['source']}\n"
-        commit = git(workspace, "-c", "user.name=Capo", "-c", "user.email=capo@localhost",
-                     "-c", "commit.gpgSign=false", "commit-tree", objective["accepted_tree"],
-                     "-p", objective["base"], "-m", title)
-        branch = f"capo/{objective_id}"
-        git(workspace, "update-ref", f"refs/heads/{branch}", commit, "")
+        branch = f"capo/{objective_id}-{objective['accepted_tree'][:12]}"
+        ref = f"refs/heads/{branch}"
+        existing = git(workspace, "for-each-ref", "--format=%(objectname)", ref)
+        if existing:
+            # A crash after update-ref but before ledger save must be retryable.
+            if (git(workspace, "rev-parse", f"{existing}^{{tree}}") != objective["accepted_tree"]
+                    or git(workspace, "show", "-s", "--format=%P", existing) != objective["base"]
+                    or git(workspace, "show", "-s", "--format=%B", existing) != title):
+                raise ValueError("Existing local publication branch differs; reconcile manually")
+            commit = existing
+        else:
+            commit = git(workspace, "-c", "user.name=Capo", "-c", "user.email=capo@localhost",
+                         "-c", "commit.gpgSign=false", "commit-tree", objective["accepted_tree"],
+                         "-p", objective["base"], "-m", title)
+            git(workspace, "update-ref", ref, commit, "")
         payload = {"repository": repo, "base_branch": base_branch, "base_commit": objective["base"],
                    "branch": branch, "commit": commit, "tree": objective["accepted_tree"],
                    "title": title, "body": body, "draft": True}
@@ -172,6 +182,12 @@ def publish(store, objective_id, digest, gateway=None):
             raise ValueError("Prepared commit differs from the verified tree")
         if publication["status"] == "published":
             return publication
+        with store.db:
+            store.db.execute("BEGIN IMMEDIATE")
+            if store.followups(objective_id) != objective.get("followups", []):
+                raise ValueError("New owner input requires verification before publication")
+            publication["status"] = "publishing"
+            store.save(objective, "publication_started")
         existing = gateway.find_pr(payload)
         if existing is None:
             remote_base = gateway.remote_ref(workspace, payload["repository"], payload["base_branch"])
@@ -180,8 +196,6 @@ def publish(store, objective_id, digest, gateway=None):
             remote_head = gateway.remote_ref(workspace, payload["repository"], payload["branch"])
             if remote_head not in (None, payload["commit"]):
                 raise ValueError("Remote objective branch contains different work; refusing to replace it")
-            publication["status"] = "publishing"
-            store.save(objective, "publication_started")
             if remote_head is None:
                 gateway.push_new(workspace, payload)
             body_file = store.home / "artifacts" / objective_id / "pr-body.txt"

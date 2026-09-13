@@ -2,7 +2,7 @@
 
 Capo is the platform. **SPARKITscience** is the default team name for this installation. Set `CAPO_TEAM_NAME` or pass `--team-name "Your team"` before a command to customize the name used in objectives, agent context, delivery reports, and PR descriptions.
 
-Slack is the primary planned human interface. The included [Slack adapter](docs/slack.md) accepts owner-only objectives, provides threaded progress, and supports status and cancellation. It is ready to configure for the SPARKITscience workspace; it has not been connected to a live channel.
+Slack is the primary human interface. The included [Slack adapter](docs/slack.md) accepts owner-only objectives, provides threaded progress, and supports status, cancellation, thread follow-ups, and exact-candidate publication approval. It is ready to configure for the SPARKITscience workspace; it has not been connected to a live channel.
 
 Claude Code leads development objectives, delegates implementation to Codex and Grok Build, evaluates reviews, and decides whether the result meets the objective. A local Python runtime owns the queue, checkpoints, process supervision, verification, and artifacts.
 
@@ -28,7 +28,7 @@ python3 -m capo list
 
 Run these commands from this checkout, or install the CLI with `python3 -m pip install -e .` and use `capo`. The source repository must have a commit and a clean working tree. Verification commands are explicitly supplied by you and run as argument arrays, without a shell. They must be appropriate for the target project, with dependencies already available.
 
-State defaults to `~/.local/share/capo`. Set `CAPO_HOME` or pass `--home /path/to/state` **before** the subcommand to use a different directory. Moving to the agents' dedicated computer requires copying persistent state with path migration and authenticating the providers there; there is no remote host controller yet.
+State defaults to `~/.local/share/capo`. Set `CAPO_HOME` or pass `--home /path/to/state` **before** the subcommand to use a different directory. Moving to the agents' dedicated computer requires copying persistent state with path migration and authenticating the providers there; the Grok Lima transport is supported, but there is no general remote host controller yet.
 
 ### GitHub issue intake
 
@@ -114,4 +114,6 @@ Provider interfaces were checked against installed CLI help and official documen
 
 ### Local integration status (September 12, 2026)
 
-Live structured-response probes passed with Claude Code 2.1.263 and Codex 0.154.0. Grok 1.0.13 and an isolated copy of stable 1.0.30 both refused to initialize the read-only sandbox on this Mac because `/var/run/docker.sock` is a symlink. The installed Grok executable was preserved. Capo keeps the sandbox enabled. A subsequent [Linux VM test](docs/grok-linux.md) passed using Grok 1.0.30, the existing CLI login, and the read-only sandbox: implementation, three arithmetic checks, and a separate review all succeeded. Automatic routing from the host into that VM is not yet implemented. The explicit Claude/Codex team above can be used meanwhile. This is a host integration failure, not evidence of a subscription quota problem.
+Live structured-response probes passed with Claude Code 2.1.263 and Codex 0.154.0. Grok 1.0.13 and an isolated copy of stable 1.0.30 both refused to initialize the read-only sandbox on this Mac because `/var/run/docker.sock` is a symlink. The installed Grok executable was preserved. Capo keeps the sandbox enabled. A subsequent [Linux VM test](docs/grok-linux.md) passed using Grok 1.0.30, the existing CLI login, and the read-only sandbox: implementation, three arithmetic checks, and a separate review all succeeded. An explicit [Lima transport](docs/grok-linux.md) now routes Grok requests into the VM with isolated staging, heartbeat cancellation, deadlines, and recovery receipts. The explicit Claude/Codex team above can be used meanwhile. This is a host integration failure, not evidence of a subscription quota problem.
+
+See the [operations runbook](docs/operations.md) and [release evidence checklist](docs/completion.md) for setup, recovery, and outstanding live checks.

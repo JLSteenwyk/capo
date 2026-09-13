@@ -17,7 +17,8 @@ from .store import Store
 
 HELP = ("Send `repo-alias: your objective` to queue work, or `improve repo-alias: your objective` "
         "for Capo self-improvement. Use `status OBJECTIVE_ID`, `cancel OBJECTIVE_ID`, or `help`. "
-        "Commands require an @mention. PR publication remains an explicit CLI action.")
+        "In an objective thread use `followup: instructions`, `prepare OBJECTIVE_ID`, "
+        "`approve OBJECTIVE_ID DIGEST`, or `sync OBJECTIVE_ID`. Commands require an @mention.")
 
 
 def configure(config_path, client=None):
@@ -93,6 +94,10 @@ def validate_config(config):
             value = settings.get(name, 1)
             if type(value) is not int or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
+        if type(settings.get("allow_publication", False)) is not bool:
+            raise ValueError("allow_publication must be true or false")
+        if settings.get("github_auth", "default") not in ("default", "keyring"):
+            raise ValueError("Invalid GitHub authentication mode")
         if type(settings.get("allow_self_improvement", False)) is not bool:
             raise ValueError("allow_self_improvement must be true or false")
     return config
@@ -127,11 +132,14 @@ class SlackService:
         self.active = None
         self.active_id = None
         self.last_stage = None
+        self.pending_review = None
 
     def reply(self, event, text):
-        self.client.chat_postMessage(channel=self.config["channel_id"],
-            thread_ts=event.get("thread_ts", event["ts"]), text=html.escape(text),
-            mrkdwn=False, parse="none", link_names=False, unfurl_links=False, unfurl_media=False)
+        # Stay below Slack's truncation threshold, including escaped characters.
+        for offset in range(0, len(text), 2500):
+            self.client.chat_postMessage(channel=self.config["channel_id"],
+                thread_ts=event.get("thread_ts", event["ts"]), text=html.escape(text[offset:offset + 2500]),
+                mrkdwn=False, parse="none", link_names=False, unfurl_links=False, unfurl_media=False)
 
     def owns(self, objective):
         origin = objective.get("slack", {})
@@ -143,14 +151,84 @@ class SlackService:
             raise ValueError("That objective does not belong to this Slack owner and channel")
         return objective
 
+    def settings(self, objective):
+        alias = objective.get("slack", {}).get("repository_alias")
+        settings = self.config["repositories"].get(alias)
+        if settings is None:
+            matches = [value for value in self.config["repositories"].values()
+                       if Path(value["path"]).resolve() == Path(objective["repo"]).resolve()]
+            if len(matches) != 1:
+                raise ValueError("Objective repository alias is no longer configured unambiguously")
+            settings = matches[0]
+        if Path(settings["path"]).resolve() != Path(objective["repo"]).resolve():
+            raise ValueError("Repository alias changed since this objective was created")
+        return settings
+
     def dispatch(self, event_id, body):
         from .cli import add_objective
         from .improvement import add_improvement
 
+        self.pending_review = None
+        if not authorized(self.config, body):
+            raise ValueError("Unauthorized Slack request")
         event = body["event"]
         text = re.sub(r"^\s*<@[A-Z0-9]+>\s*", "", event["text"]).strip()
         if text.lower() == "help":
             return HELP
+        match = re.fullmatch(r"(prepare|approve|sync)\s+([a-f0-9]{16})(?:\s+([a-f0-9]{64}))?", text)
+        if match:
+            from .github import GitHub, prepare, publish, remote_repository, sync
+            from .repository import git
+            command, identifier, digest = match.groups()
+            objective = self.objective(identifier)
+            settings = self.settings(objective)
+            if not settings.get("allow_publication", False):
+                raise ValueError("Slack publication is not enabled for this repository alias")
+            if command == "prepare":
+                if digest:
+                    raise ValueError("prepare does not accept a digest")
+                publication = prepare(self.store, identifier,
+                    remote_repository(git(objective["repo"], "remote", "get-url", "origin")),
+                    settings.get("publication_base", "main"))
+                diff = (self.store.home / "artifacts" / identifier / "changes.patch").read_text()
+                payload = publication["payload"]
+                preview = (f"Draft PR preview for {identifier}\n"
+                    f"Repository: {payload['repository']}\nBase: {payload['base_branch']}\n"
+                    f"Commit: {payload['commit']}\nTitle: {payload['title']}\n\n"
+                    f"{payload['body']}\nChanges:\n{diff}\n\n"
+                    f"To approve this exact candidate: approve {identifier} {publication['digest']}")
+                if len(preview) > 80000:
+                    raise ValueError("Preview exceeds Slack review limit; inspect and publish using the CLI")
+                self.pending_review = (identifier, publication["digest"])
+                return preview
+            if command == "approve":
+                if not digest or objective.get("slack_review_digest") != digest:
+                    raise ValueError("First request and review the full prepare preview, then approve its exact digest")
+                result = publish(self.store, identifier, digest, GitHub(settings.get("github_auth", "default")))
+                return f"Draft PR published: {result['pr']['url']}"
+            if digest:
+                raise ValueError("sync does not accept a digest")
+            result = sync(self.store, identifier, GitHub(settings.get("github_auth", "default")))
+            checks = result.get("statusCheckRollup") or []
+            states = [str(check.get("conclusion") or check.get("state") or check.get("status", "unknown"))
+                      for check in checks]
+            return (f"{result['url']}: {result['state']}. Verified commit matches: "
+                    f"{result['matches_verified_commit']}. CI: {', '.join(states) or 'No checks reported'}.")
+        thread = event.get("thread_ts")
+        if thread and not re.match(r"(?:status|cancel|help|prepare|approve|sync)(?:\s|$)", text):
+            matches = [row for row in self.store.list() if self.owns(row)
+                       and row["slack"].get("thread_ts") == thread]
+            if len(matches) == 1:
+                request = re.sub(r"^(?:followup|clarify):\s*", "", text, flags=re.I).strip()
+                if not request:
+                    raise ValueError("Follow-up instructions cannot be empty")
+                self.store.add_followup(matches[0]["id"], event_id, request)
+                return (f"Recorded your follow-up for {matches[0]['id']}. "
+                        "Claude will incorporate it at the next safe checkpoint; existing execution limits remain.")
+            if matches:
+                raise ValueError("This thread contains multiple objectives; use a separate thread for each objective")
+            if re.match(r"(?:followup|clarify):", text, re.I):
+                raise ValueError("Send follow-up instructions in an existing objective thread")
         match = re.fullmatch(r"(status|cancel)\s+([a-f0-9]{16})", text)
         if match:
             command, identifier = match.groups()
@@ -159,14 +237,15 @@ class SlackService:
                 if self.active_id == identifier and self.active and self.active.poll() is None:
                     self.active.terminate()
                     return f"Stopping objective {identifier}."
-                if objective["status"] == "queued":
+                if objective["status"] in ("queued", "awaiting_input"):
                     objective["status"] = "cancelled"
                     objective["error"] = "Cancelled by Slack owner"
                     self.store.save(objective, "slack_cancelled")
                 elif objective["status"] == "running":
                     return "This runner is not owned by the current Slack service; inspect it from the CLI."
             pr = objective.get("publication", {}).get("pr", {}).get("url", "")
-            return f"{identifier}: {objective['status']}. Provider calls: {objective['calls']}. {pr}".strip()
+            question = objective.get("question", "") if objective["status"] == "awaiting_input" else ""
+            return f"{identifier}: {objective['status']}. Provider calls: {objective['calls']}. {pr} {question}".strip()
         match = re.fullmatch(r"(?:(improve)\s+)?([a-zA-Z0-9_-]+):\s*(.+)", text, re.DOTALL)
         if not match:
             return HELP
@@ -193,7 +272,8 @@ class SlackService:
                 objective = add_objective(self.store, args, request, source=source)
         if "slack" not in objective:
             objective["slack"] = {key: self.config[key] for key in ("team_id", "channel_id", "owner_user_id")}
-            objective["slack"].update(ts=event["ts"], thread_ts=event.get("thread_ts", event["ts"]))
+            objective["slack"].update(ts=event["ts"], thread_ts=event.get("thread_ts", event["ts"]),
+                                      repository_alias=alias)
             self.store.save(objective, "slack_queued")
         return f"Queued {objective['id']} for {alias}. Claude Code will lead the work."
 
@@ -206,6 +286,13 @@ class SlackService:
                 except (ValueError, RuntimeError, OSError) as exc:
                     text = f"Could not handle this request: {exc}"
                 self.reply(body["event"], text)
+                if self.pending_review:
+                    identifier, digest = self.pending_review
+                    objective = self.objective(identifier)
+                    if objective.get("publication", {}).get("digest") == digest:
+                        objective["slack_review_digest"] = digest
+                        self.store.save(objective, "slack_preview_delivered")
+                    self.pending_review = None
             self.store.finish_slack(event_id)
 
     def tick(self):
@@ -213,14 +300,20 @@ class SlackService:
         if self.active:
             objective = self.store.get(self.active_id)
             if self.active.poll() is not None:
-                if (objective["status"] not in ("completed", "blocked", "cancelled")
+                pending_followup = self.store.followups(objective["id"]) != objective.get("followups", [])
+                if (objective["status"] not in ("completed", "blocked", "cancelled", "awaiting_input")
+                        and not (objective["status"] == "queued" and pending_followup)
                         and objective.get("supervisor_pid", self.active.pid) == self.active.pid):
                     objective["status"] = "blocked"
                     objective["error"] = "Runner exited without a terminal checkpoint; inspect its artifacts"
                     self.store.save(objective, "slack_runner_failed")
                 text = f"{self.active_id}: {objective['status']}."
                 if objective["status"] == "completed":
-                    text += " Verified changes and a delivery report are ready. Use the CLI to prepare a draft PR."
+                    text += " Verified changes are ready. Request prepare OBJECTIVE_ID to review a draft PR, or reply in this thread with follow-up instructions."
+                elif objective["status"] == "awaiting_input":
+                    text += f" Claude needs your input: {objective['question']} Reply here and mention the bot."
+                elif objective["status"] == "queued" and pending_followup:
+                    text += " Your follow-up is queued for Claude."
                 else:
                     text += " Inspect the objective's CLI status and artifacts for details."
                 self.reply(objective["slack"], text)
@@ -231,6 +324,15 @@ class SlackService:
                     self.reply(objective["slack"], f"{self.active_id}: {self.last_stage} in progress.")
             return
         if not self.config.get("auto_run", True):
+            return
+        # A restarted service must not launch a second runner during an existing
+        # supervisor's queued checkpoint. The kernel lock is stronger evidence
+        # than a saved PID, which may have been reused.
+        from .runtime import exclusive
+        try:
+            with exclusive(self.store.home):
+                pass
+        except ValueError:
             return
         # Oldest first. Never restart an uncertain running or blocked objective automatically.
         for objective in reversed(self.store.list()):
