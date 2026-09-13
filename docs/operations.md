@@ -164,6 +164,6 @@ Desktop automation, general recurring schedules, learned routing, unrestricted w
 
 ## Enable GitHub CI
 
-A ready-to-install workflow is provided at `integrations/github/tests.yml`. It runs the credential-free unit suite on Python 3.11 and 3.14 with read-only repository permissions. Install it at `.github/workflows/tests.yml` using a GitHub login authorized to manage workflows.
+The installed workflow at `.github/workflows/tests.yml` runs the credential-free unit suite on Python 3.11 and 3.14 with read-only repository permissions. A reusable copy is provided at `integrations/github/tests.yml`. Both jobs passed on the first mainline run.
 
-The current saved CLI login rejected workflow publication because it lacks the `workflow` scope. Application-code pushes and draft PRs can still proceed. To authorize workflow installation, the owner can run `gh auth refresh --hostname github.com --scopes workflow` locally, complete the browser flow, and then publish the prepared workflow. Do not paste credentials into chat. Until installation, an empty CI status is not a passing CI run.
+Installing or updating a workflow requires an appropriately authorized GitHub login. If GitHub rejects a workflow push for missing scope, run `gh auth refresh --hostname github.com --scopes workflow` locally and complete the browser flow. Do not paste credentials into chat. An empty CI status is not a passing CI run; inspect the checks on the exact commit being reviewed.

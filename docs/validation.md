@@ -66,7 +66,7 @@ A live synthetic fault test killed the host transport supervisor with SIGKILL. T
 
 The first integrated issue/self-improvement run used Claude, Codex, and Grok. Independent review rejected missing tests/docs and a SQLite WAL concern. Concrete follow-up context led to a revised implementation, but the run remained blocked on a generated test-fixture error and a transport failure; no PR was published from that state. The transport failure was an OpenSSH multiplexed command-size error, addressed with a smaller compressed guest bootstrap. The candidate is retained for a bounded continuation against the corrected platform.
 
-GitHub rejected CI workflow publication because the saved OAuth login lacks the workflow scope. The reviewed workflow is retained at `integrations/github/tests.yml`; live CI remains unverified until installation. Slack bot/app credentials remain absent, so live Slack verification is still pending.
+At that stage, GitHub rejected CI workflow publication because the saved OAuth login lacked the workflow scope. The reviewed workflow is retained at `integrations/github/tests.yml`; live CI remains unverified until installation. Slack bot/app credentials remain absent, so live Slack verification is still pending.
 
 
 ## Integrated development and self-improvement continuation
@@ -78,4 +78,9 @@ The frozen suite passed 101 tests and the candidate suite passed 116 tests. A li
 
 The verified candidate was published through Capo's digest-bound CLI flow as [draft PR #2](https://github.com/JLSteenwyk/capo/pull/2). Remote reconciliation confirmed that its head matches the accepted commit and its body matches the reviewed description. PR synchronization reports an open draft with no CI checks; an empty status is not a passing CI run. The PR has not been merged.
 
-The mainline suite now passes 107 tests, including restart discovery of undelivered Slack clarification/terminal notifications, rate-limited chunk recovery, and publication-description revisions that invalidate previous approval digests. Live Slack remains blocked on local credentials and workspace resolution; CI installation remains blocked on GitHub workflow authorization.
+The mainline suite now passes 107 tests, including restart discovery of undelivered Slack clarification/terminal notifications, rate-limited chunk recovery, and publication-description revisions that invalidate previous approval digests. Live Slack remains blocked on local credentials and workspace resolution; CI installation was still blocked at that stage; the authorization is now resolved as recorded below.
+
+
+## Live GitHub CI
+
+After the owner added workflow authorization, commit `dfb14d3` installed `.github/workflows/tests.yml`. Both Python 3.11 and 3.14 jobs passed in [the first mainline run](https://github.com/JLSteenwyk/capo/actions/runs/34760445246). This verifies mainline CI installation and execution. Draft PR #2 predates the workflow and still requires checks against its own code; mainline success is not evidence for that PR head. Slack setup remains a separate live-verification requirement.
