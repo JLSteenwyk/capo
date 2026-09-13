@@ -117,3 +117,7 @@ Provider interfaces were checked against installed CLI help and official documen
 Live structured-response probes passed with Claude Code 2.1.263 and Codex 0.154.0. Grok 1.0.13 and an isolated copy of stable 1.0.30 both refused to initialize the read-only sandbox on this Mac because `/var/run/docker.sock` is a symlink. The installed Grok executable was preserved. Capo keeps the sandbox enabled. A subsequent [Linux VM test](docs/grok-linux.md) passed using Grok 1.0.30, the existing CLI login, and the read-only sandbox: implementation, three arithmetic checks, and a separate review all succeeded. An explicit [Lima transport](docs/grok-linux.md) now routes Grok requests into the VM with isolated staging, heartbeat cancellation, deadlines, and recovery receipts. The explicit Claude/Codex team above can be used meanwhile. This is a host integration failure, not evidence of a subscription quota problem.
 
 See the [operations runbook](docs/operations.md) and [release evidence checklist](docs/completion.md) for setup, recovery, and outstanding live checks.
+
+### Finish approved changes
+
+Enable `merge_after_approval: true` in a private Slack repository alias to merge approved changes once GitHub checks pass and delete the PR branch afterward. Reply `@capo approve` in the review thread. Routine automatic delivery uses the same finish step when both options are enabled. Conflicts, failed checks, or changed PR content stop delivery for inspection. See [Slack operation](docs/slack.md) and the [operations runbook](docs/operations.md).
