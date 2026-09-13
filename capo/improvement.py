@@ -1,0 +1,84 @@
+"""Run Capo improvements as ordinary objectives with frozen regression checks."""
+
+import hashlib
+import sys
+from pathlib import Path
+
+from .repository import git
+
+
+BASELINE_RUNNER = '''import os
+import sys
+import unittest
+from pathlib import Path
+tests = Path(__file__).resolve().parent / "tests"
+sys.path.insert(0, os.getcwd())
+sys.path.insert(0, str(tests))
+suite = unittest.defaultTestLoader.discover(str(tests))
+if suite.countTestCases() == 0:
+    raise SystemExit("Frozen regression suite contains no tests")
+result = unittest.TextTestRunner(verbosity=1).run(suite)
+raise SystemExit(0 if result.wasSuccessful() else 1)
+'''
+
+
+def fingerprint(directory):
+    files = {}
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("Regression baseline cannot contain symlinks")
+        if path.is_file():
+            files[str(path.relative_to(directory))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return files
+
+
+def verify_baseline(objective):
+    baseline = objective.get("regression_baseline")
+    if objective.get("kind") == "self_improvement" and not baseline:
+        raise ValueError("Self-improvement requires a frozen regression baseline")
+    if baseline and fingerprint(Path(baseline["path"])) != baseline["files"]:
+        raise ValueError("Frozen regression baseline changed; refusing to accept the candidate")
+
+
+def add_improvement(store, args):
+    from .cli import add_objective
+
+    repo = args.repo.expanduser().resolve()
+    if not (repo / "capo/runtime.py").is_file() or not (repo / "tests").is_dir():
+        raise ValueError("Self-improvement target must be a Capo checkout with its test suite")
+    # An ordinary objective guarantees a clean, committed source and isolated workspace.
+    args.check = [f'"{sys.executable}" -m unittest discover -s tests -q']
+    objective = add_objective(store, args, args.request + "\n\n"
+        "This is an improvement to Capo itself. Preserve existing behavior and compatibility. "
+        "Do not weaken permissions, credential handling, resource limits, review gates, or regression checks. "
+        "Implement a bounded improvement and explain evidence. Changes run in a separate candidate clone; "
+        "the running supervisor is not replaced.", kind="self_improvement")
+    directory = store.home / "baselines" / objective["id"]
+    try:
+        directory.mkdir(parents=True, exist_ok=False)
+        names = git(repo, "ls-files", "-z", "--", "tests", raw=True).split("\0")
+        count = 0
+        for name in names:
+            if not name:
+                continue
+            source = repo / name
+            if source.is_symlink() or not source.is_file():
+                raise ValueError("Frozen test suite must contain regular tracked files")
+            target = directory / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+            count += name.endswith(".py")
+        if count == 0:
+            raise ValueError("No tracked Python regression tests found")
+        (directory / "run.py").write_text(BASELINE_RUNNER)
+        objective["regression_baseline"] = {"path": str(directory), "files": fingerprint(directory),
+                                             "source_commit": objective["base"]}
+        objective["checks"].insert(0, [sys.executable, "-I", "-B", str(directory / "run.py")])
+        objective["kind"] = "self_improvement"
+        store.save(objective, "improvement_queued")
+    except Exception:
+        objective["status"] = "blocked"
+        objective["error"] = "Could not freeze the regression baseline; create a new improvement objective"
+        store.save(objective, "baseline_failed")
+        raise
+    return objective

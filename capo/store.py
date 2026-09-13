@@ -11,7 +11,7 @@ class Store:
     def __init__(self, home: Path):
         self.home = home.resolve()
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.db = sqlite3.connect(self.home / "boardroom.sqlite3", timeout=30)
+        self.db = sqlite3.connect(self.home / "capo.sqlite3", timeout=30)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript("""

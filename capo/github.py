@@ -137,13 +137,13 @@ def prepare(store, objective_id, repo, base_branch, title=None):
                 f"{verification['decision']['reason']}\n\nValidation:\n"
                 + "\n".join(f"- Passed: `{json.dumps(check['command'])}`" for check in verification["checks"])
                 + "\n\nReviewed by: " + ", ".join(row["provider"] for row in verification["reviews"])
-                + f".\n\nBoardroom objective: `{objective_id}`.\n")
+                + f".\n\nTeam: {objective.get('team_name', 'SPARKITscience')}. Capo objective: `{objective_id}`.\n")
         if objective.get("source"):
             body += f"\nRelated issue: {objective['source']}\n"
-        commit = git(workspace, "-c", "user.name=Boardroom", "-c", "user.email=boardroom@localhost",
+        commit = git(workspace, "-c", "user.name=Capo", "-c", "user.email=capo@localhost",
                      "-c", "commit.gpgSign=false", "commit-tree", objective["accepted_tree"],
                      "-p", objective["base"], "-m", title)
-        branch = f"boardroom/{objective_id}"
+        branch = f"capo/{objective_id}"
         git(workspace, "update-ref", f"refs/heads/{branch}", commit, "")
         payload = {"repository": repo, "base_branch": base_branch, "base_commit": objective["base"],
                    "branch": branch, "commit": commit, "tree": objective["accepted_tree"],

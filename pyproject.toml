@@ -3,14 +3,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "capo-boardroom"
+name = "capo-agents"
 version = "0.1.0"
 description = "Claude Code-led coordination of subscription coding agents"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
-boardroom = "boardroom.cli:main"
+capo = "capo.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["boardroom*"]
+include = ["capo*"]

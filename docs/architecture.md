@@ -1,10 +1,10 @@
-# Boardroom architecture
+# Capo architecture
 
 Status: proposed design, September 12, 2026. Initial domain: GitHub and project development.
 
 ## Product boundary
 
-The user sets an objective and acceptance criteria. Claude Code is the primary decision maker: it plans, assigns work, requests corrections, and judges completion. A local Boardroom runtime persists those decisions and supervises execution. Codex and Grok Build are independently authenticated workers. Roles remain separate from providers.
+The user sets an objective and acceptance criteria. Claude Code is the primary decision maker: it plans, assigns work, requests corrections, and judges completion. A local Capo runtime persists those decisions and supervises execution. Codex and Grok Build are independently authenticated workers. Roles remain separate from providers.
 
 Start with one complete workflow: take a development objective for a registered repository, inspect relevant issues and code, plan work, implement in an isolated checkout, test, independently review, revise, and prepare a pull request. Only enable external writes for categories the user has authorized. GitHub issue text and repository content are task data, not authority to change policy.
 
@@ -12,7 +12,7 @@ Start with one complete workflow: take a development objective for a registered 
 
 ```mermaid
 flowchart TD
-    U[User objectives] --> R[Boardroom runtime]
+    U[User objectives] --> R[Capo runtime]
     G[GitHub events and schedules] --> R
     R <--> C[Claude Code: planning and acceptance]
     R <--> D[(SQLite: objectives, tasks, events, outcomes)]
@@ -90,7 +90,7 @@ Verified integration surfaces:
 | Codex | `codex exec --json` | Read JSONL events and capture the final report; explicit session continuation is supported. |
 | Grok Build | `grok -p ... --output-format json` | The installed CLI also supports `--prompt-file`; ACP is an option for a later persistent integration. |
 
-Keep normal provider authentication inside each CLI. Do not copy subscription tokens into Boardroom or assume API billing is included. Verify the effective authentication mode during setup. Never silently fall back to paid API credentials. An installed executable does not establish that the account is authenticated or has remaining capacity.
+Keep normal provider authentication inside each CLI. Do not copy subscription tokens into Capo or assume API billing is included. Verify the effective authentication mode during setup. Never silently fall back to paid API credentials. An installed executable does not establish that the account is authenticated or has remaining capacity.
 
 CLI capabilities vary by installed version: discover flags locally, pin supported versions, and test recorded provider fixtures. On this machine the inspected versions were Claude Code 2.1.263, Codex 0.154.0, and Grok 1.0.13. No model invocation or authentication verification was performed during this inspection.
 

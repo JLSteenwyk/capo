@@ -8,12 +8,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from boardroom.cli import add_objective, recover
-from boardroom.contracts import PLAN, validate
-from boardroom.providers import Providers, WorkerError, run_process
-from boardroom.repository import apply_changes, git, safe_path, snapshot
-from boardroom.runtime import Runtime, exclusive
-from boardroom.store import Store
+from capo.cli import add_objective, recover
+from capo.contracts import PLAN, validate
+from capo.providers import Providers, WorkerError, run_process
+from capo.repository import apply_changes, git, safe_path, snapshot
+from capo.runtime import Runtime, exclusive
+from capo.store import Store
 
 
 class FakeProviders:
@@ -48,7 +48,7 @@ class RepositoryCase(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         git(self.repo, "init", "-b", "main")
-        git(self.repo, "config", "user.name", "Boardroom Test")
+        git(self.repo, "config", "user.name", "Capo Test")
         git(self.repo, "config", "user.email", "test@example.invalid")
         (self.repo / "maths.py").write_text("def add(a, b):\n    return a - b\n")
         git(self.repo, "add", ".")
@@ -130,7 +130,7 @@ class RepositoryCase(unittest.TestCase):
 
     def test_second_supervisor_refused(self):
         with exclusive(self.store.home):
-            with self.assertRaisesRegex(ValueError, "Another Boardroom"):
+            with self.assertRaisesRegex(ValueError, "Another Capo"):
                 with exclusive(self.store.home):
                     self.fail("lock acquired twice")
 
@@ -213,7 +213,7 @@ class ProcessCase(unittest.TestCase):
                             temp, Path(temp) / "a", 5)
 
     def test_claude_in_band_error(self):
-        with tempfile.TemporaryDirectory() as temp, patch("boardroom.providers.run_process",
+        with tempfile.TemporaryDirectory() as temp, patch("capo.providers.run_process",
                 return_value='{"is_error":true,"result":"quota"}'):
             with self.assertRaises(WorkerError):
                 Providers().call("claude", "test", PLAN, Path(temp), Path(temp) / "a")

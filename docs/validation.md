@@ -21,7 +21,7 @@ Grok reported that the runtime-socket deny path `/var/run/docker.sock` is a syml
 
 ## Live development objective
 
-A temporary Git repository contained a faulty `add(a, b)` function that subtracted its arguments. Boardroom ran with explicit `--workers codex --reviewer claude` configuration:
+A temporary Git repository contained a faulty `add(a, b)` function that subtracted its arguments. Capo ran with explicit `--workers codex --reviewer claude` configuration:
 
 1. Claude produced a plan.
 2. Codex proposed the corrected file.

@@ -6,13 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from boardroom.cli import add_objective
-from boardroom.github import (GitHub, github_environment, payload_digest, prepare, publish,
+from capo.cli import add_objective
+from capo.github import (GitHub, github_environment, payload_digest, prepare, publish,
                              remote_repository, repository_name, sync)
-from boardroom.repository import git
-from boardroom.runtime import Runtime
-from boardroom.store import Store
-from test_boardroom import FakeProviders
+from capo.repository import git
+from capo.runtime import Runtime
+from capo.store import Store
+from test_capo import FakeProviders
 
 
 class FakeGitHub:
@@ -169,12 +169,12 @@ class GitHubContractCase(unittest.TestCase):
             self.assertNotIn("GITHUB_TOKEN", github_environment("keyring"))
 
     def test_push_uses_absent_branch_lease(self):
-        payload = {"branch": "boardroom/123", "repository": "owner/project", "commit": "a" * 40}
-        with patch("boardroom.github.git") as command:
+        payload = {"branch": "capo/123", "repository": "owner/project", "commit": "a" * 40}
+        with patch("capo.github.git") as command:
             GitHub().push_new(Path("/tmp"), payload)
             args = command.call_args.args
-            self.assertIn("--force-with-lease=refs/heads/boardroom/123:", args)
-            self.assertIn("a" * 40 + ":refs/heads/boardroom/123", args)
+            self.assertIn("--force-with-lease=refs/heads/capo/123:", args)
+            self.assertIn("a" * 40 + ":refs/heads/capo/123", args)
 
 
 if __name__ == "__main__":

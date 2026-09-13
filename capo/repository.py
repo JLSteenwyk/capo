@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 
-PROTECTED = {".git", ".github", ".claude", ".codex", ".grok", ".boardroom",
+PROTECTED = {".git", ".github", ".claude", ".codex", ".grok", ".capo",
              ".env", ".ssh", ".aws", "node_modules", ".venv", "__pycache__"}
 CONFIG_NAMES = {"agents.md", "claude.md", "grok.md", ".mcp.json"}
 

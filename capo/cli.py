@@ -16,9 +16,11 @@ from .store import Store
 
 
 def parser():
-    root = argparse.ArgumentParser(description="Boardroom — development objectives led by Claude Code")
+    root = argparse.ArgumentParser(description="Capo — development objectives led by Claude Code")
+    root.add_argument("--team-name", default=os.environ.get("CAPO_TEAM_NAME", "SPARKITscience"),
+                      help="Display name for this team (default: SPARKITscience)")
     root.add_argument("--home", type=Path, default=Path(os.environ.get(
-        "BOARDROOM_HOME", str(Path.home() / ".local/share/boardroom"))))
+        "CAPO_HOME", str(Path.home() / ".local/share/capo"))))
     root.add_argument("--github-auth", choices=("default", "keyring"), default="default",
                       help="Use normal gh authentication, or explicitly prefer its saved keyring login")
     commands = root.add_subparsers(dest="command", required=True)
@@ -40,6 +42,14 @@ def parser():
     issue.add_argument("--check", action="append", required=True)
     issue.add_argument("--workers", nargs="+", choices=("codex", "grok"), default=["codex", "grok"])
     issue.add_argument("--reviewer", choices=("auto", "claude", "codex", "grok"), default="auto")
+    improve = commands.add_parser("improve", help="Queue a Capo improvement with frozen regression tests")
+    improve.add_argument("request", nargs="?", default="Identify and implement one small reliability improvement in Capo.")
+    improve.add_argument("--repo", type=Path, default=Path(__file__).resolve().parent.parent)
+    improve.add_argument("--workers", nargs="+", choices=("codex", "grok"), default=["codex", "grok"])
+    improve.add_argument("--reviewer", choices=("auto", "claude", "codex", "grok"), default="auto")
+    improve.add_argument("--max-calls", type=int, default=24)
+    improve.add_argument("--max-rounds", type=int, default=3)
+    improve.add_argument("--timeout", type=int, default=900)
     run = commands.add_parser("run", help="Run one objective in the foreground")
     run.add_argument("id")
     run.add_argument("--retry", action="store_true")
@@ -60,7 +70,7 @@ def parser():
     return root
 
 
-def add_objective(store, args, request, source=None):
+def add_objective(store, args, request, source=None, kind="development"):
     repo = args.repo.expanduser().resolve()
     repo = Path(git(repo, "rev-parse", "--show-toplevel"))
     if git(repo, "status", "--porcelain"):
@@ -73,11 +83,15 @@ def add_objective(store, args, request, source=None):
             raise ValueError(f"{field} must be positive")
     if not request.strip():
         raise ValueError("Objective cannot be empty")
+    team_name = getattr(args, "team_name", "SPARKITscience")
+    if not isinstance(team_name, str) or not team_name.strip() or len(team_name) > 64 or any(ord(c) < 32 for c in team_name):
+        raise ValueError("Team name must be 1–64 characters without control characters")
     if source:
         for existing in store.list():
             if existing.get("source") == source and existing["repo"] == str(repo):
                 return existing
-    data = store.create({"request": request, "source": source, "repo": str(repo),
+    data = store.create({"request": request, "source": source, "repo": str(repo), "kind": kind,
+                         "team_name": team_name,
                          "base": git(repo, "rev-parse", "HEAD"), "checks": checks,
                          "max_calls": getattr(args, "max_calls", 24),
                          "max_rounds": getattr(args, "max_rounds", 3),
@@ -138,6 +152,9 @@ def main(argv=None):
         store = Store(args.home)
         if args.command == "add":
             result = add_objective(store, args, args.request)
+        elif args.command == "improve":
+            from .improvement import add_improvement
+            result = add_improvement(store, args)
         elif args.command == "issue":
             issue = GitHub(args.github_auth).issue(args.github, args.number)
             result = add_objective(store, args, f"{issue['title']}\n\n{issue['body']}", issue["url"])
@@ -164,5 +181,5 @@ def main(argv=None):
         print("Cancelled; state and artifacts retained.", file=sys.stderr)
         return 130
     except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as exc:
-        print(f"boardroom: {exc}", file=sys.stderr)
+        print(f"capo: {exc}", file=sys.stderr)
         return 1

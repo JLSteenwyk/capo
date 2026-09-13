@@ -1,6 +1,6 @@
 # Dedicated computer and computer use
 
-The planned deployment includes a computer owned by the agent organization. Design local operation so it can move there without changing the objective, task, or provider contracts. The current runtime supports macOS and Linux; state lives in a configurable `BOARDROOM_HOME` directory. Provider CLIs authenticate on the destination computer separately.
+The planned deployment includes a computer owned by the agent organization. Design local operation so it can move there without changing the objective, task, or provider contracts. The current runtime supports macOS and Linux; state lives in a configurable `CAPO_HOME` directory. Provider CLIs authenticate on the destination computer separately.
 
 ## Separate host and capability
 
