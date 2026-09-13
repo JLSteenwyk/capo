@@ -4,9 +4,9 @@ Current audit: September 13, 2026. Historical entries below retain their origina
 
 ## Current release evidence
 
-The required local suite passes 158 tests. [Capo mainline CI](https://github.com/JLSteenwyk/capo/actions/runs/34763624842) passed on Python 3.11 and 3.14. Routine draft delivery now has automated coverage for policy opt-in, accepted-tree verification, independent acceptance, new-function escalation, failed delivery, repeat prevention, and completion-message ordering.
+The required local suite passes 167 tests. [Capo mainline CI](https://github.com/JLSteenwyk/capo/actions/runs/34763624842) passed on Python 3.11 and 3.14. Routine draft delivery now has automated coverage for policy opt-in, accepted-tree verification, independent acceptance, new-function escalation, failed delivery, repeat prevention, and completion-message ordering.
 
-The owner submitted PhyKIT issue #110 through live Slack. A bounded continuation passed its 326 targeted tests, Grok review, and Claude acceptance. With the owner's routine-publication policy enabled, the Slack service automatically published [PhyKIT draft PR #111](https://github.com/JLSteenwyk/PhyKIT/pull/111) and delivered its completion message to the original thread. Capo synchronized all seven successful PR checks: Python 3.10–3.13 tests, Linux and Windows wheel smoke tests, and documentation. The remote head matches the accepted commit; the PR remains unmerged.
+The owner submitted PhyKIT issue #110 through live Slack. A bounded continuation passed its 326 targeted tests, Grok review, and Claude acceptance. With the owner's routine-publication policy enabled, the Slack service automatically published [PhyKIT draft PR #111](https://github.com/JLSteenwyk/PhyKIT/pull/111) and delivered its completion message to the original thread. Capo synchronized all seven successful PR checks: Python 3.10–3.13 tests, Linux and Windows wheel smoke tests, and documentation. The remote head matches the accepted commit; the owner subsequently merged the PR. Capo did not perform the merge.
 
 The earlier Capo self-improvement remains a separate [draft PR #2](https://github.com/JLSteenwyk/capo/pull/2). A fresh audit found its frozen baseline intact, accepted tree unchanged, both recorded suites passing, Grok approval, and Claude acceptance after two rounds. Its exact head, `9170f824c53876e2ec15f967d5f69d3031f745b3`, passed the manually dispatched [Python 3.11/3.14 CI run](https://github.com/JLSteenwyk/capo/actions/runs/34764290111). Each job verified the checked-out SHA. This is candidate-specific CI evidence, not an attached PR status check; the older PR predates the workflow.
 
@@ -14,6 +14,12 @@ Live Slack status now returned a threaded reply to the owner. A documentation cl
 
 That live cancellation exposed a macOS `PermissionError` during the watchdog's process-group probe. Cleanup now attempts kill and reap even after a denied probe, bounds its wait, and returns an explicit failure when group cleanup cannot be confirmed. The caller distinguishes that failure from confirmed cancellation. Five regression tests cover denied probes, denied signals, cancellation with uncertain cleanup, and confirmation after the group disappears or its final child is reaped. Routine delivery is verified under the owner's newer standing authorization; the separate manual approval interface remains covered by automated tests.
 
+
+A controlled idle Slack service restart preserved all objective states, call counts, and notification checkpoints. An immediate overlapping start was refused by the service lock. After the old process was confirmed absent, the replacement started successfully. This verifies restart preservation on the real installation; synthetic tests separately cover active-run and message-delivery fault paths.
+
+The final recovery audit found that cleanup uncertainty could previously become an ordinary failed check or be bypassed by retrying after the watchdog exited. Startup now records and fsyncs both supervisor and worker identities before allowing execution. A dedicated cleanup-uncertainty error aborts verification, and retry/recovery probes the recorded worker group without signaling recovered IDs. Other objectives cannot bypass an unconfirmed current-format attempt. Regression tests cover these cases, interrupted legacy attempts, and reuse of attempt directories without trusting stale receipts.
+
+The owner later requested a preview of the already-merged PhyKIT PR using a bold-formatted Slack command. This exposed command normalization and stale publication-state handling. The adapter now recognizes the enclosing formatting directly and checks current GitHub state before preview or approval. Merged or closed PRs receive an informational reply without preparation or publication. Automated tests verify that neither write path is invoked.
 
 ## Historical automated checks
 

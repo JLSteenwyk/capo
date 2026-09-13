@@ -11,6 +11,7 @@ from unittest.mock import patch
 from capo.cli import add_objective, recover
 from capo.contracts import PLAN, validate
 from capo.providers import Providers, WorkerError, run_process
+from capo.process import CleanupUncertain
 from capo.repository import apply_changes, git, safe_path, snapshot
 from capo.runtime import Runtime, exclusive
 from capo.store import Store
@@ -149,8 +150,49 @@ class RepositoryCase(unittest.TestCase):
         directory = self.store.home / "artifacts" / objective["id"] / "001"
         directory.mkdir(parents=True)
         (directory / "process.json").write_text(json.dumps({"pid": os.getpid()}))
-        with self.assertRaisesRegex(ValueError, "may still be active"):
+        with self.assertRaisesRegex(CleanupUncertain, "may still be active"):
             recover(self.store, objective["id"])
+
+    def test_cleanup_uncertainty_aborts_checks_without_revision(self):
+        from capo.process import CleanupUncertain
+        objective = self.objective()
+        objective["checks"].append([sys.executable, "-c", "print('second')"])
+        self.store.save(objective, "configured")
+        fake = FakeProviders()
+        with patch("capo.runtime.run_process", side_effect=CleanupUncertain("Worker cleanup could not be confirmed")) as check:
+            with self.assertRaises(CleanupUncertain):
+                Runtime(self.store, fake).run(objective["id"])
+        self.assertEqual(check.call_count, 1)
+        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(self.store.get(objective["id"])["status"], "blocked")
+
+    def test_uncertain_group_blocks_retry_recovery_and_other_objective(self):
+        from capo.process import CleanupUncertain
+        objective = self.objective()
+        objective["status"] = "blocked"
+        self.store.save(objective, "uncertain_cleanup")
+        directory = self.store.home / "artifacts" / objective["id"] / "001"
+        directory.mkdir(parents=True)
+        (directory / "process.json").write_text(json.dumps({"pid": 12340, "supervision": "watchdog-v2"}))
+        (directory / "worker.json").write_text(json.dumps({"pgid": 12341, "cleanup_confirmed": False}))
+        (directory / "exit.json").write_text(json.dumps({"returncode": 126}))
+        other = self.objective()
+        fake = FakeProviders()
+        with patch("capo.process.os.killpg", side_effect=PermissionError()):
+            with self.assertRaises(CleanupUncertain):
+                Runtime(self.store, fake).run(objective["id"], retry=True)
+            with self.assertRaises(CleanupUncertain):
+                Runtime(self.store, fake).run(other["id"])
+            objective["status"] = "running"
+            self.store.save(objective, "interrupted")
+            with self.assertRaises(CleanupUncertain):
+                recover(self.store, objective["id"])
+        self.assertEqual(fake.calls, [])
+        blocked = self.store.get(other["id"])
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertIn("cleanup could not be confirmed", blocked["error"])
+        with patch("capo.process.os.killpg", side_effect=ProcessLookupError()):
+            self.assertEqual(recover(self.store, objective["id"])["status"], "blocked")
 
     def test_second_supervisor_refused(self):
         with exclusive(self.store.home):

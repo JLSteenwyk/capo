@@ -92,7 +92,7 @@ class WatchdogCleanupCase(unittest.TestCase):
         from unittest.mock import Mock, patch
         from capo.watchdog import cleanup
         worker = Mock(pid=12345)
-        with patch('capo.watchdog.os.killpg', side_effect=[None, PermissionError(), ProcessLookupError()]), \
+        with patch('capo.watchdog.os.killpg', side_effect=[None, PermissionError(), ProcessLookupError(), ProcessLookupError()]), \
                 patch('capo.watchdog.os.close'):
             self.assertTrue(cleanup(worker, 99))
         worker.wait.assert_called_once_with(timeout=2)
@@ -105,3 +105,72 @@ class WatchdogCleanupCase(unittest.TestCase):
                 patch('capo.watchdog.os.close'):
             self.assertTrue(cleanup(worker, 99))
         worker.wait.assert_called_once_with(timeout=2)
+
+
+class ReconciliationCase(unittest.TestCase):
+    def test_dead_watchdog_does_not_prove_worker_group_gone(self):
+        import json
+        from unittest.mock import patch
+        from capo.process import CleanupUncertain, reconcile_local
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "process.json").write_text(json.dumps({"pid": 12340, "supervision": "watchdog-v2"}))
+            (root / "worker.json").write_text(json.dumps({"pgid": 12341, "cleanup_confirmed": False}))
+            (root / "exit.json").write_text(json.dumps({"returncode": 126}))
+            with patch('capo.process.os.kill', side_effect=ProcessLookupError()), \
+                    patch('capo.process.os.killpg', side_effect=PermissionError()):
+                with self.assertRaises(CleanupUncertain):
+                    reconcile_local(root)
+            with patch('capo.process.os.killpg', side_effect=ProcessLookupError()) as probe:
+                reconcile_local(root)
+                probe.assert_called_once_with(12341, 0)
+
+    def test_missing_legacy_identity_remains_quarantined(self):
+        import json
+        from unittest.mock import patch
+        from capo.process import CleanupUncertain, reconcile_local
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "process.json").write_text(json.dumps({"pid": 12340, "command": "synthetic-worker"}))
+            with patch('capo.process.os.kill', side_effect=ProcessLookupError()):
+                with self.assertRaises(CleanupUncertain):
+                    reconcile_local(root)
+            (root / "exit.json").write_text(json.dumps({"returncode": 126}))
+            with self.assertRaises(CleanupUncertain):
+                reconcile_local(root)
+
+    def test_worker_observes_its_receipt_before_executing(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "attempt" / "worker.json"
+            script = ("import json,os; from pathlib import Path; "
+                      f"r=json.loads(Path({str(receipt)!r}).read_text()); "
+                      "assert r['pgid']==os.getpgrp(); assert not r['cleanup_confirmed']; print('recorded')")
+            self.assertEqual(run_process([sys.executable, '-c', script], root, receipt.parent, 10), 'recorded\n')
+            self.assertTrue(json.loads(receipt.read_text())['cleanup_confirmed'])
+
+    def test_reused_attempt_directory_cannot_reuse_success_receipt(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            attempt = root / "attempt"
+            receipt = attempt / "worker.json"
+            run_process([sys.executable, '-c', 'print("first")'], root, attempt, 10)
+            old = json.loads(receipt.read_text())
+            script = ("import json,os; from pathlib import Path; "
+                      f"r=json.loads(Path({str(receipt)!r}).read_text()); "
+                      "assert r['pgid']==os.getpgrp(); assert not r['cleanup_confirmed']; print('second')")
+            self.assertEqual(run_process([sys.executable, '-c', script], root, attempt, 10), 'second\n')
+            self.assertNotEqual(old['pgid'], json.loads(receipt.read_text())['pgid'])
+
+    def test_timeout_retains_confirmed_group_cleanup(self):
+        import json
+        from capo.process import WorkerError, reconcile_local
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises((subprocess.TimeoutExpired, WorkerError)):
+                run_process([sys.executable, '-c', 'import time; time.sleep(60)'], root, root / 'attempt', .2)
+            worker = json.loads((root / 'attempt' / 'worker.json').read_text())
+            self.assertTrue(worker['cleanup_confirmed'])
+            reconcile_local(root / 'attempt')

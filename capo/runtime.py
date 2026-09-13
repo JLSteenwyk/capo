@@ -13,6 +13,7 @@ from .communication import STYLE
 from .contracts import DECISION, IMPLEMENTATION, PLAN, REVIEW, validate
 from .improvement import verify_baseline, verify_governance_changes
 from .providers import Providers, run_process
+from .process import CleanupUncertain, reconcile_local
 from .repository import apply_changes, changed_diff, create_workspace, git, snapshot
 
 
@@ -105,6 +106,8 @@ class Runtime:
                 run_process(command, objective["workspace"], directory / str(i),
                             objective["timeout"])
                 passed, error = True, None
+            except CleanupUncertain:
+                raise
             except (RuntimeError, OSError, TimeoutError) as exc:
                 passed, error = False, str(exc)
             except subprocess.TimeoutExpired:
@@ -134,14 +137,21 @@ class Runtime:
                 raise ValueError("Inspect the failure, then use run --retry to continue")
             from .transport import reconcile
             attempt_root = self.store.home / "artifacts" / objective_id
-            for record in attempt_root.rglob("process.json"):
-                if not record.with_name("exit.json").exists():
-                    pid = json.loads(record.read_text())["pid"]
-                    try:
-                        os.kill(pid, 0)
-                    except ProcessLookupError:
-                        continue
-                    raise ValueError(f"Process {pid} may still be active; inspect it before retry")
+            # A different objective must not bypass an earlier uncertain local
+            # worker. The supervisor lock makes these probes race-free with
+            # other objective runners in this state directory.
+            try:
+                for record in (self.store.home / "artifacts").rglob("process.json"):
+                    receipt = record.with_name("exit.json")
+                    if (record.is_relative_to(attempt_root)
+                            or json.loads(record.read_text()).get("supervision") == "watchdog-v2"
+                            or (receipt.exists() and json.loads(receipt.read_text()).get("returncode") == 126)):
+                        reconcile_local(record.parent)
+            except CleanupUncertain as exc:
+                if objective["status"] != "completed":
+                    objective.update(status="blocked", error=str(exc))
+                    self.store.save(objective, "cleanup_reconciliation_blocked")
+                raise
             for record in attempt_root.rglob("remote.json"):
                 receipt = record.with_name("remote-exit.json")
                 if not receipt.exists():

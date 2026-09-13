@@ -61,6 +61,10 @@ HELP = ("Mention Capo with a request, such as ‘Can you check PhyKIT for open i
 def blocked_reason(objective):
     """Explain known blockers without exposing raw logs, paths, or provider output."""
     error = objective.get("error", "")
+    if error.startswith(("Worker cleanup could not be confirmed", "Worker startup or cleanup remains active",
+                         "Worker supervisor termination could not be confirmed", "Legacy worker cleanup is unconfirmed",
+                         "Interrupted legacy worker has no cleanup receipt")):
+        return "I can't confirm that the previous worker stopped, so I've paused new work. The saved run needs a process check before I can continue."
     if error == "Implementation and explicit reviewer must use different providers":
         return "The plan assigned the same provider to implementation and independent review. The plan needs correction; existing work is preserved."
     if error == "No implementation worker remains after reserving the explicit reviewer":
@@ -323,7 +327,12 @@ class SlackService:
         if not authorized(self.config, body):
             raise ValueError("Unauthorized Slack request")
         event = body["event"]
-        text = re.sub(r"^\s*<@[A-Z0-9]+>[\s,:]*", "", event["text"]).strip()
+        incoming = event["text"].strip()
+        # Slack may preserve bold around a copied mention-and-command. Remove
+        # only that enclosing formatting, leaving the objective itself intact.
+        if incoming.startswith("*<@") and incoming.endswith("*"):
+            incoming = incoming[1:-1]
+        text = re.sub(r"^\s*<@[A-Z0-9]+>[\s,:]*", "", incoming).strip()
         if text.lower() == "help":
             return HELP
         match = re.fullmatch(r"(prepare|approve|sync)\s+([a-f0-9]{16})(?:\s+([a-f0-9]{64}))?", text)
@@ -335,6 +344,12 @@ class SlackService:
             settings = self.settings(objective)
             if not settings.get("allow_publication", False):
                 raise ValueError("Slack publication is not enabled for this repository alias")
+            if (command in ("prepare", "approve")
+                    and objective.get("publication", {}).get("status") == "published"):
+                remote = sync(self.store, identifier, GitHub(settings.get("github_auth", "default")))
+                if remote.get("state") in ("MERGED", "CLOSED"):
+                    state = "merged" if remote["state"] == "MERGED" else "closed"
+                    return f"This pull request has already been {state}: {remote['url']}. No further publication approval is needed."
             if command == "prepare":
                 if digest:
                     raise ValueError("prepare does not accept a digest")

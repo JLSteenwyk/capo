@@ -156,18 +156,9 @@ def recover(store, objective_id):
             if not record.with_name("remote-exit.json").exists():
                 status = reconcile(record)
                 record.with_name("remote-exit.json").write_text(json.dumps(status))
+        from .process import reconcile_local
         for record in (store.home / "artifacts" / objective_id).rglob("process.json"):
-            if record.with_name("exit.json").exists():
-                continue
-            pid = json.loads(record.read_text())["pid"]
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                try:
-                    os.killpg(pid, 0)
-                except ProcessLookupError:
-                    continue
-            raise ValueError(f"Process {pid} may still be active; inspect it before recovery")
+            reconcile_local(record.parent)
         data["status"] = "blocked"
         data["error"] = "Recovered interrupted run; inspect workspace and use run --retry"
         store.save(data, "recovered")

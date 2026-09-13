@@ -84,6 +84,28 @@ class SlackCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_config(self.config)
 
+    def test_bold_copied_command_uses_direct_parser(self):
+        body = self.body("help")
+        body["event"]["text"] = "*<@UBOT> help*"
+        self.assertIn("Mention Capo", self.service.dispatch("EvBold", body))
+        self.router.poll.assert_not_called()
+
+    def test_merged_pr_needs_no_new_preview_or_approval(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective.update(status="completed", publication={"status": "published"})
+        self.store.save(objective, "fixture")
+        self.config["repositories"]["project"]["allow_publication"] = True
+        for command in ("prepare", "approve"):
+            body = self.body(f"{command} {objective['id']}")
+            with patch("capo.github.sync", return_value={"state": "MERGED", "url": "https://github.com/owner/project/pull/1"}), \
+                    patch("capo.github.prepare") as prepare, patch("capo.github.publish") as publish:
+                result = self.service.dispatch("EvMerged", body)
+            self.assertIn("already been merged", result)
+            self.assertIsNone(self.service.pending_review)
+            prepare.assert_not_called()
+            publish.assert_not_called()
+
     def test_only_owner_in_configured_workspace_and_channel_is_authorized(self):
         self.assertTrue(authorized(self.config, self.body()))
         for key, value in (("user", "UOTHER"), ("channel", "COTHER"), ("bot_id", "B123"),
