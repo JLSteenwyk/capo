@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+calendar = ["google-auth>=2.40,<3", "google-auth-oauthlib>=1.2,<2", "requests>=2.32,<3"]
 slack = ["slack-bolt>=1.23,<2"]
 browser = ["playwright>=1.62,<2"]
 

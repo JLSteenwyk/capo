@@ -136,6 +136,14 @@ def validate_config(config):
     repos = config.get("repositories")
     if not isinstance(repos, dict) or not repos:
         raise ValueError("Configure at least one named repository")
+    calendar_settings = config.get("calendar", {})
+    if not isinstance(calendar_settings, dict) or type(calendar_settings.get("enabled", False)) is not bool:
+        raise ValueError("calendar.enabled must be true or false")
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    try:
+        ZoneInfo(calendar_settings.get("timezone", "America/Los_Angeles"))
+    except (TypeError, ValueError, ZoneInfoNotFoundError):
+        raise ValueError("calendar.timezone must be a valid IANA timezone") from None
     browser_settings = config.get("browser", {})
     if not isinstance(browser_settings, dict) or type(browser_settings.get("enabled", False)) is not bool:
         raise ValueError("browser.enabled must be true or false")
@@ -355,6 +363,17 @@ class SlackService:
         action, alias, identifier = route["action"], route["repository"], route["objective_id"]
         if action == "reply":
             return route["reply"] or "What would you like me to do, and for which repository?"
+        if action == "calendar":
+            from .calendar import CalendarConversation
+            if not self.config.get("calendar", {}).get("enabled", False):
+                return "Google Calendar is not connected yet. Run capo calendar-auth first."
+            if not hasattr(self, "calendar_conversation"):
+                self.calendar_conversation = CalendarConversation(self.store.home)
+            return self.calendar_conversation.poll(event_id, {
+                "aliases": [], "objectives": [], "message": text,
+                "recent_messages": list(reversed(recent)),
+                "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles")
+            })["reply"]
         if action == "browser":
             from .browser_slack import start
             return start(self, event_id, event, "\n".join(row["user"] for row in reversed(recent)) + "\n" + text)

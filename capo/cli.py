@@ -75,6 +75,9 @@ def parser():
     slack.add_argument("--config", type=Path, required=True)
     slack_setup = commands.add_parser("slack-setup", help="Resolve configured Slack workspace and channel names")
     slack_setup.add_argument("--config", type=Path, required=True)
+    calendar_auth = commands.add_parser("calendar-auth", help="Connect a private Google Calendar account")
+    calendar_auth.add_argument("--client-secrets", type=Path, required=True)
+    commands.add_parser("calendar-check", help="Check Google Calendar access without changing events")
     browser = commands.add_parser("browser", help="Start a private browser task")
     browser.add_argument("request")
     browser.add_argument("--url", required=True)
@@ -180,6 +183,24 @@ def main(argv=None):
     args = parser().parse_args(argv)
     store = None
     try:
+        if args.command == "calendar-auth":
+            from .calendar import authorize
+            try:
+                authorize(args.client_secrets.expanduser())
+            except Exception:
+                raise RuntimeError("Calendar sign-in failed. Check the private client file and Google OAuth setup.") from None
+            print("Google Calendar connected. You can now enable calendar support in your private Slack config.")
+            return 0
+        if args.command == "calendar-check":
+            from .calendar import GoogleCalendar
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(timezone.utc)
+            try:
+                GoogleCalendar().events(now.isoformat(), (now + timedelta(days=1)).isoformat())
+            except Exception:
+                raise RuntimeError("Calendar access failed. Check the connection with calendar-auth.") from None
+            print("Google Calendar access works. No events were changed.")
+            return 0
         if args.command == "doctor":
             return doctor(args.providers_config)
         if args.command == "slack":

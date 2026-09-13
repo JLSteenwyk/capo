@@ -54,6 +54,23 @@ class SlackCase(unittest.TestCase):
             "type": "app_mention", "channel": "C123", "user": "U123",
             "text": "<@UBOT> " + text, "ts": "123.456"}}
 
+    def test_calendar_routing_requires_owner_and_enabled_connection(self):
+        self.router.poll.side_effect = None
+        self.router.poll.return_value = {"action": "calendar", "repository": "", "objective_id": "", "reply": ""}
+        body = self.body("What is on my calendar tomorrow?")
+        with patch("capo.calendar.CalendarConversation") as calendar:
+            self.assertIn("not connected", self.service.dispatch("Cal1", body))
+            calendar.assert_not_called()
+            self.config["calendar"] = {"enabled": True, "timezone": "America/Los_Angeles"}
+            calendar.return_value.poll.return_value = {"reply": "Your calendar is clear."}
+            self.assertEqual(self.service.dispatch("Cal2", body), "Your calendar is clear.")
+            context = calendar.return_value.poll.call_args.args[1]
+            self.assertEqual(context["message"], "What is on my calendar tomorrow?")
+            body["event"]["user"] = "UOTHER"
+            with self.assertRaisesRegex(ValueError, "Unauthorized"):
+                self.service.dispatch("Cal3", body)
+            calendar.return_value.poll.assert_called_once()
+
     def test_browser_approval_requires_delivered_step_in_same_thread(self):
         from capo import browser, browser_slack
         from capo.conversation import _write

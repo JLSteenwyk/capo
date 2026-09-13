@@ -140,3 +140,9 @@ This extension supports guided browser interactions, not a verified end-to-end m
 The adapter now accepts ordinary owner messages only inside a previously recorded Capo thread. New top-level conversations still require an app mention. Tests cover first-mention conversation registration before objective creation, ordinary thread approval, unknown threads, other users, edits, and duplicate delivery through both Slack event subscriptions.
 
 Existing installations must add `message.channels` and `channels:history` for public channels, or the corresponding private-channel event and scope. The inspected installation did not yet have its public history scope at implementation time; live untagged-message verification remains pending that Slack app update. The existing browser task was left running rather than interrupted to reload the service.
+
+## Google Calendar extension
+
+The optional Google Calendar adapter passed the full 202-test suite. New tests cover owner-only Slack routing, disabled connections, schedule reads without writes, missing-detail questions, exact event selection, conditional edits/deletions, guest and recurrence restrictions, timezone validation, private receipts, interrupted operations, and refusal to replay uncertain writes. The installed OAuth library supports the loopback sign-in timeout and the HTTP client supports bounded request timeouts.
+
+No Google account is connected yet. Read access and real event creation, editing, and deletion remain unverified until private OAuth setup is complete. Calendar support remains disabled in the live Slack configuration. See [calendar setup](calendar.md).

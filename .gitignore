@@ -31,3 +31,8 @@ build/
 /artifacts/
 /baselines/
 /workspaces/
+
+# Downloaded Google OAuth credentials
+/google-calendar-client.json
+/google-calendar-token.json
+/client_secret_*.json
