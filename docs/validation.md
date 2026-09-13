@@ -134,3 +134,9 @@ The optional Chromium worker was tested on the local Mac with its sandbox enable
 A real Chromium simulation displayed a fictional checkout. Exact quote approval allowed one click to its confirmation page, a replay against the changed page was refused, and a password input value was absent from the model observation. This was a simulated purchase; no real tickets or payment were submitted. The full suite passed 186 tests, including origin restrictions, quote/price evidence, expired approval, sensitive fills, changed-page refusal, durable cancellation, and Slack delivery-before-approval in the correct thread.
 
 This extension supports guided browser interactions, not a verified end-to-end merchant purchase. Each interaction needs owner approval. Site-specific seat maps, checkout frames, general-admission formats, credentials, or CAPTCHA can still require human help. The preferred city and permitted theater/checkout origins are private local configuration. See [browser operation](browser.md).
+
+## Untagged replies in existing Slack threads
+
+The adapter now accepts ordinary owner messages only inside a previously recorded Capo thread. New top-level conversations still require an app mention. Tests cover first-mention conversation registration before objective creation, ordinary thread approval, unknown threads, other users, edits, and duplicate delivery through both Slack event subscriptions.
+
+Existing installations must add `message.channels` and `channels:history` for public channels, or the corresponding private-channel event and scope. The inspected installation did not yet have its public history scope at implementation time; live untagged-message verification remains pending that Slack app update. The existing browser task was left running rather than interrupted to reload the service.

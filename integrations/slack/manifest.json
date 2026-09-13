@@ -15,14 +15,18 @@
         "app_mentions:read",
         "chat:write",
         "channels:read",
-        "groups:read"
+        "groups:read",
+        "channels:history",
+        "groups:history"
       ]
     }
   },
   "settings": {
     "event_subscriptions": {
       "bot_events": [
-        "app_mention"
+        "app_mention",
+        "message.channels",
+        "message.groups"
       ]
     },
     "socket_mode_enabled": true

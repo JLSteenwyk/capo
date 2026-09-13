@@ -121,7 +121,7 @@ def tick(service):
         digest = ''
         if state['status'] == 'awaiting_approval':
             digest = state['pending']['digest']
-            text += '\n' + state['pending']['effect'] + '\nReply @Capo approve to allow this step, or @Capo cancel to stop.'
+            text += '\n' + state['pending']['effect'] + '\nReply approve to allow this step, or cancel to stop.'
         checkpoint = hashlib.sha256((state['status'] + text + digest).encode()).hexdigest()
         notice = directory / 'notice.json'
         if notice.exists() and json.loads(notice.read_text()).get('checkpoint') == checkpoint:

@@ -181,24 +181,63 @@ def validate_config(config):
     return config
 
 
-def authorized(config, body):
+def owner_message(config, body):
     event = body.get("event", {})
     return (body.get("team_id") == config["team_id"]
             and event.get("channel") == config["channel_id"]
             and event.get("user") == config["owner_user_id"]
-            and event.get("type") == "app_mention"
             and not event.get("bot_id") and not event.get("subtype"))
 
 
-def ingest(home, config, body):
-    if not authorized(config, body) or not body.get("event_id"):
+def known_thread(store, config, thread):
+    for objective in store.list():
+        identity = objective.get("slack", {})
+        if (identity.get("thread_ts", identity.get("ts")) == thread
+                and all(identity.get(k) == config[k] for k in ("team_id", "channel_id", "owner_user_id"))):
+            return True
+    # A mention can begin a conversation before there is a development/browser
+    # objective (for example, while asking which movie the owner wants).
+    for row in store.db.execute("SELECT data FROM slack_inbox"):
+        prior = json.loads(row[0])
+        event = prior.get("event", {})
+        if (owner_message(config, prior) and event.get("type") == "app_mention"
+                and event.get("thread_ts", event.get("ts")) == thread):
+            return True
+    return False
+
+
+def authorized(config, body, store=None):
+    if not owner_message(config, body):
         return False
-    event = body["event"]
-    if not isinstance(event.get("text"), str) or len(event["text"]) > 8000 or not event.get("ts"):
+    event = body.get("event", {})
+    if event.get("type") == "app_mention":
+        return True
+    return (event.get("type") == "message" and bool(event.get("thread_ts"))
+            and event["thread_ts"] != event.get("ts") and store is not None
+            and known_thread(store, config, event["thread_ts"]))
+
+
+def ingest(home, config, body):
+    event = body.get("event", {})
+    if (not owner_message(config, body) or not body.get("event_id")
+            or not isinstance(event.get("text"), str) or len(event["text"]) > 8000
+            or not event.get("ts")):
         return False
     store = Store(home)
     try:
-        store.enqueue_slack(body["event_id"], body)
+        with store.db:
+            store.db.execute("BEGIN IMMEDIATE")
+            if not authorized(config, body, store):
+                return False
+            # Slack may deliver a mentioned reply through both subscriptions.
+            # Keep the original event identity; suppress only its other event type.
+            for row in store.db.execute("SELECT data FROM slack_inbox"):
+                prior = json.loads(row[0]); previous = prior.get("event", {})
+                if (prior.get("team_id") == body.get("team_id")
+                        and all(previous.get(k) == event.get(k) for k in ("channel", "user", "ts", "text"))
+                        and previous.get("type") != event.get("type")):
+                    return False
+            store.enqueue_slack(body["event_id"], body)
     finally:
         store.db.close()
     return True
@@ -274,7 +313,7 @@ class SlackService:
         for row in rows:
             original, delivery = json.loads(row[0]), json.loads(row[1])
             prior = original.get("event", {})
-            if (authorized(self.config, original)
+            if (authorized(self.config, original, self.store)
                     and prior.get("thread_ts", prior.get("ts")) == thread
                     and delivery.get("review") == [objective["id"], digest]
                     and float(prior["ts"]) <= float(event["ts"])):
@@ -293,7 +332,7 @@ class SlackService:
         recent = []
         for row in self.store.db.execute("SELECT id,data FROM slack_inbox ORDER BY rowid DESC LIMIT 100"):
             prior = json.loads(row["data"])
-            if row["id"] == event_id or not authorized(self.config, prior):
+            if row["id"] == event_id or not authorized(self.config, prior, self.store):
                 continue
             prior_event = prior["event"]
             if prior_event.get("thread_ts", prior_event["ts"]) != thread:
@@ -360,7 +399,7 @@ class SlackService:
         from .improvement import add_improvement
 
         self.pending_review = None
-        if not authorized(self.config, body):
+        if not authorized(self.config, body, self.store):
             raise ValueError("Unauthorized Slack request")
         event = body["event"]
         incoming = event["text"].strip()
@@ -423,8 +462,8 @@ class SlackService:
                 return (f"Ready for review: {title}\n"
                     f"Target: {payload['repository']} → {payload['base_branch']}.\n"
                     f"{action}\n\n"
-                    f"See the full change: @Capo details {identifier}\n"
-                    f"To approve, reply here: @Capo approve {identifier}")
+                    f"See the full change: details {identifier}\n"
+                    f"To approve, reply here: approve {identifier}")
             if command == "approve":
                 if not digest:
                     digest = self.thread_approval_digest(objective, event)
@@ -590,7 +629,7 @@ class SlackService:
                     continue
                 text = completed_message(objective)
             elif objective["status"] == "awaiting_input":
-                text = f"{objective['question']} Reply here and mention me."
+                text = f"{objective['question']} Reply here."
             elif objective["status"] == "blocked":
                 text = blocked_reason(objective)
             else:
@@ -637,7 +676,7 @@ class SlackService:
 
         for event_id, body in self.store.pending_slack():
             # Recheck policy after restart or configuration changes.
-            if not authorized(self.config, body):
+            if not authorized(self.config, body, self.store):
                 self.store.finish_slack(event_id)
                 continue
             row = self.store.db.execute("SELECT data,next_chunk FROM slack_deliveries WHERE event_id=?",
@@ -765,6 +804,7 @@ def serve(home, config_path):
         identity = app.client.auth_test()
         if identity["team_id"] != config["team_id"]:
             raise ValueError("Slack token belongs to a different workspace")
+        @app.event("message")
         @app.event("app_mention")
         def mention(body):
             ingest(store.home, config, body)

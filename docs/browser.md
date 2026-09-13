@@ -30,7 +30,7 @@ These entries supplement the existing owner, channel, and repository settings. A
 
 Ask naturally, or use `@Capo browse: your request`. Capo asks when booking details are missing. In the same thread:
 
-- Answer its question in plain language with an @mention.
+- Answer its question in plain language; an @mention is optional in the existing thread.
 - Use `@Capo approve` to allow the displayed browser step.
 - Use `@Capo status` for progress.
 - Use `@Capo cancel` to stop.

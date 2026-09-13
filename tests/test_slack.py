@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from capo.repository import git
-from capo.slack import SlackService, authorized, configure, ingest, validate_config
+from capo.slack import SlackService, authorized, configure, ingest, validate_config, HELP
 from capo.store import Store
 
 
@@ -75,6 +75,32 @@ class SlackCase(unittest.TestCase):
         self.assertFalse((directory/'approval.json').exists())
         self.assertIn('Approved', self.service.dispatch('EvApproveBrowser', self.body('approve')))
         self.assertEqual(json.loads((directory/'approval.json').read_text())['digest'], 'abc')
+
+    def test_plain_thread_replies_require_a_known_owner_conversation(self):
+        reply = self.body('help', 'EvPlain')
+        reply['event'].update(type='message', text='help', ts='124.0', thread_ts='123.456')
+        self.assertFalse(ingest(self.store.home, self.config, reply))
+        self.assertTrue(ingest(self.store.home, self.config, self.body('help', 'EvStart')))
+        self.assertTrue(ingest(self.store.home, self.config, reply))
+        self.assertEqual(self.service.dispatch('EvPlain', reply), HELP)
+        stranger = self.body('help', 'EvStranger')
+        stranger['event'].update(type='message', text='help', ts='125.0', thread_ts='123.456', user='UOTHER')
+        self.assertFalse(ingest(self.store.home, self.config, stranger))
+        top = self.body('help', 'EvTop')
+        top['event'].update(type='message', text='help')
+        self.assertFalse(ingest(self.store.home, self.config, top))
+        changed = dict(reply, event=dict(reply['event'], subtype='message_changed'))
+        self.assertFalse(ingest(self.store.home, self.config, changed))
+
+    def test_duplicate_thread_mentions_are_processed_once(self):
+        ingest(self.store.home, self.config, self.body('help', 'EvStart'))
+        mention = self.body('help', 'EvMentionReply')
+        mention['event'].update(ts='125.0', thread_ts='123.456')
+        message = dict(mention, event_id='EvMessageReply', event=dict(mention['event'], type='message'))
+        self.assertTrue(ingest(self.store.home, self.config, message))
+        self.assertFalse(ingest(self.store.home, self.config, mention))
+        count = self.store.db.execute('SELECT COUNT(*) FROM slack_inbox').fetchone()[0]
+        self.assertEqual(count, 2)
 
     def test_superseded_blocker_is_not_announced(self):
         self.service.dispatch("Ev123", self.body())
@@ -552,7 +578,9 @@ class SlackCase(unittest.TestCase):
             self.assertEqual(publish.call_args.args[2], digest)
             self.service.dispatch("EvShort", self.body(f"approve {identifier}"))
             self.assertEqual(publish.call_args.args[2], digest)
-            self.service.dispatch("EvBare", self.body("approve"))
+            plain = self.body("approve")
+            plain["event"].update(type="message", text="approve", thread_ts="123.456", ts="126.0")
+            self.service.dispatch("EvBare", plain)
             self.assertEqual(publish.call_args.args[2], digest)
             publish.reset_mock()
             early = self.body(f"approve {identifier}")

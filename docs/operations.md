@@ -79,7 +79,7 @@ Issue intake reads and deduplicates the issue; it does not post comments. For an
 
 ## Clarification and follow-up in Slack
 
-Every command requires an @mention in the configured channel. Reply in the objective's original thread:
+Starting a conversation requires an @mention in the configured channel. Replies in that Capo thread do not require another mention:
 
 ```text
 @capo clarify: Preserve the existing function signature.
@@ -125,7 +125,7 @@ Start with `capo list`, `capo show OBJECTIVE_ID`, and `capo events OBJECTIVE_ID`
 | --- | --- |
 | Worker is confirmed active | Observe that existing attempt or cancel it through its owning supervisor; do not start another. |
 | Objective is `blocked` because of authentication or VM availability | Restore the selected integration, inspect the retained candidate, then use `capo run OBJECTIVE_ID --retry`. |
-| Objective is `awaiting_input` | Answer the recorded question with an @mention in its original Slack thread, or cancel it. Re-running without new input does not resume planning. |
+| Objective is `awaiting_input` | Answer the recorded question in its original Slack thread, or cancel it. Re-running without new input does not resume planning. |
 | Objective is `cancelled` | Inspect the last applied task and use explicit `--retry` only when continuation is intended. |
 | Supervisor is gone but objective remains `running` | Reconcile local and remote attempts, then run `capo recover OBJECTIVE_ID`; if recovery succeeds, use `capo run OBJECTIVE_ID --retry`. |
 | Worker cleanup could not be confirmed | Inspect private attempt diagnostics and current process groups before retrying. A denied group probe does not prove that the worker stopped. Capo retains a worker-group receipt and blocks retries and other objectives until a read-only probe confirms termination. Interrupted legacy attempts without such a receipt require operator investigation; a dead watchdog alone is insufficient. |
