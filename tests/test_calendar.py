@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from capo.calendar import (CalendarConversation, CalendarError, GoogleCalendar,
-                           apply, event_body, writable)
+                           apply, event_body, writable, schedule)
 from capo.conversation import ConversationError, ConversationPending
 
 
@@ -121,23 +121,43 @@ class CalendarTests(unittest.TestCase):
 
     def test_read_does_not_write_and_replay_uses_receipt(self):
         router = CalendarConversation(self.home)
-        window = dict(start=self.plan['start'], end=self.plan['end'], question='')
+        window = dict(action='window', start=self.plan['start'], end=self.plan['end'], question='Here is your schedule.')
         with patch('capo.calendar.GoogleCalendar', return_value=self.client), patch('capo.calendar.Providers') as provider:
             self.client.events.return_value = []
             provider.return_value.call.side_effect = [window, dict(self.plan, action='read', reply='Your calendar is clear.')]
-            self.assertEqual(self.finish(router)['reply'], 'Your calendar is clear.')
-            self.assertEqual(self.finish(router)['reply'], 'Your calendar is clear.')
+            self.assertEqual(self.finish(router)['reply'], 'No events on your primary calendar in that time range.')
+            self.assertEqual(self.finish(router)['reply'], 'No events on your primary calendar in that time range.')
             self.assertEqual(provider.return_value.call.call_count, 2)
             self.client.request.assert_not_called()
 
     def test_clarification_and_oauth_failure_redacted(self):
         with patch('capo.calendar.GoogleCalendar', return_value=self.client), patch('capo.calendar.Providers') as provider:
-            provider.return_value.call.return_value = dict(start='', end='', question='What time?')
+            provider.return_value.call.return_value = dict(action='ask', start='', end='', question='What time?')
             self.assertEqual(self.finish(CalendarConversation(self.home))['reply'], 'What time?')
             self.client.events.assert_not_called()
         with patch('capo.calendar.GoogleCalendar', side_effect=RuntimeError('SECRET')):
             result = self.finish(CalendarConversation(self.home / 'other'))
             self.assertNotIn('SECRET', result['reply'])
+
+    def test_schedule_contains_events_even_when_model_only_gives_intro(self):
+        event = dict(self.event, start={'dateTime': self.plan['start']}, end={'dateTime': self.plan['end']})
+        with patch('capo.calendar.GoogleCalendar', return_value=self.client), patch('capo.calendar.Providers') as provider:
+            self.client.events.return_value = [event]
+            provider.return_value.call.side_effect = [
+                dict(action='window', start=self.plan['start'], end=self.plan['end'], question='Here is your schedule.'),
+                dict(self.plan, action='read', reply='Here is your schedule.')]
+            result = self.finish(CalendarConversation(self.home))['reply']
+            self.assertIn('Walk', result)
+            self.assertIn('9:00 AM', result)
+            self.assertIn('9:30 AM', result)
+            self.client.request.assert_not_called()
+
+    def test_schedule_all_day_and_overflow_are_explicit(self):
+        event = dict(summary='Holiday', start={'date': '2026-09-14'}, end={'date': '2026-09-15'})
+        self.assertIn('all day: Holiday', schedule([event], 'America/Los_Angeles'))
+        result = schedule([event] * 100, 'America/Los_Angeles')
+        self.assertLess(len(result), 2000)
+        self.assertIn('more events', result)
 
     def test_restart_never_retries_uncertain_operation(self):
         router = CalendarConversation(self.home)
