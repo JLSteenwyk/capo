@@ -198,15 +198,29 @@ class RepositoryCase(unittest.TestCase):
         objective = self.objective()
         objective["workers"] = ["grok"]
         self.store.save(objective, "configured")
-        with self.assertRaisesRegex(ValueError, "outside the configured set"):
+        with self.assertRaisesRegex(ValueError, "unsupported value"):
             Runtime(self.store, FakeProviders()).run(objective["id"])
 
     def test_plan_cannot_assign_implementation_to_reviewer(self):
         objective = self.objective()
         objective["reviewer"] = "codex"
         self.store.save(objective, "configured")
-        with self.assertRaisesRegex(ValueError, "different providers"):
+        with self.assertRaisesRegex(ValueError, "unsupported value"):
             Runtime(self.store, FakeProviders()).run(objective["id"])
+
+    def test_planner_schema_reserves_explicit_reviewer(self):
+        objective = self.objective()
+        objective["reviewer"] = "grok"
+        self.store.save(objective, "configured")
+        class InspectingProviders(FakeProviders):
+            def call(inner, provider, prompt, schema, cwd, directory):
+                if "planner" in prompt:
+                    self.assertEqual(schema["properties"]["tasks"]["items"]["properties"]["worker"]["enum"], ["codex"])
+                    self.assertIn('"available_implementation_workers": ["codex"]', prompt)
+                    self.assertIn("Do not add review", prompt)
+                return super().call(provider, prompt, schema, cwd, directory)
+        result = Runtime(self.store, InspectingProviders()).run(objective["id"])
+        self.assertEqual(result["status"], "completed")
 
 
 class ProcessCase(unittest.TestCase):

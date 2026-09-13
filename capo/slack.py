@@ -55,6 +55,27 @@ HELP = ("Send `repo-alias: your objective` to queue work, or `improve repo-alias
         "`approve OBJECTIVE_ID DIGEST`, or `sync OBJECTIVE_ID`. Commands require an @mention.")
 
 
+def blocked_reason(objective):
+    """Explain known blockers without exposing raw logs, paths, or provider output."""
+    error = objective.get("error", "")
+    if error == "Implementation and explicit reviewer must use different providers":
+        return "The plan assigned the same provider to implementation and independent review. The plan needs correction; existing work is preserved."
+    if error == "No implementation worker remains after reserving the explicit reviewer":
+        return "The configured reviewer is also the only implementation worker. Configure separate implementation and review providers before retrying."
+    if error == "Objective worker-call budget exhausted":
+        return "The objective reached its provider-call limit. Existing work is preserved and needs operator review before another attempt."
+    if error.startswith("Revision limit reached"):
+        verification = objective.get("verification", {})
+        if any(not check.get("passed") for check in verification.get("checks", [])):
+            return "The checks still failed after the allowed revisions. Existing changes are preserved for inspection."
+        if any(not review.get("approved") for review in verification.get("reviews", [])):
+            return "Independent review did not approve the work within the revision limit. The candidate is preserved for inspection."
+        return "Claude did not accept the candidate within the revision limit. The code and verification results are preserved for inspection."
+    stage = {"planner": "planning", "implementer": "implementation", "verification": "verification",
+             "reviewer": "independent review", "acceptance": "final acceptance"}.get(objective.get("active_stage"), "execution")
+    return f"An error stopped {stage}. Existing work is preserved; an operator needs to inspect the private diagnostic before retrying."
+
+
 def configure(config_path, client=None):
     """Resolve user-selected workspace/channel names through read-only Slack calls."""
     config = json.loads(config_path.read_text())
@@ -373,6 +394,8 @@ class SlackService:
                             "The runner will confirm when it has stopped; interrupted runners require CLI recovery.")
             pr = objective.get("publication", {}).get("pr", {}).get("url", "")
             question = objective.get("question", "") if objective["status"] == "awaiting_input" else ""
+            if objective["status"] == "blocked":
+                question = blocked_reason(objective)
             return f"{identifier}: {objective['status']}. Provider calls: {objective['calls']}. {pr} {question}".strip()
         match = re.fullmatch(r"(?:(improve)\s+)?([a-zA-Z0-9_-]+):\s*(.+)", text, re.DOTALL)
         if not match:
@@ -446,6 +469,8 @@ class SlackService:
                 text += " Verified changes are ready. Request prepare OBJECTIVE_ID to review a draft PR, or reply in this thread with follow-up instructions."
             elif objective["status"] == "awaiting_input":
                 text += f" Claude needs your input: {objective['question']} Reply here and mention the bot."
+            elif objective["status"] == "blocked":
+                text += " " + blocked_reason(objective)
             else:
                 text += " Inspect the objective's CLI status and artifacts for details."
             identity = json.dumps([identifier, objective["slack"], text,

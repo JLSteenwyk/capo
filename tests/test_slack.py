@@ -143,6 +143,19 @@ class SlackCase(unittest.TestCase):
         self.service.reply(self.body()["event"], "The issue's title <@UOTHER> & details")
         self.assertEqual(self.client.messages[-1]["text"], "The issue's title &lt;@UOTHER&gt; &amp; details")
 
+    def test_blocked_notification_explains_planning_conflict_without_raw_errors(self):
+        from capo.slack import blocked_reason
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective.update(status="blocked", error="Implementation and explicit reviewer must use different providers")
+        self.store.save(objective, "fixture")
+        self.service.tick()
+        self.assertIn("same provider", self.client.messages[-1]["text"])
+        objective.update(error="secret-sentinel in private diagnostics", active_stage="reviewer")
+        explanation = blocked_reason(objective)
+        self.assertIn("independent review", explanation)
+        self.assertNotIn("secret-sentinel", explanation)
+
     def test_natural_issue_question_reads_selected_repository_without_queuing(self):
         git(self.repo, "remote", "add", "origin", "https://github.com/example/project.git")
         self.router.poll.side_effect = None

@@ -203,14 +203,23 @@ class Runtime:
             raise ValueError("Workspace HEAD differs from the objective base; reconcile before retry")
         if git(workspace, "remote"):
             raise ValueError("Workspace initialization is incomplete: remove remotes after inspecting the checkout")
-        context = {"objective": objective["request"], "repository": snapshot(workspace),
-                   "available_implementation_workers": objective.get("workers", ["codex", "grok"]),
+        implementers = [worker for worker in objective.get("workers", ["codex", "grok"])
+                        if worker != objective.get("reviewer")]
+        if not implementers:
+            raise ValueError("No implementation worker remains after reserving the explicit reviewer")
+        context = {"objective": objective["request"], "repository": snapshot(workspace, focus=objective["request"]),
+                   "available_implementation_workers": implementers,
                    "reviewer": objective.get("reviewer", "auto"),
                    "checks": objective["checks"]}
         if objective["plan"] is None:
-            plan = self.call(objective, "claude", "planner", PLAN, dict(context,
+            plan_schema = json.loads(json.dumps(PLAN))
+            plan_schema["properties"]["tasks"]["items"]["properties"]["worker"]["enum"] = implementers
+            plan = self.call(objective, "claude", "planner", plan_schema, dict(context,
                 instructions=_DELIVERY_SEQUENCE +
-                "Plan 1-6 sequential implementation tasks. Choose codex or grok for each. "
+                "Plan 1-6 sequential implementation tasks using only available_implementation_workers. "
+                "The runtime performs tests, independent review, and CEO acceptance automatically. "
+                "Do not add review, testing-only, or acceptance tasks to the implementation plan. "
+                "The explicit reviewer is reserved for independent review and cannot implement. "
                 "Do not assign commit, push, or PR creation as implementation tasks or "
                 "candidate acceptance criteria. "
                 "Give concrete acceptance criteria. This first version handles small text/code changes; "
