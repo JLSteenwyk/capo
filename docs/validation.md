@@ -1,8 +1,19 @@
 # Validation record
 
-September 12, 2026, macOS, Python 3.14.5.
+Current audit: September 13, 2026. Historical entries below retain their original scope and limitations.
 
-## Automated checks
+## Current release evidence
+
+The required local suite passes 153 tests. [Capo mainline CI](https://github.com/JLSteenwyk/capo/actions/runs/34763624842) passed on Python 3.11 and 3.14. Routine draft delivery now has automated coverage for policy opt-in, accepted-tree verification, independent acceptance, new-function escalation, failed delivery, repeat prevention, and completion-message ordering.
+
+The owner submitted PhyKIT issue #110 through live Slack. A bounded continuation passed its 326 targeted tests, Grok review, and Claude acceptance. With the owner's routine-publication policy enabled, the Slack service automatically published [PhyKIT draft PR #111](https://github.com/JLSteenwyk/PhyKIT/pull/111) and delivered its completion message to the original thread. Capo synchronized all seven successful PR checks: Python 3.10–3.13 tests, Linux and Windows wheel smoke tests, and documentation. The remote head matches the accepted commit; the PR remains unmerged.
+
+The earlier Capo self-improvement remains a separate [draft PR #2](https://github.com/JLSteenwyk/capo/pull/2). A fresh audit found its frozen baseline intact, accepted tree unchanged, both recorded suites passing, Grok approval, and Claude acceptance after two rounds. Its exact head, `9170f824c53876e2ec15f967d5f69d3031f745b3`, passed the manually dispatched [Python 3.11/3.14 CI run](https://github.com/JLSteenwyk/capo/actions/runs/34764290111). Each job verified the checked-out SHA. This is candidate-specific CI evidence, not an attached PR status check; the older PR predates the workflow.
+
+Live Slack status now returned a threaded reply to the owner. A documentation clarification test is in progress. Initial intake correctly refused the dirty maintenance checkout; after committing those changes, an operator reprocessed the same authenticated owner event and preserved its deduplication identity. Claude asked which page and what change the owner wanted. Live follow-up, cancellation, and manual approval remain to be verified. Routine delivery is verified under the owner's newer standing authorization; the separate manual approval interface remains covered by automated tests.
+
+
+## Historical automated checks
 
 `python3 -m unittest discover -s tests -q` passes 126 tests. Coverage includes the full objective loop with fake providers, replayable Git patches, review-driven revision, verification/acceptance gates, bounded model calls, interrupted-run recovery, exclusive supervisor ownership, path protections, provider errors, subprocess termination, log-size limits, explicit team selection, GitHub publication reconciliation, frozen self-improvement regressions, and owner-only Slack intake.
 
