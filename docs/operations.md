@@ -111,7 +111,7 @@ For Slack publication, the repository alias must privately enable `allow_publica
 @capo sync OBJECTIVE_ID
 ```
 
-Preparation sends a short description, target, and exact approval command. Use `@capo details OBJECTIVE_ID` for the full diff, PR body, and commit. Approval is available only after the short review message was delivered. It binds to that exact verified candidate; follow-ups or changed content require new verification and preparation. Oversized code details require CLI review. Slack authorization is still checked for every action. No command merges a PR.
+Preparation sends a short description, target, and exact approval command. Use `@capo details OBJECTIVE_ID` for the full diff, PR body, and commit. Approval is available only after the short review message was delivered. It binds to that exact verified candidate; follow-ups or changed content require new verification and preparation. Oversized code details require CLI review. Slack authorization is still checked for every action. With `merge_after_approval: true`, approval also authorizes merging after GitHub checks pass and deleting the unchanged objective branch.
 
 `sync` reads PR state, review status, and CI results. Verify the reported remote commit still matches the accepted candidate. Publication is not merging, and the service does not automatically repair failed CI. Use an explicitly authorized follow-up objective for additional work.
 
@@ -182,3 +182,9 @@ The workflow validates the SHA, checks out that exact code, records it in each j
 Manual dispatch follows [GitHub's workflow interface](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
 
 In the review thread, `@capo approve` or `@capo approve OBJECTIVE_ID` approves the most recent fully delivered review of that unchanged candidate. Capo looks up the exact approval code from its delivery record. A different thread, changed candidate, missing preview, or approval sent before that preview cannot use this shorthand. The explicit `approve OBJECTIVE_ID DIGEST` command remains available.
+
+## Finish approved work
+
+Set `merge_after_approval: true` in a private repository alias to make approval finish delivery: publish, wait for passing GitHub checks, mark the draft ready, squash-merge the exact approved commit, then delete its branch. The default is false. With routine automatic publication enabled, that standing permission also covers this finish step for newly delivered routine changes. Existing PRs are not enrolled retroactively; approve one explicitly to enroll it.
+
+Capo checks at most once per minute while waiting. Missing or pending checks and GitHub branch rules delay merging. Failed checks, requested changes, conflicts, changed PR content, or uncertain writes stop automatic delivery for inspection. It does not use administrator overrides. Branch deletion uses an exact-commit lease and only the objective's own branch; new work pushed to that branch is preserved. The final Slack message confirms both merging and cleanup, or reports that delivery needs attention. Old local candidate checkouts remain as private evidence.

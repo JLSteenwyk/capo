@@ -157,6 +157,10 @@ def validate_config(config):
             raise ValueError("allow_publication must be true or false")
         if type(settings.get("auto_publish_routine", False)) is not bool:
             raise ValueError("auto_publish_routine must be true or false")
+        if type(settings.get("merge_after_approval", False)) is not bool:
+            raise ValueError("merge_after_approval must be true or false")
+        if settings.get("merge_after_approval") and not settings.get("allow_publication"):
+            raise ValueError("Merging requires allow_publication")
         if settings.get("auto_publish_routine", False) and not settings.get("allow_publication", False):
             raise ValueError("Routine delivery requires allow_publication")
         if settings.get("github_auth", "default") not in ("default", "keyring"):
@@ -391,11 +395,14 @@ class SlackService:
                 if len(title) > 160:
                     title = title[:157].rstrip() + "…"
                 self.pending_review = (identifier, publication["digest"])
+                action = ("Approving merges this change after checks pass, then deletes its branch."
+                          if settings.get("merge_after_approval") else
+                          "Approving opens a draft pull request—a proposed change. It does not merge it.")
                 return (f"Ready for review: {title}\n"
                     f"Target: {payload['repository']} → {payload['base_branch']}.\n"
-                    "Approving opens a draft pull request—a proposed change. It does not merge it.\n\n"
+                    f"{action}\n\n"
                     f"See the full change: @Capo details {identifier}\n"
-                    f"To open the draft, reply here: @Capo approve {identifier}")
+                    f"To approve, reply here: @Capo approve {identifier}")
             if command == "approve":
                 if not digest:
                     digest = self.thread_approval_digest(objective, event)
@@ -404,6 +411,9 @@ class SlackService:
                 if not digest or objective.get("slack_review_digest") != digest:
                     raise ValueError("First request a review with prepare, then copy its approval command")
                 result = publish(self.store, identifier, digest, GitHub(settings.get("github_auth", "default")))
+                from .finalize import request_merge
+                if request_merge(self.store, identifier, settings):
+                    return "Approved. I’ll merge it after the checks pass and delete the branch."
                 return f"Draft PR published: {result['pr']['url']}"
             if digest:
                 raise ValueError("sync does not accept a digest")
@@ -518,6 +528,7 @@ class SlackService:
 
     def process_routine_publications(self):
         from .delivery import deliver_routine
+        from .finalize import finish_delivery
         for objective in self.current_objectives():
             if objective["status"] != "completed":
                 continue
@@ -530,6 +541,11 @@ class SlackService:
                     deliver_routine(self.store, objective["id"], settings)
                 except ValueError:
                     # Another supervisor may still hold the execution lock.
+                    continue
+            if settings.get("merge_after_approval"):
+                try:
+                    finish_delivery(self.store, objective["id"], settings)
+                except ValueError:
                     continue
 
     def process_notifications(self):
@@ -547,6 +563,8 @@ class SlackService:
                         and not objective.get("routine_delivery") and not objective.get("publication")):
                     # An active runner can still hold the publication lock. Wait
                     # for delivery assessment instead of sending two results.
+                    continue
+                if objective.get("merge_delivery", {}).get("status") in ("waiting", "merging", "cleanup"):
                     continue
                 text = completed_message(objective)
             elif objective["status"] == "awaiting_input":

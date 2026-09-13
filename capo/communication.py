@@ -20,6 +20,11 @@ def plan_message(objective):
 
 def completed_message(objective):
     publication = objective.get('publication', {})
+    merge = objective.get("merge_delivery", {})
+    if merge.get("status") == "completed":
+        return f"Done—merged the change and deleted its branch. {publication['pr']['url']}"
+    if merge.get("status") == "blocked":
+        return f"I couldn’t finish merging or branch cleanup. The saved PR needs a check: {publication['pr']['url']}"
     if publication.get('status') == 'published':
         return f"The change passed its tests and review. Proposed change: {publication['pr']['url']}"
     delivery = objective.get('routine_delivery', {})

@@ -60,6 +60,8 @@ def deliver_routine(store, identifier, settings, gateway=None):
         publication = prepare(store, identifier, repository,
                               settings.get('publication_base', 'main'), title=title, body=body)
         publish(store, identifier, publication['digest'], gateway)
+        from .finalize import request_merge
+        request_merge(store, identifier, settings)
         status = 'published'
     except (ValueError, RuntimeError, OSError, KeyError, TypeError):
         status = 'failed'
