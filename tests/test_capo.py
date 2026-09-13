@@ -221,6 +221,22 @@ class RepositoryCase(unittest.TestCase):
         self.assertNotIn(".env", data["files"])
         self.assertNotIn("private.pem", data["files"])
 
+    def test_excerpt_does_not_authorize_replacement_of_omitted_source(self):
+        source = "# padding\n" * 4000 + (self.repo / "maths.py").read_text()
+        (self.repo / "maths.py").write_text(source)
+        git(self.repo, "add", "maths.py")
+        git(self.repo, "commit", "-m", "large source fixture")
+        objective = self.objective()
+        objective["request"] = "Fix addition in maths.py"
+        self.store.save(objective, "fixture_request")
+        fake = FakeProviders()
+        with self.assertRaisesRegex(ValueError, "Cannot edit an omitted file"):
+            Runtime(self.store, fake).run(objective["id"])
+        context = json.loads(fake.calls[-1][1].split("\n", 1)[1])
+        self.assertIn("maths.py", context["repository"]["supporting_excerpts"])
+        self.assertEqual((Path(objective["workspace"]) / "maths.py").read_text(), source)
+        self.assertEqual(len(fake.calls), 2)
+
     def test_dirty_source_refused(self):
         (self.repo / "maths.py").write_text("uncommitted work")
         with self.assertRaisesRegex(ValueError, "Commit or stash"):
