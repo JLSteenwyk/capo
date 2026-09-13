@@ -4,7 +4,7 @@ September 12, 2026, macOS, Python 3.14.5.
 
 ## Automated checks
 
-`python3 -m unittest discover -s tests -q` passes 55 tests. Coverage includes the full objective loop with fake providers, replayable Git patches, review-driven revision, verification/acceptance gates, bounded model calls, interrupted-run recovery, exclusive supervisor ownership, path protections, provider errors, subprocess termination, log-size limits, explicit team selection, GitHub publication reconciliation, frozen self-improvement regressions, and owner-only Slack intake.
+`python3 -m unittest discover -s tests -q` passes 57 tests. Coverage includes the full objective loop with fake providers, replayable Git patches, review-driven revision, verification/acceptance gates, bounded model calls, interrupted-run recovery, exclusive supervisor ownership, path protections, provider errors, subprocess termination, log-size limits, explicit team selection, GitHub publication reconciliation, frozen self-improvement regressions, and owner-only Slack intake.
 
 `git diff --check` passes. The CLI help and executable doctor run successfully.
 
@@ -17,7 +17,7 @@ September 12, 2026, macOS, Python 3.14.5.
 | Grok Build | 1.0.13 | Sandbox initialization failed before a model response |
 | Grok Build, isolated downloaded copy | 1.0.30 | Same sandbox initialization failure |
 
-Grok reported that the runtime-socket deny path `/var/run/docker.sock` is a symlink and refused to start without its requested read-only protections. The original installation and sandbox settings were preserved. A live Grok response contract remains unverified on this host.
+Grok reported that the runtime-socket deny path `/var/run/docker.sock` is a symlink and refused to start without its requested read-only protections. The original installation and sandbox settings were preserved. A live Grok response contract remains unverified in the native macOS process. The Linux VM route below succeeded.
 
 ## Live development objective
 
@@ -43,3 +43,11 @@ Capo ran an improvement against its own committed source: add `capo --version` u
 The optional package installed successfully with Slack Bolt 1.30.0 and Slack SDK 3.44.1. Socket Mode connect/close interfaces were checked against the installed SDK. Tests use a fake Slack client and cover workspace/channel/owner restrictions, duplicate event delivery, restart deduplication, thread replies, queued cancellation, repository allowlisting, and token removal from child processes. No Slack messages were sent and no live workspace connection was established. The owner and channel name are saved privately. Bot/app tokens and resolved workspace/channel IDs are required for live validation.
 
 GitHub publication tests use real local Git commits and a fake GitHub gateway; a real local bare-remote test also verifies that publication cannot overwrite an existing objective branch. No test PR was posted to GitHub. Code milestones were committed and pushed to the requested repository separately.
+
+## Live Grok Linux VM probe
+
+Grok Build 1.0.30 ran successfully with `--sandbox read-only` in Debian 13 ARM64 (Linux 6.12.95) under Lima 2.2.0, after installing bubblewrap 0.12.0. The existing CLI login authenticated with no API key supplied. No host folders or Docker socket were mounted.
+
+A structured JSON smoke test passed. Capo's provider adapter then ran inside the guest: Grok proposed an arithmetic correction, three arithmetic checks passed, and a separate Grok call approved the correction. Both responses passed Capo's schemas. The live response exposed a camelCase `structuredOutput` field; the adapter and regression tests now cover it, text fallback, errors, and incomplete responses.
+
+The copied authentication file was removed and the test VM stopped afterward. Automatic host-to-VM routing is not implemented. See [the Linux setup and limitations](grok-linux.md).

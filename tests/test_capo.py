@@ -219,6 +219,29 @@ class ProcessCase(unittest.TestCase):
             with self.assertRaises(WorkerError):
                 Providers().call("claude", "test", PLAN, Path(temp), Path(temp) / "a")
 
+    def test_grok_response_envelopes(self):
+        result = {"summary": "Synthetic plan", "acceptance": [], "tasks": []}
+        for envelope in [
+            {"structuredOutput": result, "text": "ignored", "stopReason": "end_turn"},
+            {"structuredOutput": None, "text": json.dumps(result), "stopReason": "end_turn"},
+            {"structured_output": result},
+            {"result": json.dumps(result)},
+        ]:
+            with self.subTest(envelope=envelope), tempfile.TemporaryDirectory() as temp:
+                with patch("capo.providers.run_process", return_value=json.dumps(envelope)):
+                    actual = Providers().call("grok", "test", PLAN, Path(temp), Path(temp) / "a")
+                self.assertEqual(actual, result)
+                validate(actual, PLAN)
+
+    def test_grok_error_and_incomplete_envelopes(self):
+        for envelope in [{"type": "error", "message": "Not signed in"},
+                         {"stopReason": "max_tokens", "structuredOutput": {}},
+                         {"is_error": True}, {"error": "quota"}]:
+            with self.subTest(envelope=envelope), tempfile.TemporaryDirectory() as temp:
+                with patch("capo.providers.run_process", return_value=json.dumps(envelope)):
+                    with self.assertRaises(WorkerError):
+                        Providers().call("grok", "test", PLAN, Path(temp), Path(temp) / "a")
+
     def test_strict_contract_rejects_extra_fields_and_wrong_types(self):
         with self.assertRaises(ValueError):
             validate({"summary": "s", "acceptance": [], "tasks": [], "shell": "rm"}, PLAN)

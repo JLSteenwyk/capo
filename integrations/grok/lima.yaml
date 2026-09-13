@@ -1,0 +1,28 @@
+# Linux test worker: no host mounts or forwarded credentials.
+minimumLimaVersion: 2.0.0
+base:
+  - template:_images/debian-13
+vmType: vz
+cpus: 2
+memory: 2GiB
+disk: 8GiB
+mounts: []
+ssh:
+  forwardAgent: false
+  loadDotSSHPubKeys: false
+propagateProxyEnv: false
+containerd:
+  user: false
+  system: false
+portForwards:
+  - guestIP: 0.0.0.0
+    proto: any
+    guestPortRange: [1, 65535]
+    ignore: true
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eu
+      apt-get update -qq
+      DEBIAN_FRONTEND=noninteractive apt-get install -y bubblewrap ca-certificates curl

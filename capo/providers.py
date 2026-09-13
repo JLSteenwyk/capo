@@ -123,9 +123,15 @@ class Providers:
                     "--json-schema", json.dumps(schema), "--tools", "",
                     "--no-subagents", "--sandbox", "read-only", "--permission-mode", "dontAsk"]
             envelope = decode_json(run_process(argv, cwd, directory, self.timeout))
-            if envelope.get("is_error") or envelope.get("error"):
+            if (envelope.get("is_error") or envelope.get("error")
+                    or envelope.get("type") == "error"
+                    or envelope.get("stopReason", "end_turn") != "end_turn"):
                 raise WorkerError(f"Grok reported failure; inspect {directory}")
-            result = envelope.get("structured_output", envelope.get("result", envelope))
+            result = envelope.get("structuredOutput")
+            if result is None:
+                result = envelope.get("structured_output")
+            if result is None:
+                result = envelope.get("result", envelope.get("text", envelope))
             if isinstance(result, str):
                 result = decode_json(result)
         else:
