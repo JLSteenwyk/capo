@@ -54,6 +54,26 @@ class SlackCase(unittest.TestCase):
             "type": "app_mention", "channel": "C123", "user": "U123",
             "text": "<@UBOT> " + text, "ts": "123.456"}}
 
+    def test_digest_thread_accepts_only_owner_feedback_without_mention(self):
+        from capo.digest import DigestStore, scope
+        from datetime import datetime, timezone
+        db = DigestStore(self.store.home)
+        owner = scope(self.config)
+        run = {"key": "digest-test", "scope": owner, "day": "2026-09-14", "status": "sent",
+               "ts": "100.1", "payload": {"news": []}}
+        db.save(run, datetime.now(timezone.utc)); db.close()
+        body = self.body("more AI news")
+        body["event"].update(type="message", text="more AI news", ts="101.1", thread_ts="100.1")
+        self.assertTrue(authorized(self.config, body, self.store))
+        with patch("capo.digest_feedback.FeedbackConversation") as router:
+            router.return_value.poll.return_value = {"reply": "I’ll show more AI."}
+            self.assertEqual(self.service.dispatch("digest-event", body), "I’ll show more AI.")
+            body["event"]["user"] = "UOTHER"
+            self.assertFalse(authorized(self.config, body, self.store))
+            with self.assertRaises(ValueError):
+                self.service.dispatch("unauthorized", body)
+            router.return_value.poll.assert_called_once()
+
     def test_calendar_routing_requires_owner_and_enabled_connection(self):
         self.router.poll.side_effect = None
         self.router.poll.return_value = {"action": "calendar", "repository": "", "objective_id": "", "reply": ""}

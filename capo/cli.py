@@ -75,6 +75,20 @@ def parser():
     slack.add_argument("--config", type=Path, required=True)
     slack_setup = commands.add_parser("slack-setup", help="Resolve configured Slack workspace and channel names")
     slack_setup.add_argument("--config", type=Path, required=True)
+    daemon = commands.add_parser("slack-daemon", help="Run Slack using a private token file")
+    daemon.add_argument("--config", type=Path, required=True)
+    daemon.add_argument("--env-file", type=Path, required=True)
+    digest_settings = commands.add_parser("digest-settings", help="Inspect or configure the private morning digest")
+    digest_settings.add_argument("--config", type=Path, required=True)
+    digest_settings.add_argument("--time")
+    digest_settings.add_argument("--artists-file", type=Path)
+    enabled = digest_settings.add_mutually_exclusive_group()
+    enabled.add_argument("--enable", action="store_true")
+    enabled.add_argument("--pause", action="store_true")
+    preview = commands.add_parser("digest-preview", help="Send one real digest preview to Slack")
+    preview.add_argument("--config", type=Path, required=True)
+    preview.add_argument("--env-file", type=Path, required=True)
+    preview.add_argument("--id", required=True, help="Stable preview ID; reuse it to resume without duplication")
     calendar_auth = commands.add_parser("calendar-auth", help="Connect a private Google Calendar account")
     calendar_auth.add_argument("--client-secrets", type=Path, required=True)
     commands.add_parser("calendar-check", help="Check Google Calendar access without changing events")
@@ -183,6 +197,15 @@ def main(argv=None):
     args = parser().parse_args(argv)
     store = None
     try:
+        if args.command.startswith("digest-"):
+            if args.providers_config:
+                os.environ["CAPO_PROVIDERS_CONFIG"] = str(args.providers_config.expanduser().resolve())
+            from .digest_cli import command
+            return command(args)
+        if args.command == "slack-daemon":
+            from .digest_cli import load_slack_environment
+            load_slack_environment(args.env_file)
+            args.command = "slack"
         if args.command == "calendar-auth":
             from .calendar import authorize
             try:

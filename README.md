@@ -127,3 +127,5 @@ Enable `merge_after_approval: true` in a private Slack repository alias to merge
 Capo can use its own browser on this computer and ask for missing booking details in Slack. Browser interactions require approval; buying tickets requires reviewing the booking and total. Install the optional browser support and configure permitted sites using the [browser guide](docs/browser.md). Native desktop control and merchant-specific automatic checkout are not implemented.
 
 Google Calendar: [connect your calendar](docs/calendar.md) to check your schedule and create, edit, or delete personal events from Slack.
+
+Morning briefings: [daily digest and feedback](docs/digest.md) covers scheduling, news preferences, and private setup.

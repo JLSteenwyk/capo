@@ -198,6 +198,9 @@ def owner_message(config, body):
 
 
 def known_thread(store, config, thread):
+    from .digest_service import known_thread as digest_thread
+    if digest_thread(store.home, config, thread):
+        return True
     for objective in store.list():
         identity = objective.get("slack", {})
         if (identity.get("thread_ts", identity.get("ts")) == thread
@@ -427,6 +430,10 @@ class SlackService:
         if incoming.startswith("*<@") and incoming.endswith("*"):
             incoming = incoming[1:-1]
         text = re.sub(r"^\s*<@[A-Z0-9]+>[\s,:]*", "", incoming).strip()
+        from .digest_feedback import dispatch as digest_dispatch
+        digest_reply = digest_dispatch(self, event_id, event, text)
+        if digest_reply is not None:
+            return digest_reply
         from . import browser_slack
         if text.lower().startswith("browse:"):
             return browser_slack.start(self, event_id, event, text.split(":", 1)[1].strip())
@@ -752,6 +759,8 @@ class SlackService:
     def tick(self):
         from . import browser_slack
         self.process_messages()
+        from .digest_service import tick as digest_tick
+        digest_tick(self)
         browser_slack.tick(self)
         self.process_plan_notifications()
         if self.active:
@@ -828,6 +837,7 @@ def serve(home, config_path):
         def mention(body):
             ingest(store.home, config, body)
         service = SlackService(store, config, app.client)
+        service.bot_user_id = identity["user_id"]
         handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
         previous = signal.getsignal(signal.SIGTERM)
         def stop(*_):
@@ -845,6 +855,8 @@ def serve(home, config_path):
         finally:
             signal.signal(signal.SIGTERM, previous)
             handler.close()
+            if hasattr(service, "digest_manager"):
+                service.digest_manager.db.close()
             from .browser_slack import stop as stop_browser
             stop_browser(service)
             if service.active and service.active.poll() is None:
