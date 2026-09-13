@@ -1,6 +1,7 @@
 """Git snapshots and validated file proposals for trusted local repositories."""
 
 import subprocess
+import re
 from pathlib import Path, PurePosixPath
 
 
@@ -44,10 +45,18 @@ def target_path(repo, name):
     return target
 
 
-def snapshot(repo, limit=120_000):
+def snapshot(repo, limit=120_000, focus=""):
     names = git(repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard", raw=True).split("\0")
     files, omitted, size = {}, [], 0
-    for name in sorted(set(names)):
+    # Put named task files and related filenames ahead of unrelated source.
+    # Alphabetical truncation can otherwise omit every test in a growing repo.
+    terms = set(re.findall(r"[a-z][a-z0-9]+", focus.lower())) - {"the", "and", "with", "for", "file", "files"}
+    def priority(name):
+        path = PurePosixPath(name)
+        parts = set(re.findall(r"[a-z][a-z0-9]+", path.stem.lower()))
+        named = bool(name and name.lower() in focus.lower())
+        return (-100 * named - len(parts & terms), name)
+    for name in sorted(set(names), key=priority):
         if not name:
             continue
         try:

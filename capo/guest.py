@@ -20,6 +20,11 @@ LEASE_SECONDS = 10
 MAX_OUTPUT = 4_000_000
 
 
+def boot_id():
+    path = Path("/proc/sys/kernel/random/boot_id")
+    return path.read_text().strip() if path.exists() else None
+
+
 def root_dir():
     root = Path.home() / ".local/share/capo-worker"
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -49,7 +54,7 @@ def run(run_id, timeout, binary):
     directory = root_dir() / run_id
     directory.mkdir()  # Never reuse an uncertain attempt.
     process = None
-    status = {"state": "starting", "deadline": time.time() + timeout}
+    status = {"state": "starting", "deadline": time.time() + timeout, "boot_id": boot_id()}
     status_path = directory / "status.json"
 
     def save():
@@ -130,6 +135,10 @@ def run(run_id, timeout, binary):
         # not interrupt process-group cleanup or leave a nonterminal receipt.
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGINT, signal.SIG_IGN)
+        # A signal may interrupt the exception handler itself before it records
+        # failure. Once cleanup begins, no running receipt may survive it.
+        if status["state"] not in ("finished", "failed"):
+            status.update(state="failed", error="Worker interrupted before completion")
         terminate(process)
         status["finished"] = time.time()
         # Keep only a small reconciliation receipt, never prompts or model logs.
@@ -158,7 +167,14 @@ def control(mode, run_id):
             (directory / "status.json").write_text(json.dumps({
                 "state": "failed", "error": "Cancelled before startup"}))
     path = directory / "status.json"
-    print(path.read_text() if path.exists() else json.dumps({"state": "starting" if directory.exists() else "missing"}))
+    status = json.loads(path.read_text()) if path.exists() else {"state": "starting" if directory.exists() else "missing"}
+    if (status.get("state") in ("starting", "running") and status.get("boot_id")
+            and boot_id() and status["boot_id"] != boot_id()):
+        status.update(state="failed", error="Guest rebooted during the attempt", finished=time.time())
+        temporary = directory / "reboot.tmp"
+        temporary.write_text(json.dumps(status))
+        temporary.replace(path)
+    print(json.dumps(status))
 
 
 def main():

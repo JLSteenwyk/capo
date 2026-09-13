@@ -1,4 +1,6 @@
 import json
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -11,7 +13,7 @@ from unittest.mock import patch
 
 from capo import guest
 from capo.providers import Providers, WorkerError
-from capo.transport import inspect_vm, reconcile, run_grok, validate_config
+from capo.transport import command, inspect_vm, reconcile, run_grok, validate_config
 
 
 class TransportCase(unittest.TestCase):
@@ -91,12 +93,58 @@ class TransportCase(unittest.TestCase):
         status = json.loads((guest.root_dir() / run_id / "status.json").read_text())
         self.assertNotIn("pid", status)
 
+    def test_interrupted_error_handler_still_records_terminal_receipt(self):
+        run_id = uuid.uuid4().hex
+        # Deterministically reproduce a second interruption just before the
+        # exception handler records failure; cleanup must normalize the state.
+        script = '''import sys
+from unittest.mock import patch
+from capo import guest
+def interrupt(frame, event, arg):
+    if (frame.f_code.co_name == "run" and event == "line"
+            and isinstance(frame.f_locals.get("exc"), RuntimeError)):
+        sys.settrace(None)
+        raise KeyboardInterrupt()
+    return interrupt
+with patch("subprocess.Popen", side_effect=RuntimeError("synthetic startup failure")):
+    sys.settrace(interrupt)
+    try:
+        guest.run(sys.argv[1], 2, "/unused")
+    except BaseException:
+        pass
+    finally:
+        sys.settrace(None)
+'''
+        result = subprocess.run([sys.executable, "-c", script, run_id],
+                                input='{"prompt":"task","schema":{}}\n', capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        status = json.loads((guest.root_dir() / run_id / "status.json").read_text())
+        self.assertEqual(status["state"], "failed")
+        self.assertIn("finished", status)
+
     def test_missing_auth_does_not_dispatch(self):
         with patch("capo.transport.health", return_value={"binary_ok": True, "bubblewrap": True,
                                                           "login_file_present": False}), patch("subprocess.Popen") as start:
             with self.assertRaisesRegex(WorkerError, "not signed in"):
                 run_grok(self.config, "task", {}, self.root / "attempt", 5)
             start.assert_not_called()
+
+    def test_small_bootstrap_executes_original_guest_health(self):
+        argv = command("test-vm", "health", self.binary)
+        self.assertLess(len(argv[6]), 7000)
+        result = subprocess.run([sys.executable, "-c", *argv[6:]], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["binary_ok"])
+
+    def test_guest_reboot_invalidates_running_receipt_without_killing_reused_pid(self):
+        run_id = uuid.uuid4().hex
+        directory = guest.root_dir() / run_id
+        directory.mkdir()
+        (directory / "status.json").write_text(json.dumps({"state": "running", "boot_id": "old-boot", "pid": os.getpid()}))
+        with patch("capo.guest.boot_id", return_value="new-boot"), contextlib.redirect_stdout(io.StringIO()) as out:
+            guest.control("cancel", run_id)
+        self.assertEqual(json.loads(out.getvalue())["state"], "failed")
+        self.assertEqual(json.loads((directory / "status.json").read_text())["state"], "failed")
 
     def test_configuration_rejects_unknown_modes_and_shell_names(self):
         for config in [{"grok": {"transport": "api"}}, {"grok": {"transport": "lima", "vm": "x; sh"}},

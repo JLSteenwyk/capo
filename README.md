@@ -77,7 +77,7 @@ Artifacts are in `$CAPO_HOME/artifacts/OBJECTIVE_ID/`: prompts, provider output,
 
 `Ctrl-C` or `SIGTERM` stops the current process group and records cancellation. After inspecting the artifacts, `run OBJECTIVE_ID --retry` resumes from the last applied task. A blocked provider attempt can also be retried this way; consumed calls remain counted. Exhausted round/call limits require a new objective with a revised scope.
 
-A hard supervisor crash leaves an uncertain running state. Inspect the workspace and process records, then run `recover OBJECTIVE_ID` followed by `run OBJECTIVE_ID --retry`. Recovery refuses when a recorded process may still be alive. Capo never automatically reruns an uncertain attempt. One supervisor per state directory is enforced with a process lock.
+A hard supervisor crash leaves an uncertain running state. Inspect the workspace and process records, then run `recover OBJECTIVE_ID` followed by `run OBJECTIVE_ID --retry`. Recovery refuses when a recorded process may still be alive. Capo never automatically reruns an uncertain attempt. One supervisor per state directory is enforced with a process lock. A watchdog stops local workers if their supervisor dies, and the VM transport uses an independent heartbeat lease. Slack cancellation requests survive service restarts.
 
 ## Improve Capo itself
 
@@ -93,7 +93,7 @@ The improvement runs in an isolated candidate clone. Capo preserves the original
 ## Current boundaries
 
 - **Subscriptions:** CLI authentication is reused. Ambient API-key variables are removed from child environments, but provider configuration or credential helpers can still select another billing mode; verify your setup. Quota is unknown, not estimated from local call counts. The runtime does not buy credits or silently switch providers on failure.
-- **Implementation:** workers propose full text replacements. This first version uses sequential tasks and bounded snapshots; it does not yet offer general repository exploration, large/binary changes, parallel task graphs, or learned routing.
+- **Implementation:** workers propose full text replacements. This first version uses sequential tasks and bounded snapshots that prioritize named task files; it does not yet offer general repository exploration, large/binary changes, parallel task graphs, or learned routing.
 - **Permissions:** Claude and Grok are invoked with built-in tools disabled; Codex uses its read-only sandbox. File proposals cannot modify protected agent/Git/GitHub configuration, common secret files, or symlink paths. A separate clone prevents edit collisions. These controls are **not a complete sandbox**: CLIs can load host customizations, read-only does not imply no network, and trusted verification commands run with your OS account's privileges. Do not run this on untrusted repositories or assume that account credentials are isolated.
 - **Context:** obvious secret paths are omitted, but there is no general secret scanner. Source snapshots are sent to the chosen providers. A task cannot modify files explicitly omitted from its snapshot.
 - **GitHub delivery:** issue intake, local PR preparation, explicit draft publication, retry reconciliation, and PR/CI status reads work. Automatic issue polling, CI-triggered repair, standing publication policies, and merging are not implemented. The original repository is kept unchanged.

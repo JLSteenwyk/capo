@@ -113,5 +113,7 @@ def verify_governance_changes(objective, changes):
     from pathlib import PurePosixPath
     for change in changes:
         name = str(PurePosixPath(change["path"])).lower()
-        if any(name == protected or protected.startswith(name + "/") for protected in CORE_ENFORCEMENT):
+        if any(name == protected or protected.startswith(name + "/")
+               or (protected.endswith(".py") and name.startswith(protected[:-3] + "/"))
+               for protected in CORE_ENFORCEMENT):
             raise ValueError("Core enforcement changes require owner review outside autonomous apply: " + name)

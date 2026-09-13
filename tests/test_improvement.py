@@ -147,7 +147,8 @@ class ImprovementCase(unittest.TestCase):
         for path in ("capo/runtime.py", "capo/improvement.py", "capo/process.py", "capo",
                      "capo/cli.py", "capo/contracts.py", "CAPO/Runtime.py", "capo/__init__.py",
                      "capo/__main__.py", "pyproject.toml", "setup.py", "setup.cfg",
-                     "sitecustomize.py", "usercustomize.py"):
+                     "sitecustomize.py", "usercustomize.py", "capo/runtime/__init__.py",
+                     "sitecustomize/__init__.py"):
             for delete in (False, True):
                 with self.subTest(path=path, delete=delete), self.assertRaisesRegex(ValueError, "owner review"):
                     verify_governance_changes(objective, [{"path": path, "content": "", "delete": delete}])

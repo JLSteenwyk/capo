@@ -145,6 +145,27 @@ class SlackCase(unittest.TestCase):
         self.assertEqual(self.store.get(objective["id"])["status"], "queued")
         self.assertIn("follow-up is queued", self.client.messages[-1]["text"])
 
+    def test_terminal_checkpoint_between_read_and_poll_is_preserved(self):
+        from unittest.mock import Mock
+        self.service.dispatch("Ev123", self.body())
+        identifier = self.store.list()[0]["id"]
+        for status in ("completed", "awaiting_input"):
+            with self.subTest(status=status):
+                objective = self.store.get(identifier)
+                objective.update(status="running", supervisor_pid=1234)
+                self.store.save(objective, "fixture_running")
+                def finish_during_poll():
+                    completed = self.store.get(identifier)
+                    completed.update(status=status, question="Which input format?")
+                    self.store.save(completed, "fixture_terminal")
+                    return 0
+                self.service.active = Mock(pid=1234)
+                self.service.active.poll.side_effect = finish_during_poll
+                self.service.active_id = identifier
+                self.service.tick()
+                self.assertEqual(self.store.get(identifier)["status"], status)
+                self.assertNotIn("Runner exited without", self.client.messages[-1]["text"])
+
     def test_clarification_is_reported_and_answer_requeues_objective(self):
         from unittest.mock import Mock
         self.service.dispatch("Ev123", self.body())
@@ -226,6 +247,63 @@ class SlackCase(unittest.TestCase):
         self.service.reply(self.body()["event"], text)
         self.assertEqual("".join(row["text"] for row in self.client.messages), "&lt;" * 7000)
         self.assertTrue(all(len(row["text"]) <= 15000 for row in self.client.messages))
+
+    def test_preview_resumes_after_rate_limit_and_restart_before_approval(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        identifier = objective["id"]
+        digest = "d" * 64
+        objective["publication"] = {"digest": digest}
+        self.store.save(objective, "fixture")
+        ingest(self.store.home, self.config, self.body("help", "EvPreviewResume"))
+        preview = "A" * 2500 + "B" * 2500 + "C" * 10
+        def dispatch(*_):
+            self.service.pending_review = (identifier, digest)
+            return preview
+        class RateLimited(RuntimeError):
+            response = type("Response", (), {"headers": {"Retry-After": "30"}})()
+        with patch("capo.slack.time.time", return_value=100), \
+             patch.object(self.service, "dispatch", side_effect=dispatch):
+            self.service.process_messages()
+        self.assertEqual(len(self.client.messages), 1)
+        self.assertNotIn("slack_review_digest", self.store.get(identifier))
+        with patch("capo.slack.time.time", return_value=101), \
+             patch.object(self.client, "chat_postMessage", side_effect=RateLimited("rate limited")):
+            with self.assertRaises(RateLimited):
+                self.service.process_messages()
+        restarted = SlackService(self.store, self.config, self.client)
+        with patch("capo.slack.time.time", return_value=130), \
+             patch.object(restarted, "dispatch", side_effect=AssertionError("must not repeat dispatch")):
+            restarted.process_messages()
+        self.assertEqual(len(self.client.messages), 1)
+        for now in (131, 132):
+            with patch("capo.slack.time.time", return_value=now):
+                restarted.process_messages()
+        self.assertEqual([message["text"] for message in self.client.messages],
+                         ["A" * 2500, "B" * 2500, "C" * 10])
+        self.assertEqual(self.store.get(identifier)["slack_review_digest"], digest)
+        self.assertEqual(self.store.pending_slack(), [])
+
+    def test_stale_partial_preview_never_enables_old_approval(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        identifier = objective["id"]
+        objective["publication"] = {"digest": "d" * 64}
+        self.store.save(objective, "fixture")
+        ingest(self.store.home, self.config, self.body("help", "EvStalePreview"))
+        def dispatch(*_):
+            self.service.pending_review = (identifier, "d" * 64)
+            return "A" * 3000
+        with patch("capo.slack.time.time", return_value=100), \
+             patch.object(self.service, "dispatch", side_effect=dispatch):
+            self.service.process_messages()
+        objective.pop("publication")
+        self.store.save(objective, "invalidated_fixture")
+        with patch("capo.slack.time.time", return_value=101):
+            self.service.process_messages()
+        self.assertIn("candidate changed", self.client.messages[-1]["text"])
+        self.assertNotIn("slack_review_digest", self.store.get(identifier))
+        self.assertEqual(self.store.pending_slack(), [])
 
     def test_restarted_service_does_not_spawn_during_live_supervisor_checkpoint(self):
         from capo.runtime import exclusive

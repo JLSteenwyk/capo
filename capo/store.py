@@ -89,6 +89,8 @@ class Store:
             inserted = self.db.execute("INSERT OR IGNORE INTO followups VALUES (?,?,?)",
                                       (event_id, objective_id, text)).rowcount
             if inserted and objective["status"] in ("completed", "blocked", "cancelled", "awaiting_input"):
+                if objective["status"] == "cancelled":
+                    self.clear_cancellation_requests(objective_id)
                 objective["status"] = "queued"
                 for key in ("accepted_tree", "publication", "verification", "error", "slack_review_digest"):
                     objective.pop(key, None)
@@ -99,3 +101,37 @@ class Store:
                 self.db.execute("INSERT INTO events(objective_id,time,kind,data) VALUES (?,?,?,?)",
                     (objective_id, time.time(), "followup_received", json.dumps({"event_id": event_id})))
         return self.get(objective_id)
+
+
+    def cancellation_requests(self, objective_id):
+        directory = self.home / "cancellations" / objective_id
+        return sorted(directory.glob("*.request")) if directory.exists() else []
+
+    def request_cancellation(self, objective_id, event_id=None):
+        """Persist intent independently of checkpoints written by an active runner."""
+        import hashlib
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            objective = self.get(objective_id)
+            if objective["status"] in ("completed", "cancelled"):
+                return False
+            directory = self.home / "cancellations" / objective_id
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            identifier = hashlib.sha256(event_id.encode()).hexdigest() if event_id else uuid.uuid4().hex
+            marker = directory / (identifier + ".request")
+            if marker.with_suffix(".consumed").exists():
+                return False
+            if not marker.exists():
+                marker.touch(mode=0o600)
+                self.db.execute("INSERT INTO events(objective_id,time,kind,data) VALUES (?,?,?,?)",
+                                (objective_id, time.time(), "cancellation_requested", "{}"))
+        return True
+
+    def clear_cancellation_requests(self, objective_id):
+        # Consume only captured requests. Keep a receipt so replaying an old
+        # Slack event cannot cancel a later explicit retry.
+        for marker in self.cancellation_requests(objective_id):
+            try:
+                marker.replace(marker.with_suffix(".consumed"))
+            except FileNotFoundError:
+                pass

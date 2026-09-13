@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import subprocess
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -36,6 +37,17 @@ class Runtime:
         self.store = store
         self.providers = providers
 
+    def check_cancellation(self, objective):
+        if self.store.cancellation_requests(objective["id"]):
+            raise KeyboardInterrupt()
+
+    def monitor_cancellation(self, objective, stopped):
+        while not stopped.wait(0.1):
+            if self.store.cancellation_requests(objective["id"]):
+                # Signal only this supervisor; never trust a persisted process ID.
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+
     def check_followups(self, objective):
         if self.store.followups(objective["id"]) != objective.get("followups", []):
             raise FollowupPending()
@@ -50,6 +62,7 @@ class Runtime:
         self.store.save(objective, "followups_incorporated")
 
     def call(self, objective, provider, role, schema, context):
+        self.check_cancellation(objective)
         self.check_followups(objective)
         context = dict(context, owner_followups=objective.get("followups", []))
         if objective["calls"] >= objective["max_calls"]:
@@ -123,14 +136,21 @@ class Runtime:
                     receipt.write_text(json.dumps(terminal))
             if self.store.followups(objective["id"]) != objective.get("followups", []):
                 self.incorporate_followups(objective)
-            if objective["status"] in ("completed", "awaiting_input"):
+            if objective["status"] == "completed" or (objective["status"] == "awaiting_input"
+                    and not self.store.cancellation_requests(objective_id)):
                 return objective
+            if retry:
+                self.store.clear_cancellation_requests(objective_id)
             self.providers = self.providers or Providers(objective["timeout"], config=objective.get("providers_config"))
             objective["supervisor_pid"] = os.getpid()
             self.store.save(objective, "supervisor_started")
             previous_handler = signal.getsignal(signal.SIGTERM)
             signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+            stopped = threading.Event()
+            monitor = threading.Thread(target=self.monitor_cancellation, args=(objective, stopped), daemon=True)
+            monitor.start()
             try:
+                self.check_cancellation(objective)
                 while True:
                     try:
                         result = self.execute(objective)
@@ -138,6 +158,7 @@ class Runtime:
                     except FollowupPending:
                         self.incorporate_followups(objective)
             except KeyboardInterrupt:
+                stopped.set()
                 objective["status"] = "cancelled"
                 objective["error"] = "Interrupted by operator"
                 self.store.save(objective, "cancelled")
@@ -148,6 +169,8 @@ class Runtime:
                 self.store.save(objective, "blocked")
                 raise
             finally:
+                stopped.set()
+                monitor.join()
                 signal.signal(signal.SIGTERM, previous_handler)
             return result
 
@@ -202,7 +225,7 @@ class Runtime:
         while objective["round"] < objective["max_rounds"]:
             for index in range(objective["next_task"], len(tasks)):
                 task = tasks[index]
-                current = snapshot(workspace)
+                current = snapshot(workspace, focus=objective["request"] + "\n" + json.dumps(task))
                 report = self.call(objective, task["worker"], "implementer", IMPLEMENTATION, {
                     "objective": objective["request"], "plan": objective["plan"], "task": task,
                     "repository": current, "feedback": objective["feedback"],
@@ -238,7 +261,7 @@ class Runtime:
             for reviewer in reviewers:
                 review = self.call(objective, reviewer, "reviewer", REVIEW, {
                     "objective": objective["request"], "plan": objective["plan"], "diff": diff,
-                    "repository": snapshot(workspace), "checks": checks,
+                    "repository": snapshot(workspace, focus=objective["request"]), "checks": checks,
                     "instructions": "Independently check correctness, regressions, and acceptance. "
                     "Reject unsupported claims. Return actionable findings."})
                 reviews.append(dict(review, provider=reviewer))
@@ -269,6 +292,7 @@ class Runtime:
                 with self.store.db:
                     self.store.db.execute("BEGIN IMMEDIATE")
                     self.check_followups(objective)
+                    self.check_cancellation(objective)
                     self.store.save(objective, "completed")
                 return objective
             objective["feedback"] = json.dumps(objective["verification"])

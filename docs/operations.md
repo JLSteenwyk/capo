@@ -161,3 +161,9 @@ git diff --check
 Automated tests must not contact live providers or send Slack/GitHub messages. Live checks need separate evidence. Update [validation](validation.md) with sanitized outcomes and [completion](completion.md) with remaining gaps. Inspect staged files for credentials, actual Slack identities, private paths, and generated artifacts before committing and pushing.
 
 Desktop automation, general recurring schedules, learned routing, unrestricted workers, and migration to a dedicated computer remain future capabilities. See [computer-use boundaries](computer-use.md). The current deployment assumes trusted repositories and verification commands.
+
+## Enable GitHub CI
+
+A ready-to-install workflow is provided at `integrations/github/tests.yml`. It runs the credential-free unit suite on Python 3.11 and 3.14 with read-only repository permissions. Install it at `.github/workflows/tests.yml` using a GitHub login authorized to manage workflows.
+
+The current saved CLI login rejected workflow publication because it lacks the `workflow` scope. Application-code pushes and draft PRs can still proceed. To authorize workflow installation, the owner can run `gh auth refresh --hostname github.com --scopes workflow` locally, complete the browser flow, and then publish the prepared workflow. Do not paste credentials into chat. Until installation, an empty CI status is not a passing CI run.

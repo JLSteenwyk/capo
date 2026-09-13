@@ -1,6 +1,7 @@
 """Explicit Lima transport with bounded staging, host leases, and reconciliation."""
 
 import json
+import base64
 import os
 import re
 import select
@@ -8,6 +9,7 @@ import signal
 import subprocess
 import time
 import uuid
+import zlib
 from pathlib import Path
 
 from . import guest
@@ -38,8 +40,14 @@ def load_config(path=None):
 
 
 def command(vm, *args):
+    # macOS OpenSSH multiplexing can reject large command packets while passing
+    # stdio descriptors. Keep bootstrap code small; task data travels on stdin.
+    encoded = base64.b64encode(zlib.compress(Path(guest.__file__).read_bytes())).decode("ascii")
+    bootstrap = f"import base64,zlib;exec(zlib.decompress(base64.b64decode('{encoded}')))"
+    if len(bootstrap) > 7000:
+        raise ValueError("Guest bootstrap exceeds the SSH command limit")
     return ["limactl", "shell", "--workdir=/tmp", vm, "python3", "-c",
-            Path(guest.__file__).read_text(), *map(str, args)]
+            bootstrap, *map(str, args)]
 
 
 def inspect_vm(vm):
@@ -145,7 +153,10 @@ def run_grok(config, prompt, schema, directory, timeout):
         finally:
             if process is not None:
                 process.stdin.close()  # EOF ends the guest's lease, including on SIGTERM.
-                guest.terminate(process, grace=5)
+                try:
+                    process.wait(timeout=guest.LEASE_SECONDS + 3)
+                except subprocess.TimeoutExpired:
+                    guest.terminate(process, grace=5)
             # Reach a terminal remote receipt before marking the local attempt done.
             # If disconnected, retain remote.json without a receipt for recovery.
             try:

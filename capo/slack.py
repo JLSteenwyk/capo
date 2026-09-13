@@ -133,6 +133,15 @@ class SlackService:
         self.active_id = None
         self.last_stage = None
         self.pending_review = None
+        self.store.db.executescript("""
+            CREATE TABLE IF NOT EXISTS slack_deliveries (
+                event_id TEXT PRIMARY KEY, data TEXT NOT NULL,
+                next_chunk INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS slack_delivery_clock (
+                channel TEXT PRIMARY KEY, not_before REAL NOT NULL
+            );
+        """)
 
     def reply(self, event, text):
         # Stay below Slack's truncation threshold, including escaped characters.
@@ -234,15 +243,19 @@ class SlackService:
             command, identifier = match.groups()
             objective = self.objective(identifier)
             if command == "cancel":
-                if self.active_id == identifier and self.active and self.active.poll() is None:
-                    self.active.terminate()
-                    return f"Stopping objective {identifier}."
-                if objective["status"] in ("queued", "awaiting_input"):
-                    objective["status"] = "cancelled"
-                    objective["error"] = "Cancelled by Slack owner"
-                    self.store.save(objective, "slack_cancelled")
-                elif objective["status"] == "running":
-                    return "This runner is not owned by the current Slack service; inspect it from the CLI."
+                if self.store.request_cancellation(identifier, event_id):
+                    from .runtime import exclusive
+                    try:
+                        with exclusive(self.store.home):
+                            current = self.objective(identifier)
+                            if current["status"] in ("queued", "awaiting_input", "blocked"):
+                                current.update(status="cancelled", error="Cancelled by Slack owner")
+                                self.store.save(current, "slack_cancelled")
+                                return f"{identifier}: cancelled."
+                    except ValueError:
+                        pass  # The owning supervisor observes the durable request.
+                    return (f"Cancellation requested for {identifier}. "
+                            "The runner will confirm when it has stopped; interrupted runners require CLI recovery.")
             pr = objective.get("publication", {}).get("pr", {}).get("url", "")
             question = objective.get("question", "") if objective["status"] == "awaiting_input" else ""
             return f"{identifier}: {objective['status']}. Provider calls: {objective['calls']}. {pr} {question}".strip()
@@ -277,22 +290,80 @@ class SlackService:
             self.store.save(objective, "slack_queued")
         return f"Queued {objective['id']} for {alias}. Claude Code will lead the work."
 
+    def delivery_delay(self, seconds):
+        with self.store.db:
+            self.store.db.execute("INSERT INTO slack_delivery_clock VALUES (?,?) "
+                "ON CONFLICT(channel) DO UPDATE SET not_before=excluded.not_before",
+                (self.config["channel_id"], time.time() + seconds))
+
     def process_messages(self):
         for event_id, body in self.store.pending_slack():
             # Recheck policy after restart or configuration changes.
-            if authorized(self.config, body):
+            if not authorized(self.config, body):
+                self.store.finish_slack(event_id)
+                continue
+            row = self.store.db.execute("SELECT data,next_chunk FROM slack_deliveries WHERE event_id=?",
+                                        (event_id,)).fetchone()
+            if row is None:
+                self.pending_review = None
                 try:
                     text = self.dispatch(event_id, body)
                 except (ValueError, RuntimeError, OSError) as exc:
                     text = f"Could not handle this request: {exc}"
-                self.reply(body["event"], text)
-                if self.pending_review:
-                    identifier, digest = self.pending_review
+                    self.pending_review = None
+                data = {"text": text, "review": self.pending_review}
+                self.pending_review = None
+                with self.store.db:
+                    self.store.db.execute("INSERT INTO slack_deliveries(event_id,data) VALUES (?,?)",
+                                          (event_id, json.dumps(data)))
+                index = 0
+            else:
+                data, index = json.loads(row[0]), row[1]
+            review = data.get("review")
+            if review and self.objective(review[0]).get("publication", {}).get("digest") != review[1]:
+                data = {"text": "That candidate changed while the preview was being delivered. Request a new prepare preview.",
+                        "review": None}
+                index = 0
+                with self.store.db:
+                    self.store.db.execute("UPDATE slack_deliveries SET data=?,next_chunk=0 WHERE event_id=?",
+                                          (json.dumps(data), event_id))
+            chunks = [data["text"][offset:offset + 2500] for offset in range(0, len(data["text"]), 2500)]
+            if index < len(chunks):
+                clock = self.store.db.execute("SELECT not_before FROM slack_delivery_clock WHERE channel=?",
+                                              (self.config["channel_id"],)).fetchone()
+                if clock and time.time() < clock[0]:
+                    continue
+                try:
+                    self.reply(body["event"], chunks[index])
+                except Exception as exc:
+                    # Slack SDK errors expose Retry-After through response.headers.
+                    # Keep waiting in the event loop, never sleep through cancellation.
+                    headers = getattr(getattr(exc, "response", None), "headers", {}) or {}
+                    delay = headers.get("Retry-After", headers.get("retry-after", 5))
+                    if isinstance(delay, (list, tuple)):
+                        delay = delay[0] if delay else 5
+                    try:
+                        delay = max(1, float(delay))
+                    except (ValueError, TypeError):
+                        delay = 5
+                    self.delivery_delay(delay)
+                    raise
+                index += 1
+                with self.store.db:
+                    self.store.db.execute("UPDATE slack_deliveries SET next_chunk=? WHERE event_id=?",
+                                          (index, event_id))
+                self.delivery_delay(1)
+            if index < len(chunks):
+                continue
+            if data.get("review"):
+                identifier, digest = data["review"]
+                # Serialize acknowledgement with follow-up invalidation.
+                with self.store.db:
+                    self.store.db.execute("BEGIN IMMEDIATE")
                     objective = self.objective(identifier)
                     if objective.get("publication", {}).get("digest") == digest:
                         objective["slack_review_digest"] = digest
                         self.store.save(objective, "slack_preview_delivered")
-                    self.pending_review = None
             self.store.finish_slack(event_id)
 
     def tick(self):
@@ -300,6 +371,9 @@ class SlackService:
         if self.active:
             objective = self.store.get(self.active_id)
             if self.active.poll() is not None:
+                # The child may commit its terminal checkpoint between our first
+                # read and poll. Never overwrite it using the earlier snapshot.
+                objective = self.store.get(self.active_id)
                 pending_followup = self.store.followups(objective["id"]) != objective.get("followups", [])
                 if (objective["status"] not in ("completed", "blocked", "cancelled", "awaiting_input")
                         and not (objective["status"] == "queued" and pending_followup)
