@@ -69,6 +69,8 @@ def run_process(argv, cwd, directory, timeout, stdin=None):
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+            if process.returncode == 126:
+                raise WorkerError(f"Worker cleanup could not be confirmed; inspect {directory} before retrying") from None
             raise
         finally:
             os.close(write_fd)
