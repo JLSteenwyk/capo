@@ -1,0 +1,21 @@
+{
+  "team_name": "SPARKITscience",
+  "workspace_name": "SPARKITscience",
+  "channel_name": "capo",
+  "team_id": "",
+  "channel_id": "",
+  "owner_user_id": "U_REPLACE_WITH_YOUR_MEMBER_ID",
+  "auto_run": true,
+  "repositories": {
+    "capo": {
+      "path": "/absolute/path/to/capo",
+      "checks": ["python3 -m unittest discover -s tests -q"],
+      "workers": ["codex"],
+      "reviewer": "claude",
+      "allow_self_improvement": true,
+      "max_calls": 24,
+      "max_rounds": 3,
+      "timeout": 900
+    }
+  }
+}

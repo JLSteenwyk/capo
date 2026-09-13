@@ -2,6 +2,7 @@
 
 import fcntl
 import json
+import os
 import signal
 import subprocess
 from contextlib import contextmanager
@@ -88,6 +89,8 @@ class Runtime:
             if objective["status"] in ("blocked", "cancelled") and not retry:
                 raise ValueError("Inspect the failure, then use run --retry to continue")
             self.providers = self.providers or Providers(objective["timeout"])
+            objective["supervisor_pid"] = os.getpid()
+            self.store.save(objective, "supervisor_started")
             previous_handler = signal.getsignal(signal.SIGTERM)
             signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
             try:

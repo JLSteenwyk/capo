@@ -23,6 +23,9 @@ class Store:
                 objective_id TEXT NOT NULL, time REAL NOT NULL,
                 kind TEXT NOT NULL, data TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS slack_inbox (
+                id TEXT PRIMARY KEY, data TEXT NOT NULL, handled INTEGER NOT NULL DEFAULT 0
+            );
         """)
 
     def create(self, data):
@@ -53,3 +56,16 @@ class Store:
     def events(self, objective_id):
         return [dict(row) for row in self.db.execute(
             "SELECT seq,time,kind FROM events WHERE objective_id=? ORDER BY seq", (objective_id,))]
+
+    def enqueue_slack(self, event_id, data):
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO slack_inbox(id,data) VALUES (?,?)",
+                            (event_id, json.dumps(data)))
+
+    def pending_slack(self):
+        return [(row[0], json.loads(row[1])) for row in self.db.execute(
+            "SELECT id,data FROM slack_inbox WHERE handled=0 ORDER BY rowid")]
+
+    def finish_slack(self, event_id):
+        with self.db:
+            self.db.execute("UPDATE slack_inbox SET handled=1 WHERE id=?", (event_id,))

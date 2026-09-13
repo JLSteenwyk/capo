@@ -2,6 +2,8 @@
 
 Capo is the platform. **SPARKITscience** is the default team name for this installation. Set `CAPO_TEAM_NAME` or pass `--team-name "Your team"` before a command to customize the name used in objectives, agent context, delivery reports, and PR descriptions.
 
+Slack is the primary planned human interface. The included [Slack adapter](docs/slack.md) accepts owner-only objectives, provides threaded progress, and supports status and cancellation. It is ready to configure for the SPARKITscience workspace; it has not been connected to a live channel.
+
 Claude Code leads development objectives, delegates implementation to Codex and Grok Build, evaluates reviews, and decides whether the result meets the objective. A local Python runtime owns the queue, checkpoints, process supervision, verification, and artifacts.
 
 This is an early working vertical slice for small changes in **trusted local repositories**. The broader autonomous organization is described in [the architecture](docs/architecture.md). [Dedicated-computer and computer-use plans](docs/computer-use.md) are part of that design.
@@ -77,9 +79,7 @@ Artifacts are in `$CAPO_HOME/artifacts/OBJECTIVE_ID/`: prompts, provider output,
 
 A hard supervisor crash leaves an uncertain running state. Inspect the workspace and process records, then run `recover OBJECTIVE_ID` followed by `run OBJECTIVE_ID --retry`. Recovery refuses when a recorded process may still be alive. Capo never automatically reruns an uncertain attempt. One supervisor per state directory is enforced with a process lock.
 
-## Current boundaries
-
-### Improve Capo itself
+## Improve Capo itself
 
 ```bash
 python3 -m capo improve "Improve recovery diagnostics" \
@@ -90,12 +90,14 @@ python3 -m capo prepare OBJECTIVE_ID --github OWNER/capo --base main
 
 The improvement runs in an isolated candidate clone. Capo preserves the original tracked tests outside that clone and runs them against the candidate, followed by the candidate's own tests. Changing or removing candidate tests does not remove the original regression checks. Baseline hashes are checked before and after verification. The running supervisor is not replaced; use the normal preview/publication workflow to review and ship a candidate. Frozen tests detect regressions and ordinary test weakening; they are not a security boundary against malicious Python with your OS account's privileges.
 
+## Current boundaries
+
 - **Subscriptions:** CLI authentication is reused. Ambient API-key variables are removed from child environments, but provider configuration or credential helpers can still select another billing mode; verify your setup. Quota is unknown, not estimated from local call counts. The runtime does not buy credits or silently switch providers on failure.
 - **Implementation:** workers propose full text replacements. This first version uses sequential tasks and bounded snapshots; it does not yet offer general repository exploration, large/binary changes, parallel task graphs, or learned routing.
 - **Permissions:** Claude and Grok are invoked with built-in tools disabled; Codex uses its read-only sandbox. File proposals cannot modify protected agent/Git/GitHub configuration, common secret files, or symlink paths. A separate clone prevents edit collisions. These controls are **not a complete sandbox**: CLIs can load host customizations, read-only does not imply no network, and trusted verification commands run with your OS account's privileges. Do not run this on untrusted repositories or assume that account credentials are isolated.
 - **Context:** obvious secret paths are omitted, but there is no general secret scanner. Source snapshots are sent to the chosen providers. A task cannot modify files explicitly omitted from its snapshot.
 - **GitHub delivery:** issue intake, local PR preparation, explicit draft publication, retry reconciliation, and PR/CI status reads work. Automatic issue polling, CI-triggered repair, standing publication policies, and merging are not implemented. The original repository is kept unchanged.
-- **Persistence:** objectives, checkpoints, events, and artifacts persist. There is no unattended scheduler, automatic rate-limit recovery, service installer, remote host controller, or desktop automation yet.
+- **Persistence:** objectives, checkpoints, events, Slack intake, and artifacts persist. The Slack service executes its queued objectives serially. There is no general scheduled-job engine, automatic rate-limit recovery, OS service installer, remote host controller, or desktop automation yet.
 - **Learning:** explicit self-improvement objectives with frozen regressions are implemented. Automatic reflection, skill creation, learned routing, unattended promotion, and rollback management remain planned.
 
 ## Verify

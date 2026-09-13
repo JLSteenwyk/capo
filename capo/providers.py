@@ -18,7 +18,8 @@ def run_process(argv, cwd, directory, timeout, stdin=None):
     environment = os.environ.copy()
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     # Prefer existing CLI subscription authentication over ambient API keys.
-    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "XAI_API_KEY"):
+    for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "XAI_API_KEY",
+                "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"):
         environment.pop(key, None)
     started = time.time()
     with (directory / "stdout.txt").open("w") as out, (directory / "stderr.txt").open("w") as err:

@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import __version__
 from .repository import git
 from .github import GitHub, prepare, publish, sync
 from .runtime import Runtime, exclusive
@@ -17,6 +18,7 @@ from .store import Store
 
 def parser():
     root = argparse.ArgumentParser(description="Capo — development objectives led by Claude Code")
+    root.add_argument("--version", action="version", version=f"capo {__version__}")
     root.add_argument("--team-name", default=os.environ.get("CAPO_TEAM_NAME", "SPARKITscience"),
                       help="Display name for this team (default: SPARKITscience)")
     root.add_argument("--home", type=Path, default=Path(os.environ.get(
@@ -63,6 +65,10 @@ def parser():
     publication.add_argument("--digest", required=True, help="Exact digest from prepare")
     status = commands.add_parser("sync", help="Read published PR and CI status")
     status.add_argument("id")
+    slack = commands.add_parser("slack", help="Run the owner-only Slack Socket Mode adapter")
+    slack.add_argument("--config", type=Path, required=True)
+    slack_setup = commands.add_parser("slack-setup", help="Resolve configured Slack workspace and channel names")
+    slack_setup.add_argument("--config", type=Path, required=True)
     commands.add_parser("list", help="List durable objective states")
     for name in ("show", "events", "recover"):
         sub = commands.add_parser(name)
@@ -149,6 +155,14 @@ def main(argv=None):
     try:
         if args.command == "doctor":
             return doctor()
+        if args.command == "slack":
+            from .slack import serve
+            serve(args.home, args.config)
+            return 0
+        if args.command == "slack-setup":
+            from .slack import configure
+            print(json.dumps(configure(args.config), indent=2))
+            return 0
         store = Store(args.home)
         if args.command == "add":
             result = add_objective(store, args, args.request)

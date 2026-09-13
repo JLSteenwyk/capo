@@ -176,6 +176,34 @@ class GitHubContractCase(unittest.TestCase):
             self.assertIn("--force-with-lease=refs/heads/capo/123:", args)
             self.assertIn("a" * 40 + ":refs/heads/capo/123", args)
 
+    def test_real_git_create_only_push_cannot_replace_existing_branch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repo, remote = root / "repo", root / "remote.git"
+            repo.mkdir()
+            remote.mkdir()
+            git(repo, "init", "-b", "main")
+            git(remote, "init", "--bare")
+            git(repo, "config", "user.name", "Test")
+            git(repo, "config", "user.email", "test@example.invalid")
+            (repo / "file").write_text("first")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "first")
+            first = git(repo, "rev-parse", "HEAD")
+            payload = {"branch": "capo/test", "repository": "owner/project", "commit": first}
+            def local_git(workspace, *args, **kwargs):
+                return git(workspace, *(str(remote) if a == "https://github.com/owner/project.git" else a
+                                        for a in args), **kwargs)
+            with patch("capo.github.git", side_effect=local_git):
+                GitHub().push_new(repo, payload)
+                (repo / "file").write_text("second")
+                git(repo, "add", ".")
+                git(repo, "commit", "-m", "second")
+                payload["commit"] = git(repo, "rev-parse", "HEAD")
+                with self.assertRaises(ValueError):
+                    GitHub().push_new(repo, payload)
+            self.assertEqual(git(remote, "rev-parse", "refs/heads/capo/test"), first)
+
 
 if __name__ == "__main__":
     unittest.main()

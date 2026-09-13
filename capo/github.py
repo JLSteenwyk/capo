@@ -138,7 +138,7 @@ def prepare(store, objective_id, repo, base_branch, title=None):
                 + "\n".join(f"- Passed: `{json.dumps(check['command'])}`" for check in verification["checks"])
                 + "\n\nReviewed by: " + ", ".join(row["provider"] for row in verification["reviews"])
                 + f".\n\nTeam: {objective.get('team_name', 'SPARKITscience')}. Capo objective: `{objective_id}`.\n")
-        if objective.get("source"):
+        if objective.get("source", "") and objective["source"].startswith("https://github.com/"):
             body += f"\nRelated issue: {objective['source']}\n"
         commit = git(workspace, "-c", "user.name=Capo", "-c", "user.email=capo@localhost",
                      "-c", "commit.gpgSign=false", "commit-tree", objective["accepted_tree"],

@@ -9,6 +9,9 @@ description = "Claude Code-led coordination of subscription coding agents"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+slack = ["slack-bolt>=1.23,<2"]
+
 [project.scripts]
 capo = "capo.cli:main"
 

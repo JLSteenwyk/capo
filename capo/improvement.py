@@ -52,7 +52,7 @@ def add_improvement(store, args):
         "This is an improvement to Capo itself. Preserve existing behavior and compatibility. "
         "Do not weaken permissions, credential handling, resource limits, review gates, or regression checks. "
         "Implement a bounded improvement and explain evidence. Changes run in a separate candidate clone; "
-        "the running supervisor is not replaced.", kind="self_improvement")
+        "the running supervisor is not replaced.", source=getattr(args, "source", None), kind="self_improvement")
     directory = store.home / "baselines" / objective["id"]
     try:
         directory.mkdir(parents=True, exist_ok=False)
