@@ -180,3 +180,5 @@ gh run list --workflow tests.yml --event workflow_dispatch
 The workflow validates the SHA, checks out that exact code, records it in each job summary, and runs the same Python matrix without provider or service credentials. Inspect both job outcomes and their recorded commit. A manually dispatched run belongs to the dispatch ref in GitHub metadata; it is separate evidence for the tested candidate and does not manufacture a required PR status check. Normal pull-request runs remain the preferred delivery evidence.
 
 Manual dispatch follows [GitHub's workflow interface](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
+In the review thread, `@capo approve` or `@capo approve OBJECTIVE_ID` approves the most recent fully delivered review of that unchanged candidate. Capo looks up the exact approval code from its delivery record. A different thread, changed candidate, missing preview, or approval sent before that preview cannot use this shorthand. The explicit `approve OBJECTIVE_ID DIGEST` command remains available.

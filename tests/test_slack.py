@@ -528,6 +528,25 @@ class SlackCase(unittest.TestCase):
         with patch("capo.github.publish", return_value={"pr": {"url": "https://github.com/example/project/pull/1"}}) as publish:
             self.service.dispatch("EvApprove", self.body(f"approve {identifier} {digest}"))
             self.assertEqual(publish.call_args.args[2], digest)
+            self.service.dispatch("EvShort", self.body(f"approve {identifier}"))
+            self.assertEqual(publish.call_args.args[2], digest)
+            self.service.dispatch("EvBare", self.body("approve"))
+            self.assertEqual(publish.call_args.args[2], digest)
+            publish.reset_mock()
+            early = self.body(f"approve {identifier}")
+            early["event"].update(ts="122.0", thread_ts="123.456")
+            self.assertIn("prepare", self.service.dispatch("EvEarly", early))
+            publish.assert_not_called()
+            other = self.body(f"approve {identifier}")
+            other["event"]["thread_ts"] = "999.1"
+            self.assertIn("prepare", self.service.dispatch("EvWrongThread", other))
+            publish.assert_not_called()
+            changed = self.store.get(identifier)
+            changed["publication"]["digest"] = "f" * 64
+            self.store.save(changed, "changed_preview")
+            self.assertIn("prepare", self.service.dispatch("EvStaleShort", self.body(f"approve {identifier}")))
+            publish.assert_not_called()
+
             with self.assertRaisesRegex(ValueError, "First request"):
                 self.service.dispatch("EvBad", self.body(f"approve {identifier} {'c' * 64}"))
 

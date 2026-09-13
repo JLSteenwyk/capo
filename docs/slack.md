@@ -40,7 +40,7 @@ Mention the bot and speak normally, for example:
 
 Claude interprets the message and selects a configured repository and supported action. An issue question reads current open issues without starting development. A clear request to implement work queues the original instructions with trusted repository checks. In an objective thread, progress questions read status while new instructions become follow-ups. Ambiguous requests get a clarification. Recent messages in the same thread provide limited conversational context.
 
-Interpretation uses one bounded Claude subscription call per new natural-language message, runs in the background, and persists its result. Explicit commands remain available without that call. An interrupted interpretation is not automatically retried; resend the message if asked. Repository and owner permissions are checked before interpretation and again before acting. Publication still requires the exact `approve OBJECTIVE_ID DIGEST` command after the short review message; conversational wording cannot approve, push, or merge.
+Interpretation uses one bounded Claude subscription call per new natural-language message, runs in the background, and persists its result. Explicit commands remain available without that call. An interrupted interpretation is not automatically retried; resend the message if asked. Repository and owner permissions are checked before interpretation and again before acting. Publication requires an explicit approve command after the short review message. In the same thread, the approval code can be omitted; unrelated conversational wording cannot approve, push, or merge.
 
 ## Use
 
@@ -84,7 +84,7 @@ Incoming Slack event IDs are persisted and deduplicated. A repeated event cannot
 
 ## Current limits
 
-Changes outside the automatic routine policy use explicit digest approval commands rather than buttons. Scheduled briefings, DMs, and file uploads are not implemented. Requested code details are split into bounded messages with persisted progress and channel pacing. Rate limits defer delivery using Retry-After, and restarts resume the remaining chunks. A delivery failure leaves approval disabled until the short review message succeeds; changed candidates invalidate an outstanding preview. Notification delivery can repeat after a crash, while objective creation and follow-up ingestion are deduplicated. Publication uses the same immutable verification and remote reconciliation gates as the CLI.
+Changes outside the automatic routine policy use explicit approval commands rather than buttons. Scheduled briefings, DMs, and file uploads are not implemented. Requested code details are split into bounded messages with persisted progress and channel pacing. Rate limits defer delivery using Retry-After, and restarts resume the remaining chunks. A delivery failure leaves approval disabled until the short review message succeeds; changed candidates invalidate an outstanding preview. Notification delivery can repeat after a crash, while objective creation and follow-up ingestion are deduplicated. Publication uses the same immutable verification and remote reconciliation gates as the CLI.
 
 Slack app details follow the official [Socket Mode](https://docs.slack.dev/tools/bolt-python/concepts/socket-mode/) and [app mention](https://docs.slack.dev/reference/events/app_mention/) interfaces. Automated tests use fake Slack and GitHub clients; a real workspace connection must be verified separately after local credentials are configured.
 
@@ -97,3 +97,5 @@ Eligibility is conservative: at most three files, existing Python function bodie
 Attempts are recorded before publication. An interrupted or failed delivery retains the candidate and requires reconciliation through the existing publication commands; it does not repeatedly create PRs on every tick. No worker transcript or private command is copied into an automatically generated PR description. Explicitly prepared candidates retain their existing review flow. Local checks passing does not imply remote GitHub CI has passed.
 
 Capo's [writing guide](writing-style.md) documents the source analysis and the shorter style used for plans and results.
+
+In the review thread, `@capo approve` or `@capo approve OBJECTIVE_ID` approves the most recent fully delivered review of that unchanged candidate. Capo looks up the exact approval code from its delivery record. A different thread, changed candidate, missing preview, or approval sent before that preview cannot use this shorthand. The explicit `approve OBJECTIVE_ID DIGEST` command remains available.

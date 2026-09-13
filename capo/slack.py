@@ -247,6 +247,25 @@ class SlackService:
             raise ValueError("Repository alias changed since this objective was created")
         return settings
 
+    def thread_approval_digest(self, objective, event):
+        """Resolve shorthand only from a completed owner preview in this thread."""
+        thread = event.get("thread_ts", event["ts"])
+        digest = objective.get("publication", {}).get("digest")
+        if not digest or objective.get("slack_review_digest") != digest:
+            return None
+        rows = self.store.db.execute(
+            "SELECT i.data,d.data FROM slack_inbox i JOIN slack_deliveries d "
+            "ON i.id=d.event_id WHERE i.handled=1 ORDER BY i.rowid DESC")
+        for row in rows:
+            original, delivery = json.loads(row[0]), json.loads(row[1])
+            prior = original.get("event", {})
+            if (authorized(self.config, original)
+                    and prior.get("thread_ts", prior.get("ts")) == thread
+                    and delivery.get("review") == [objective["id"], digest]
+                    and float(prior["ts"]) <= float(event["ts"])):
+                return digest
+        return None
+
     def natural_dispatch(self, event_id, body, text):
         from .conversation import ConversationRouter
         from .github import GitHub, remote_repository
@@ -332,6 +351,11 @@ class SlackService:
         text = re.sub(r"^\s*<@[A-Z0-9]+>[\s,:]*", "", incoming).strip()
         if text.lower() == "help":
             return HELP
+        if text.lower() == "approve":
+            matches = self.thread_objectives(event.get("thread_ts", event["ts"]))
+            if len(matches) != 1:
+                return "Please reply in the review thread so I know which change you mean."
+            text = "approve " + matches[0]["id"]
         match = re.fullmatch(r"(prepare|details|approve|sync)\s+([a-f0-9]{16})(?:\s+([a-f0-9]{64}))?", text)
         if match:
             from .github import GitHub, prepare, publish, remote_repository, sync
@@ -371,8 +395,12 @@ class SlackService:
                     f"Target: {payload['repository']} → {payload['base_branch']}.\n"
                     "Approving opens a draft pull request—a proposed change. It does not merge it.\n\n"
                     f"See the full change: @Capo details {identifier}\n"
-                    f"Approve: @Capo approve {identifier} {publication['digest']}")
+                    f"To open the draft, reply here: @Capo approve {identifier}")
             if command == "approve":
+                if not digest:
+                    digest = self.thread_approval_digest(objective, event)
+                    if not digest:
+                        return "Please ask me to prepare this change in this thread, then reply approve."
                 if not digest or objective.get("slack_review_digest") != digest:
                     raise ValueError("First request a review with prepare, then copy its approval command")
                 result = publish(self.store, identifier, digest, GitHub(settings.get("github_auth", "default")))
