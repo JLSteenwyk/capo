@@ -1,6 +1,6 @@
 # Operating Capo
 
-Capo is a local supervisor for trusted GitHub development projects. Claude Code plans and accepts work; configured Codex and Grok workers implement and review it. SPARKITscience is the default display name. This runbook covers operating the first development workflow, not the broader [proposed architecture](architecture.md). Consult [validation](validation.md) and the [completion checklist](completion.md) for what has actually been verified.
+Capo is a local supervisor for trusted GitHub development projects. Claude Code plans and accepts work; configured Codex and Grok workers implement and review it. SPARKITscience is the default team name; the Slack bot is named `capo`. This runbook covers operating the first development workflow, not the broader [proposed architecture](architecture.md). Consult [validation](validation.md) and the [completion checklist](completion.md) for what has actually been verified.
 
 ## Prepare the agent computer
 
@@ -82,10 +82,10 @@ Issue intake reads and deduplicates the issue; it does not post comments. For an
 Every command requires an @mention in the configured channel. Reply in the objective's original thread:
 
 ```text
-@SPARKITscience clarify: Preserve the existing function signature.
-@SPARKITscience followup: Also cover an empty input.
-@SPARKITscience status OBJECTIVE_ID
-@SPARKITscience cancel OBJECTIVE_ID
+@capo clarify: Preserve the existing function signature.
+@capo followup: Also cover an empty input.
+@capo status OBJECTIVE_ID
+@capo cancel OBJECTIVE_ID
 ```
 
 When Claude needs indispensable information to plan, the objective enters `awaiting_input` and the thread receives its question. An owner reply resumes planning in the same checkout. Waiting does not spend additional worker calls. Follow-ups are durable, deduplicated, and incorporated at safe execution boundaries. They retain existing candidate changes and cumulative budgets, invalidate unpublished acceptance/publication state, and cannot change trusted checks or policy. Once publication has started, use a new objective after integrating the published work.
@@ -106,9 +106,9 @@ Preparation creates a local candidate commit and exact publication digest. Suppl
 For Slack publication, the repository alias must privately enable `allow_publication` and set the intended `publication_base` and `github_auth`. In the objective thread:
 
 ```text
-@SPARKITscience prepare OBJECTIVE_ID
-@SPARKITscience approve OBJECTIVE_ID EXACT_DIGEST_FROM_PREVIEW
-@SPARKITscience sync OBJECTIVE_ID
+@capo prepare OBJECTIVE_ID
+@capo approve OBJECTIVE_ID EXACT_DIGEST_FROM_PREVIEW
+@capo sync OBJECTIVE_ID
 ```
 
 Preparation sends the full diff and PR preview with the target and digest. Approval is available only after the full preview was delivered. It binds to that exact verified candidate; follow-ups or changed content require new verification and preparation. Oversized previews require CLI review and publication. Slack authorization is still checked for every action. No command merges a PR.

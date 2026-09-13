@@ -6,7 +6,7 @@ The adapter uses Slack Socket Mode, so the agent computer opens the connection t
 
 ## Configure
 
-1. Create an app in the SPARKITscience workspace using [the supplied manifest](../integrations/slack/manifest.json). Customize both display-name fields if you want a different team identity.
+1. Create an app in the SPARKITscience workspace using [the supplied manifest](../integrations/slack/manifest.json). The app and bot are named `capo`; customize both display-name fields to rename the bot independently of the team identity.
 2. Install it to the workspace and invite it to #capo. The bot uses `app_mentions:read` and `chat:write` for the interface, plus `channels:read` and `groups:read` to resolve the configured public or private channel during setup. It does not request channel message-history scopes.
 3. Generate an app-level token with `connections:write`, and keep it in `SLACK_APP_TOKEN` on the agent computer. Put the installed bot token in `SLACK_BOT_TOKEN`. Keep both outside source control and chat messages.
 4. Copy [the configuration example](../integrations/slack/config.example.json) to a private location outside the repository. Set the owner ID, workspace/channel names, and repository path. `slack-setup` resolves and pins the workspace/channel IDs using the bot token; it sends no messages. IDs are authoritative during operation, and the service refuses to run before they are configured.
@@ -23,19 +23,23 @@ Use the same `CAPO_HOME` as your CLI. The service checks that its bot token belo
 
 The sample explicitly selects Claude and Codex. After configuring and verifying the Grok Linux VM transport described in the Grok setup documentation, configure `"workers": ["codex", "grok"]` and `"reviewer": "auto"` for the full team. Capo does not silently replace an unavailable provider.
 
+## Rename an existing app
+
+In the [Slack app dashboard](https://api.slack.com/apps), select the existing app and open **App Manifest**. Set `display_information.name` and `features.bot_user.display_name` to `capo`, then save. Change only those name fields; preserve the app permissions and event settings. Slack propagates these identity changes to existing installations without reinstallation. The private workspace and owner configuration remain the same. See [Slack identity propagation](https://docs.slack.dev/app-management/distribution/).
+
 ## Use
 
 Mention the bot in the configured channel:
 
 ```text
-@SPARKITscience capo: Fix the issue intake error message when GitHub authentication fails.
-@SPARKITscience improve capo: Identify and fix one small reliability problem.
-@SPARKITscience status OBJECTIVE_ID
-@SPARKITscience cancel OBJECTIVE_ID
-@SPARKITscience prepare OBJECTIVE_ID
-@SPARKITscience approve OBJECTIVE_ID EXACT_DIGEST_FROM_PREVIEW
-@SPARKITscience sync OBJECTIVE_ID
-@SPARKITscience help
+@capo capo: Fix the issue intake error message when GitHub authentication fails.
+@capo improve capo: Identify and fix one small reliability problem.
+@capo status OBJECTIVE_ID
+@capo cancel OBJECTIVE_ID
+@capo prepare OBJECTIVE_ID
+@capo approve OBJECTIVE_ID EXACT_DIGEST_FROM_PREVIEW
+@capo sync OBJECTIVE_ID
+@capo help
 ```
 
 The repository alias selects a locally configured checkout and trusted verification commands. Text after the colon is the objective. Messages cannot set arbitrary paths, verification commands, provider credentials, or permission policy. Self-improvement must be enabled for the alias.
@@ -45,8 +49,8 @@ The bot replies in the originating thread with an objective ID, stage updates, a
 Reply in an objective's original thread, mentioning the bot, to clarify or change instructions:
 
 ```text
-@SPARKITscience clarify: Keep the existing public function signature.
-@SPARKITscience Also cover an empty input in the tests.
+@capo clarify: Keep the existing public function signature.
+@capo Also cover an empty input in the tests.
 ```
 
 Follow-ups are stored independently of worker checkpoints, deduplicated by event ID, and incorporated by Claude at a safe boundary. New input invalidates an unpublished completed candidate's approval and resumes work in the same candidate checkout, preserving previous changes and cumulative execution limits. Blocked/cancelled work can also receive follow-ups; exhausted limits still require explicit operator reconciliation. Follow-ups cannot alter trusted check commands or policy. Once publication has started, create a new objective after integrating the published changes. This avoids silently amending an approved PR.
