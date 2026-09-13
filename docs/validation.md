@@ -110,3 +110,11 @@ After the owner added workflow authorization, commit `dfb14d3` installed `.githu
 The owner’s app mention reached Capo over Socket Mode and received a threaded help response. A PhyKIT objective also reached planning, clarification, implementation, tests, review, and acceptance evaluation through the live Slack service. The implementation passed its targeted 326-test suite, but a circular plan criterion incorrectly demanded PR publication before candidate acceptance. The prompts now separate code acceptance from the subsequent approval-gated publication step; that failed attempt remains retained rather than marked complete.
 
 A live Claude interpretation of “Can you check if PhyKIT has any issues that need to be addressed?” selected read-only issue listing for the configured PhyKIT alias. The 126-test automated suite covers bounded asynchronous interpretation, durable replay, owner/repository restrictions, conversational follow-ups and status, explicit-only publication approval, and a single persisted plan notification instead of per-stage chatter. Live conversational delivery and PhyKIT publication remain to be exercised after the service update.
+
+## Concise Slack review and short approval
+
+The owner requested plain-language messages and a shorter approval step. Prepare now sends a short description and destination; full code is available on request. Approval without a copied code resolves only from a completed owner review in that same thread, for the unchanged candidate. Wrong-thread, changed-content, and approval-before-preview cases are refused.
+
+A live documentation self-improvement passed 167 frozen tests and 167 candidate tests, Grok review, and Claude acceptance. The owner received the review and sent a short approval. The previous handler rejected the missing code. After the fix, an operator replayed the original authenticated event through the updated handler: [draft PR #3](https://github.com/JLSteenwyk/capo/pull/3) was created, and Capo synchronized an exact accepted-commit match. The retry was operator-assisted. No PR was merged.
+
+The updated mainline suite passed all 171 tests; the final additional Slack assertions passed all 46 Slack tests. The bounded source-context fix is also integrated. These local results do not stand in for hosted CI on a particular commit.
