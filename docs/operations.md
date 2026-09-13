@@ -167,3 +167,15 @@ Desktop automation, general recurring schedules, learned routing, unrestricted w
 The installed workflow at `.github/workflows/tests.yml` runs the credential-free unit suite on Python 3.11 and 3.14 with read-only repository permissions. A reusable copy is provided at `integrations/github/tests.yml`. Both jobs passed on the first mainline run.
 
 Installing or updating a workflow requires an appropriately authorized GitHub login. If GitHub rejects a workflow push for missing scope, run `gh auth refresh --hostname github.com --scopes workflow` locally and complete the browser flow. Do not paste credentials into chat. An empty CI status is not a passing CI run; inspect the checks on the exact commit being reviewed.
+
+
+To validate an older, inspected candidate that predates the CI workflow, run the workflow from the default branch and supply its exact commit:
+
+```sh
+gh workflow run tests.yml --ref main -f commit=FULL_40_CHARACTER_COMMIT_SHA
+gh run list --workflow tests.yml --event workflow_dispatch
+```
+
+The workflow validates the SHA, checks out that exact code, records it in each job summary, and runs the same Python matrix without provider or service credentials. Inspect both job outcomes and their recorded commit. A manually dispatched run belongs to the dispatch ref in GitHub metadata; it is separate evidence for the tested candidate and does not manufacture a required PR status check. Normal pull-request runs remain the preferred delivery evidence.
+
+Manual dispatch follows [GitHub's workflow interface](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).

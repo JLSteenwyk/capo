@@ -3,6 +3,12 @@ name: Tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact 40-character commit SHA to validate
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,9 +22,22 @@ jobs:
       matrix:
         python: ['3.11', '3.14']
     steps:
+      - name: Validate manual commit input
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TEST_COMMIT: ${{ inputs.commit }}
+        run: '[[ "$TEST_COMMIT" =~ ^[0-9a-f]{40}$ ]]'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ inputs.commit || github.sha }}
+      - name: Record tested commit
+        env:
+          TEST_COMMIT: ${{ inputs.commit || github.sha }}
+        run: |
+          actual=$(git rev-parse HEAD)
+          test "$actual" = "$TEST_COMMIT"
+          echo "Tested commit: $actual" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python }}
