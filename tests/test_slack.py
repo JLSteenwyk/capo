@@ -76,6 +76,66 @@ class SlackCase(unittest.TestCase):
             self.service.dispatch("Ev123", self.body())
         self.assertEqual(len(self.store.list()), 1)
 
+    def test_issue_link_intake_fetches_context_once_and_preserves_source(self):
+        git(self.repo, "remote", "add", "origin", "https://github.com/example/project.git")
+        self.config["repositories"]["project"]["github_auth"] = "keyring"
+        body = self.body("project: Fix <https://github.com/example/project/issues/12|issue #12>")
+        with patch("capo.github.GitHub.issue", return_value={"title": "A real task", "body": "Acceptance details"}) as issue:
+            self.service.dispatch("Ev123", body)
+            self.service.dispatch("Ev123", body)
+        issue.assert_called_once_with("example/project", 12)
+        objective = self.store.list()[0]
+        self.assertIn("Acceptance details", objective["request"])
+        self.assertEqual(objective["source"], "slack:T123:Ev123")
+
+    def test_issue_context_is_added_to_paused_thread_followup(self):
+        git(self.repo, "remote", "add", "origin", "https://github.com/example/project.git")
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective.update(status="awaiting_input", question="Which issue?")
+        self.store.save(objective, "fixture")
+        body = self.body("followup: https://github.com/example/project/issues/12", "Ev456")
+        body["event"]["thread_ts"] = "123.456"
+        with patch("capo.github.GitHub.issue", return_value={"title": "Task", "body": "Details"}) as issue:
+            self.service.dispatch("Ev456", body)
+            self.service.dispatch("Ev456", body)
+        issue.assert_called_once()
+        self.assertEqual(self.store.get(objective["id"])["status"], "queued")
+        self.assertIn("Details", self.store.followups(objective["id"])[0]["text"])
+
+    def test_issue_link_policy_and_fetch_failures_create_no_objectives(self):
+        git(self.repo, "remote", "add", "origin", "https://github.com/example/project.git")
+        with patch("capo.github.GitHub.issue") as issue:
+            with self.assertRaisesRegex(ValueError, "selected repository"):
+                self.service.dispatch("Ev123", self.body("project: https://github.com/other/project/issues/1"))
+            body = self.body("project: https://github.com/example/project/issues/1")
+            body["event"]["user"] = "UOTHER"
+            with self.assertRaisesRegex(ValueError, "Unauthorized"):
+                self.service.dispatch("Ev123", body)
+            issue.assert_not_called()
+            issue.side_effect = RuntimeError("Unavailable")
+            with self.assertRaisesRegex(RuntimeError, "Unavailable"):
+                self.service.dispatch("Ev123", self.body("project: https://github.com/example/project/issues/1"))
+        self.assertEqual(self.store.list(), [])
+
+    def test_issue_context_limits_and_unrelated_urls(self):
+        from capo.slack import resolve_issue_links
+        settings = self.config["repositories"]["project"]
+        git(self.repo, "remote", "add", "origin", "https://github.com/example/project.git")
+        with patch("capo.github.GitHub.issue") as issue:
+            request = "Read https://example.org/info and https://github.com.evil/example/project/issues/1"
+            self.assertEqual(resolve_issue_links(settings, request), request)
+            with self.assertRaisesRegex(ValueError, "At most three"):
+                resolve_issue_links(settings, " ".join(f"https://github.com/example/project/issues/{n}" for n in range(1,5)))
+            issue.assert_not_called()
+            issue.return_value = {"title": "Task", "body": "x" * 50001}
+            with self.assertRaisesRegex(ValueError, "50000"):
+                resolve_issue_links(settings, "https://github.com/example/project/issues/1")
+
+    def test_plain_text_reply_preserves_apostrophes_and_escapes_mentions(self):
+        self.service.reply(self.body()["event"], "The issue's title <@UOTHER> & details")
+        self.assertEqual(self.client.messages[-1]["text"], "The issue's title &lt;@UOTHER&gt; &amp; details")
+
     def test_changed_policy_is_checked_again_before_dispatch(self):
         ingest(self.store.home, self.config, self.body())
         self.config["owner_user_id"] = "UNEW"
