@@ -117,6 +117,8 @@ class Runtime:
             self.store.save(objective, "workspace_ready")
         git(workspace, "rev-parse", "--show-toplevel")
         context = {"objective": objective["request"], "repository": snapshot(workspace),
+                   "available_implementation_workers": objective.get("workers", ["codex", "grok"]),
+                   "reviewer": objective.get("reviewer", "auto"),
                    "checks": objective["checks"]}
         if objective["plan"] is None:
             plan = self.call(objective, "claude", "planner", PLAN, dict(context,
@@ -125,6 +127,11 @@ class Runtime:
                 "protected configuration and omitted files cannot be edited."))
             if not 1 <= len(plan["tasks"]) <= 6 or not plan["acceptance"]:
                 raise ValueError("Plan needs 1-6 tasks and acceptance criteria")
+            for task in plan["tasks"]:
+                if task["worker"] not in objective.get("workers", ["codex", "grok"]):
+                    raise ValueError("Planner selected a worker outside the configured set")
+                if task["worker"] == objective.get("reviewer"):
+                    raise ValueError("Implementation and explicit reviewer must use different providers")
             objective["plan"] = plan
             objective["status"] = "queued"
             self.store.save(objective, "planned")
@@ -160,6 +167,8 @@ class Runtime:
             if len(diff) > 150_000:
                 raise ValueError("Diff is too large for this first-version review; split the objective")
             reviewers = sorted({"grok" if task["worker"] == "codex" else "codex" for task in tasks})
+            if objective.get("reviewer", "auto") != "auto":
+                reviewers = [objective["reviewer"]]
             reviews = []
             for reviewer in reviewers:
                 review = self.call(objective, reviewer, "reviewer", REVIEW, {

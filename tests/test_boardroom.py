@@ -159,6 +159,30 @@ class RepositoryCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Commit or stash"):
             self.objective()
 
+    def test_explicit_claude_reviewer(self):
+        objective = self.objective()
+        objective["workers"] = ["codex"]
+        objective["reviewer"] = "claude"
+        self.store.save(objective, "configured")
+        fake = FakeProviders()
+        result = Runtime(self.store, fake).run(objective["id"])
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual([p for p, _ in fake.calls], ["claude", "codex", "claude", "claude"])
+
+    def test_plan_cannot_use_excluded_provider(self):
+        objective = self.objective()
+        objective["workers"] = ["grok"]
+        self.store.save(objective, "configured")
+        with self.assertRaisesRegex(ValueError, "outside the configured set"):
+            Runtime(self.store, FakeProviders()).run(objective["id"])
+
+    def test_plan_cannot_assign_implementation_to_reviewer(self):
+        objective = self.objective()
+        objective["reviewer"] = "codex"
+        self.store.save(objective, "configured")
+        with self.assertRaisesRegex(ValueError, "different providers"):
+            Runtime(self.store, FakeProviders()).run(objective["id"])
+
 
 class ProcessCase(unittest.TestCase):
     def test_timeout_terminates_process(self):
@@ -181,6 +205,12 @@ class ProcessCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaises(WorkerError):
                 run_process([sys.executable, "-c", "raise SystemExit(4)"], temp, Path(temp) / "a", 5)
+
+    def test_excessive_stderr_is_rejected_even_on_fast_exit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(WorkerError, "log limit"):
+                run_process([sys.executable, "-c", "import sys; sys.stderr.write('x'*8000001)"],
+                            temp, Path(temp) / "a", 5)
 
     def test_claude_in_band_error(self):
         with tempfile.TemporaryDirectory() as temp, patch("boardroom.providers.run_process",

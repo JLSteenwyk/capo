@@ -28,11 +28,15 @@ def parser():
     add.add_argument("--max-calls", type=int, default=24)
     add.add_argument("--max-rounds", type=int, default=3)
     add.add_argument("--timeout", type=int, default=900)
+    add.add_argument("--workers", nargs="+", choices=("codex", "grok"), default=["codex", "grok"])
+    add.add_argument("--reviewer", choices=("auto", "claude", "codex", "grok"), default="auto")
     issue = commands.add_parser("issue", help="Read a GitHub issue into a local objective")
     issue.add_argument("number", type=int)
     issue.add_argument("--github", required=True, help="OWNER/REPO")
     issue.add_argument("--repo", type=Path, required=True)
     issue.add_argument("--check", action="append", required=True)
+    issue.add_argument("--workers", nargs="+", choices=("codex", "grok"), default=["codex", "grok"])
+    issue.add_argument("--reviewer", choices=("auto", "claude", "codex", "grok"), default="auto")
     run = commands.add_parser("run", help="Run one objective in the foreground")
     run.add_argument("id")
     run.add_argument("--retry", action="store_true")
@@ -64,6 +68,8 @@ def add_objective(store, args, request, source=None):
                          "base": git(repo, "rev-parse", "HEAD"), "checks": checks,
                          "max_calls": getattr(args, "max_calls", 24),
                          "max_rounds": getattr(args, "max_rounds", 3),
+                         "workers": getattr(args, "workers", ["codex", "grok"]),
+                         "reviewer": getattr(args, "reviewer", "auto"),
                          "timeout": getattr(args, "timeout", 900)})
     data["workspace"] = str(store.home / "workspaces" / data["id"])
     store.save(data, "workspace_assigned")
@@ -100,7 +106,10 @@ def recover(store, objective_id):
             try:
                 os.kill(pid, 0)
             except ProcessLookupError:
-                continue
+                try:
+                    os.killpg(pid, 0)
+                except ProcessLookupError:
+                    continue
             raise ValueError(f"Process {pid} may still be active; inspect it before recovery")
         data["status"] = "blocked"
         data["error"] = "Recovered interrupted run; inspect workspace and use run --retry"

@@ -27,7 +27,19 @@ def run_process(argv, cwd, directory, timeout, stdin=None):
         (directory / "process.json").write_text(json.dumps({
             "pid": process.pid, "started": started, "command": argv[0]}))
         try:
-            process.communicate(stdin, timeout=timeout)
+            deadline = time.monotonic() + timeout
+            pending_input = stdin
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(argv, timeout)
+                if sum((directory / name).stat().st_size for name in ("stdout.txt", "stderr.txt")) > 8_000_000:
+                    raise WorkerError(f"Attempt exceeded its 8 MB log limit; inspect {directory}")
+                try:
+                    process.communicate(pending_input, timeout=min(0.25, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    pending_input = None
         except BaseException:
             try:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -41,9 +53,21 @@ def run_process(argv, cwd, directory, timeout, stdin=None):
                 except ProcessLookupError:
                     pass
                 process.wait()
+            # The parent may exit on TERM while a child ignores it.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             raise
+    # Background descendants are outside the bounded attempt contract.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
     (directory / "exit.json").write_text(json.dumps({
         "returncode": process.returncode, "seconds": time.time() - started}))
+    if sum((directory / name).stat().st_size for name in ("stdout.txt", "stderr.txt")) > 8_000_000:
+        raise WorkerError(f"Attempt exceeded its 8 MB log limit; inspect {directory}")
     if (directory / "stdout.txt").stat().st_size > 4_000_000:
         raise WorkerError(f"Output exceeds 4 MB; inspect {directory}")
     output = (directory / "stdout.txt").read_text(errors="replace")

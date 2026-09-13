@@ -48,6 +48,8 @@ This reads the issue and queues a local objective. Repeated intake of the same i
 
 Each rejected round feeds the evidence into another implementation pass, up to the configured limit. The default limits are three rounds, 24 provider calls, and 900 seconds per command. Set `--max-rounds`, `--max-calls`, and `--timeout` when adding an objective.
 
+To select a smaller available team explicitly, add `--workers codex --reviewer claude`. Claude still plans and makes the final acceptance decision, with a separate Claude session reviewing Codex's changes. The runtime rejects plans that use an excluded worker or assign implementation to the explicitly selected reviewer. No provider is silently substituted.
+
 Artifacts are in `$BOARDROOM_HOME/artifacts/OBJECTIVE_ID/`: prompts, provider output, structured results, process metadata, test logs, `changes.patch`, and `delivery.md`. Treat them as private project data.
 
 ### Interruptions and recovery
@@ -75,3 +77,7 @@ python3 -m unittest discover -s tests -v
 Tests use temporary repositories and fake providers. They exercise delivery, patch replay, revision, hard acceptance gates, budgets, recovery, locks, path validation, environment filtering, and timeouts without consuming model quota.
 
 Provider interfaces were checked against installed CLI help and official documentation: [Claude](https://code.claude.com/docs/en/headless), [Codex](https://developers.openai.com/codex/noninteractive), and [Grok Build](https://docs.x.ai/build/cli/headless-scripting). See the architecture for the staged roadmap and the distinction between current behavior and intended capabilities.
+
+### Local integration status (September 12, 2026)
+
+Live structured-response probes passed with Claude Code 2.1.263 and Codex 0.154.0. Grok 1.0.13 and an isolated copy of stable 1.0.30 both refused to initialize the read-only sandbox on this Mac because `/var/run/docker.sock` is a symlink. The installed Grok executable was preserved. Boardroom keeps the sandbox enabled; the Grok adapter needs a compatible host or a provider fix before live use here. The explicit Claude/Codex team above can be used meanwhile. This is a host integration failure, not evidence of a subscription quota problem.
