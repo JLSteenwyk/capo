@@ -111,7 +111,7 @@ For Slack publication, the repository alias must privately enable `allow_publica
 @capo sync OBJECTIVE_ID
 ```
 
-Preparation sends the full diff and PR preview with the target and digest. Approval is available only after the full preview was delivered. It binds to that exact verified candidate; follow-ups or changed content require new verification and preparation. Oversized previews require CLI review and publication. Slack authorization is still checked for every action. No command merges a PR.
+Preparation sends a short description, target, and exact approval command. Use `@capo details OBJECTIVE_ID` for the full diff, PR body, and commit. Approval is available only after the short review message was delivered. It binds to that exact verified candidate; follow-ups or changed content require new verification and preparation. Oversized code details require CLI review. Slack authorization is still checked for every action. No command merges a PR.
 
 `sync` reads PR state, review status, and CI results. Verify the reported remote commit still matches the accepted candidate. Publication is not merging, and the service does not automatically repair failed CI. Use an explicitly authorized follow-up objective for additional work.
 

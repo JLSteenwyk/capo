@@ -84,7 +84,7 @@ class DeliveryCase(unittest.TestCase):
         self.assertEqual(result['routine_delivery']['status'], 'failed')
         self.deliver()
         self.assertEqual(self.gateway.creates, 1)
-        self.assertIn("couldn't confirm publication", completed_message(result))
+        self.assertIn("couldn't confirm it reached GitHub", completed_message(result))
 
     def test_plan_does_not_dump_internal_workflow(self):
         text = plan_message({'plan': {'summary': 'The seeded candidate in src/helper.py ' * 50}})

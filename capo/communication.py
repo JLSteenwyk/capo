@@ -2,10 +2,10 @@
 import re
 
 STYLE = (
-    "Write user-facing prose in clear, connected sentences. State the purpose or result, "
+    "Write for someone with no technical background. Use short sentences and everyday words. State the purpose or result, "
     "then the evidence that supports it. Prefer concrete verbs and measured claims. "
     "Use everyday language; omit internal worker roles, file paths, objective IDs and "
-    "publication machinery. Keep a plan summary to two sentences and at most 40 words. "
+    "publication machinery. Keep each ordinary reply to two short sentences and at most 40 words. Give one clear next step when needed. Explain necessary technical terms. Provide technical detail only when requested. "
     "Do not claim tests passed or a PR exists before the supplied evidence shows it. "
 )
 
@@ -21,10 +21,10 @@ def plan_message(objective):
 def completed_message(objective):
     publication = objective.get('publication', {})
     if publication.get('status') == 'published':
-        return f"The change passed the configured checks and independent review. Draft PR: {publication['pr']['url']}"
+        return f"The change passed its tests and review. Proposed change: {publication['pr']['url']}"
     delivery = objective.get('routine_delivery', {})
     if delivery.get('status') in ('failed', 'started'):
-        return "The change passed verification, but I couldn't confirm publication of the draft PR. The work is saved; delivery needs attention."
+        return "The change passed its checks, but I couldn't confirm it reached GitHub. Your work is saved."
     if delivery.get('status') == 'review':
-        return "The change passed verification and needs your review. " + delivery['reason'] + " Ask me to prepare the draft in this thread."
-    return "Verified changes are ready. Ask me to prepare a draft PR in this thread."
+        return "The change passed its checks and needs your review. " + delivery['reason'] + " Ask me to prepare the draft in this thread."
+    return "The change passed its checks. Ask me to prepare it for review."

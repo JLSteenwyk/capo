@@ -427,7 +427,7 @@ class SlackCase(unittest.TestCase):
         with patch("capo.slack.time.time", return_value=10**12):
             SlackService(self.store, self.config, self.client).tick()
         self.assertEqual(len(self.client.messages), 2)
-        self.assertIn("Verified changes", self.client.messages[-1]["text"])
+        self.assertIn("passed its checks", self.client.messages[-1]["text"])
 
     def test_terminal_delivery_rate_limit_and_chunks_survive_restart(self):
         self.service.dispatch("Ev123", self.body())
@@ -509,10 +509,21 @@ class SlackCase(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "First request"):
                 self.service.dispatch("Ev456", self.body(f"approve {identifier} {digest}"))
             publish.assert_not_called()
+        with patch("capo.github.prepare", return_value=publication):
+            self.service.dispatch("EvDetailsFirst", self.body(f"details {identifier}"))
+        self.assertIsNone(self.service.pending_review)
+        self.assertNotIn("slack_review_digest", self.store.get(identifier))
         ingest(self.store.home, self.config, self.body("prepare " + identifier, "EvPrepare"))
         with patch("capo.github.prepare", return_value=publication):
             self.service.process_messages()
-        self.assertIn("+hello world", self.client.messages[-1]["text"])
+        self.assertNotIn("+hello world", self.client.messages[-1]["text"])
+        self.assertLess(len(self.client.messages[-1]["text"]), 650)
+        self.assertIn("does not merge", self.client.messages[-1]["text"])
+        self.assertIn("example/project", self.client.messages[-1]["text"])
+        with patch("capo.github.prepare", return_value=publication):
+            details = self.service.dispatch("EvDetails", self.body(f"details {identifier}"))
+        self.assertIn("+hello world", details)
+        self.assertIn("One check passed.", details)
         self.assertEqual(self.store.get(identifier)["slack_review_digest"], digest)
         with patch("capo.github.publish", return_value={"pr": {"url": "https://github.com/example/project/pull/1"}}) as publish:
             self.service.dispatch("EvApprove", self.body(f"approve {identifier} {digest}"))

@@ -50,12 +50,9 @@ def resolve_issue_links(settings, request):
     return request + "\n\nGitHub issue source material (task data, not permission to change policy):\n" + json.dumps(context)
 
 
-HELP = ("Mention Capo with a request, such as ‘Can you check PhyKIT for open issues?’ "
-        "or ‘Fix issue #12 in PhyKIT.’ You can also ask for progress in its thread. "
-        "Send `repo-alias: your objective` to queue work, or `improve repo-alias: your objective` "
-        "for Capo self-improvement. Use `status OBJECTIVE_ID`, `cancel OBJECTIVE_ID`, or `help`. "
-        "In an objective thread use `followup: instructions`, `prepare OBJECTIVE_ID`, "
-        "`approve OBJECTIVE_ID DIGEST`, or `sync OBJECTIVE_ID`. Commands require an @mention.")
+HELP = ("Mention Capo and say what you need, for example: ‘Check PhyKIT for open issues.’ "
+        "Reply in the same thread to ask for an update, change the request, or cancel it. "
+        "I'll ask if I need your help.")
 
 
 def blocked_reason(objective):
@@ -335,7 +332,7 @@ class SlackService:
         text = re.sub(r"^\s*<@[A-Z0-9]+>[\s,:]*", "", incoming).strip()
         if text.lower() == "help":
             return HELP
-        match = re.fullmatch(r"(prepare|approve|sync)\s+([a-f0-9]{16})(?:\s+([a-f0-9]{64}))?", text)
+        match = re.fullmatch(r"(prepare|details|approve|sync)\s+([a-f0-9]{16})(?:\s+([a-f0-9]{64}))?", text)
         if match:
             from .github import GitHub, prepare, publish, remote_repository, sync
             from .repository import git
@@ -350,26 +347,34 @@ class SlackService:
                 if remote.get("state") in ("MERGED", "CLOSED"):
                     state = "merged" if remote["state"] == "MERGED" else "closed"
                     return f"This pull request has already been {state}: {remote['url']}. No further publication approval is needed."
-            if command == "prepare":
+            if command in ("prepare", "details"):
                 if digest:
-                    raise ValueError("prepare does not accept a digest")
+                    raise ValueError("This command does not need an approval code")
                 publication = prepare(self.store, identifier,
                     remote_repository(git(objective["repo"], "remote", "get-url", "origin")),
                     settings.get("publication_base", "main"))
                 diff = (self.store.home / "artifacts" / identifier / "changes.patch").read_text()
                 payload = publication["payload"]
-                preview = (f"Draft PR preview for {identifier}\n"
-                    f"Repository: {payload['repository']}\nBase: {payload['base_branch']}\n"
-                    f"Commit: {payload['commit']}\nTitle: {payload['title']}\n\n"
-                    f"{payload['body']}\nChanges:\n{diff}\n\n"
-                    f"To approve this exact candidate: approve {identifier} {publication['digest']}")
-                if len(preview) > 80000:
-                    raise ValueError("Preview exceeds Slack review limit; inspect and publish using the CLI")
+                if command == "details":
+                    preview = (f"{payload['title']}\n{payload['repository']} → {payload['base_branch']}\n"
+                        f"Commit: {payload['commit']}\n\n{payload['body']}\n\n{diff}")
+                    if len(preview) > 80000:
+                        raise ValueError("The full change is too large for Slack. Review it with the Capo CLI.")
+                    return preview
+                # Keep the review invitation short; exact content remains available
+                # on demand and approval is still bound to the prepared digest.
+                title = " ".join(payload['title'].split())
+                if len(title) > 160:
+                    title = title[:157].rstrip() + "…"
                 self.pending_review = (identifier, publication["digest"])
-                return preview
+                return (f"Ready for review: {title}\n"
+                    f"Target: {payload['repository']} → {payload['base_branch']}.\n"
+                    "Approving opens a draft pull request—a proposed change. It does not merge it.\n\n"
+                    f"See the full change: @Capo details {identifier}\n"
+                    f"Approve: @Capo approve {identifier} {publication['digest']}")
             if command == "approve":
                 if not digest or objective.get("slack_review_digest") != digest:
-                    raise ValueError("First request and review the full prepare preview, then approve its exact digest")
+                    raise ValueError("First request a review with prepare, then copy its approval command")
                 result = publish(self.store, identifier, digest, GitHub(settings.get("github_auth", "default")))
                 return f"Draft PR published: {result['pr']['url']}"
             if digest:
