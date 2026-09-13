@@ -64,6 +64,8 @@ def parser():
     draft.add_argument("--github", required=True, help="OWNER/REPO matching source origin")
     draft.add_argument("--base", required=True, help="Target branch, e.g. main")
     draft.add_argument("--title")
+    draft.add_argument("--body-file", type=Path,
+                       help="Use exact PR text from a local file; may revise an unpublished prepared body")
     publication = commands.add_parser("publish", help="Push the prepared commit and create its draft PR")
     publication.add_argument("id")
     publication.add_argument("--digest", required=True, help="Exact digest from prepare")
@@ -215,7 +217,8 @@ def main(argv=None):
         elif args.command == "events":
             result = store.events(args.id)
         elif args.command == "prepare":
-            result = prepare(store, args.id, args.github, args.base, args.title)
+            body = args.body_file.read_text() if args.body_file is not None else None
+            result = prepare(store, args.id, args.github, args.base, args.title, body=body)
         elif args.command == "publish":
             result = publish(store, args.id, args.digest, GitHub(args.github_auth))
         elif args.command == "sync":

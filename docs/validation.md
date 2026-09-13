@@ -4,7 +4,7 @@ September 12, 2026, macOS, Python 3.14.5.
 
 ## Automated checks
 
-`python3 -m unittest discover -s tests -q` passes 101 tests. Coverage includes the full objective loop with fake providers, replayable Git patches, review-driven revision, verification/acceptance gates, bounded model calls, interrupted-run recovery, exclusive supervisor ownership, path protections, provider errors, subprocess termination, log-size limits, explicit team selection, GitHub publication reconciliation, frozen self-improvement regressions, and owner-only Slack intake.
+`python3 -m unittest discover -s tests -q` passes 107 tests. Coverage includes the full objective loop with fake providers, replayable Git patches, review-driven revision, verification/acceptance gates, bounded model calls, interrupted-run recovery, exclusive supervisor ownership, path protections, provider errors, subprocess termination, log-size limits, explicit team selection, GitHub publication reconciliation, frozen self-improvement regressions, and owner-only Slack intake.
 
 `git diff --check` passes. The CLI help and executable doctor run successfully.
 
@@ -42,7 +42,7 @@ Capo ran an improvement against its own committed source: add `capo --version` u
 
 The optional package installed successfully with Slack Bolt 1.30.0 and Slack SDK 3.44.1. Socket Mode connect/close interfaces were checked against the installed SDK. Tests use a fake Slack client and cover workspace/channel/owner restrictions, duplicate event delivery, restart deduplication, thread replies, queued cancellation, repository allowlisting, and token removal from child processes. No Slack messages were sent and no live workspace connection was established. The owner and channel name are saved privately. Bot/app tokens and resolved workspace/channel IDs are required for live validation.
 
-GitHub publication tests use real local Git commits and a fake GitHub gateway; a real local bare-remote test also verifies that publication cannot overwrite an existing objective branch. No test PR was posted to GitHub. Code milestones were committed and pushed to the requested repository separately.
+GitHub publication tests use real local Git commits and a fake GitHub gateway; a real local bare-remote test also verifies that publication cannot overwrite an existing objective branch. At this earlier validation stage, no test PR was posted to GitHub. Code milestones were committed and pushed to the requested repository separately.
 
 ## Live Grok Linux VM probe
 
@@ -67,3 +67,15 @@ A live synthetic fault test killed the host transport supervisor with SIGKILL. T
 The first integrated issue/self-improvement run used Claude, Codex, and Grok. Independent review rejected missing tests/docs and a SQLite WAL concern. Concrete follow-up context led to a revised implementation, but the run remained blocked on a generated test-fixture error and a transport failure; no PR was published from that state. The transport failure was an OpenSSH multiplexed command-size error, addressed with a smaller compressed guest bootstrap. The candidate is retained for a bounded continuation against the corrected platform.
 
 GitHub rejected CI workflow publication because the saved OAuth login lacks the workflow scope. The reviewed workflow is retained at `integrations/github/tests.yml`; live CI remains unverified until installation. Slack bot/app credentials remain absent, so live Slack verification is still pending.
+
+
+## Integrated development and self-improvement continuation
+
+A bounded continuation of the real objective-report issue completed against the corrected platform. The prior blocked attempt and its candidate were preserved; the new candidate started from those three feature files with a fresh, stronger frozen baseline. Claude Code planned the work, Codex corrected and expanded the implementation/tests, and Grok Build reviewed through the configured isolated Linux transport. An initial review rejection for missing schema context prevented acceptance; operator follow-ups supplied the actual Store schema. The final review approved, both checks passed, and Claude accepted the full feature in ten provider calls without changing enforcement code.
+
+The frozen suite passed 101 tests and the candidate suite passed 116 tests. A live `capo.report` invocation against the completed objective returned its status and verification summary while preserving source SQLite contents and modification times. This is an assisted integration demonstration, not a claim of fully unattended development quality. The final planner summary was a placeholder, so the publication description was prepared separately for explicit review rather than treating model-generated prose as sufficient delivery evidence.
+
+
+The verified candidate was published through Capo's digest-bound CLI flow as [draft PR #2](https://github.com/JLSteenwyk/capo/pull/2). Remote reconciliation confirmed that its head matches the accepted commit and its body matches the reviewed description. PR synchronization reports an open draft with no CI checks; an empty status is not a passing CI run. The PR has not been merged.
+
+The mainline suite now passes 107 tests, including restart discovery of undelivered Slack clarification/terminal notifications, rate-limited chunk recovery, and publication-description revisions that invalidate previous approval digests. Live Slack remains blocked on local credentials and workspace resolution; CI installation remains blocked on GitHub workflow authorization.

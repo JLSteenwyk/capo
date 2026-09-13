@@ -110,6 +110,57 @@ class PublicationCase(unittest.TestCase):
             publish(self.store, updated["id"], draft["digest"], self.gateway)
         self.assertEqual(self.gateway.pushes, 0)
 
+    def test_prepared_body_revision_requires_fresh_digest_without_new_commit(self):
+        original = self.prepare()
+        objective = self.store.get(self.objective["id"])
+        objective["slack_review_digest"] = original["digest"]
+        self.store.save(objective, "preview_delivered")
+        body = "Fix addition for positive and negative inputs.\n\nValidation: arithmetic checks passed.\n"
+        revised = prepare(self.store, objective["id"], "owner/project", "main", body=body)
+        self.assertEqual(revised["payload"]["commit"], original["payload"]["commit"])
+        self.assertEqual(revised["payload"]["branch"], original["payload"]["branch"])
+        self.assertEqual(revised["payload"]["body"], body)
+        self.assertNotEqual(revised["digest"], original["digest"])
+        self.assertNotIn("slack_review_digest", self.store.get(objective["id"]))
+        directory = self.store.home / "artifacts" / objective["id"]
+        self.assertTrue((directory / "pull-request.md").read_text().endswith(body))
+        import json
+        self.assertEqual(json.loads((directory / "publication.json").read_text()), revised)
+        self.assertEqual(prepare(self.store, objective["id"], "owner/project", "main", body=body), revised)
+        with self.assertRaisesRegex(ValueError, "digest"):
+            publish(self.store, objective["id"], original["digest"], self.gateway)
+        self.assertEqual(self.gateway.pushes, 0)
+        self.assertEqual(publish(self.store, objective["id"], revised["digest"], self.gateway)["status"], "published")
+        self.assertEqual(self.gateway.pr["body"], body)
+
+    def test_publication_started_locks_body_and_preparation_locks_title(self):
+        draft = self.prepare()
+        with self.assertRaisesRegex(ValueError, "different publication"):
+            prepare(self.store, self.objective["id"], "owner/project", "main", title="Changed title")
+        self.gateway.timeout_after_create = True
+        with self.assertRaises(RuntimeError):
+            publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+        for status in ("publishing", "published"):
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(ValueError, "publication has started"):
+                    prepare(self.store, self.objective["id"], "owner/project", "main", body="New body")
+                self.assertEqual(prepare(self.store, self.objective["id"], "owner/project", "main",
+                                         body=draft["payload"]["body"])["status"], status)
+                if status == "publishing":
+                    publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+
+    def test_cli_body_file_preserves_literal_multiline_text(self):
+        from capo.cli import main
+        import io
+        from contextlib import redirect_stdout
+        body = "Fix arithmetic.\n\nLiteral `code` and $(text) remain unchanged.\n"
+        path = self.root / "body.md"
+        path.write_text(body)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["--home", str(self.store.home), "prepare", self.objective["id"],
+                                   "--github", "owner/project", "--base", "main", "--body-file", str(path)]), 0)
+        self.assertEqual(self.store.get(self.objective["id"])["publication"]["payload"]["body"], body)
+
     def test_published_objective_rejects_followup(self):
         draft = self.prepare()
         publish(self.store, self.objective["id"], draft["digest"], self.gateway)

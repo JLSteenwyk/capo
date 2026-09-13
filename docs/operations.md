@@ -101,7 +101,7 @@ capo publish OBJECTIVE_ID --digest PREPARED_DIGEST
 capo sync OBJECTIVE_ID
 ```
 
-Preparation creates a local candidate commit and exact publication digest. Publication pushes the new objective branch and opens a draft PR. The target must match the source GitHub origin. Changed content, a conflicting branch, or movement of the remote base prevents publication. An uncertain publication should be retried against its existing record and exact digest so Capo can reconcile remote state; do not create another objective merely to repeat the write.
+Preparation creates a local candidate commit and exact publication digest. Supply `--body-file /private/path/to/reviewed-pr.md` to use reviewed PR text verbatim. Before publication starts, repeat `prepare` with a new body file to revise the description while retaining the verified commit and branch. This generates a new digest and invalidates any Slack preview approval; inspect the revised artifacts and use the new digest. The title and target cannot change once prepared, and the body cannot change after publication starts. Repeating identical preparation is safe. Publication pushes the new objective branch and opens a draft PR. The target must match the source GitHub origin. Changed content, a conflicting branch, or movement of the remote base prevents publication. An uncertain publication should be retried against its existing record and exact digest so Capo can reconcile remote state; do not create another objective merely to repeat the write.
 
 For Slack publication, the repository alias must privately enable `allow_publication` and set the intended `publication_base` and `github_auth`. In the objective thread:
 

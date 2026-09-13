@@ -184,6 +184,78 @@ class SlackCase(unittest.TestCase):
         self.assertEqual(self.store.get(objective["id"])["status"], "queued")
         self.assertEqual(self.store.followups(objective["id"])[0]["text"], "Yes, return zero")
 
+    def test_restart_discovers_terminal_checkpoint_without_child_handle(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective.update(status="awaiting_input", question="Which input format?")
+        self.store.save(objective, "clarification_requested")
+        home = self.store.home
+        self.store.db.close()
+        self.store = Store(home)
+        restarted = SlackService(self.store, self.config, self.client)
+        restarted.tick()
+        self.assertEqual(len(self.client.messages), 1)
+        self.assertIn("Which input format?", self.client.messages[0]["text"])
+        self.assertEqual(self.client.messages[0]["thread_ts"], "123.456")
+        self.assertEqual(self.store.get(objective["id"]), objective)
+        SlackService(self.store, self.config, self.client).tick()
+        self.assertEqual(len(self.client.messages), 1)
+        objective.update(status="completed", calls=5)
+        self.store.save(objective, "accepted")
+        with patch("capo.slack.time.time", return_value=10**12):
+            SlackService(self.store, self.config, self.client).tick()
+        self.assertEqual(len(self.client.messages), 2)
+        self.assertIn("Verified changes", self.client.messages[-1]["text"])
+
+    def test_terminal_delivery_rate_limit_and_chunks_survive_restart(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective.update(status="awaiting_input", question="Q" * 2700)
+        self.store.save(objective, "clarification_requested")
+        from types import SimpleNamespace
+        failure = RuntimeError("synthetic rate limit")
+        failure.response = SimpleNamespace(headers={"Retry-After": "30"})
+        with patch("capo.slack.time.time", return_value=100):
+            with patch.object(self.client, "chat_postMessage", side_effect=failure):
+                with self.assertRaises(RuntimeError):
+                    self.service.tick()
+        restarted = SlackService(self.store, self.config, self.client)
+        with patch("capo.slack.time.time", return_value=129):
+            restarted.tick()
+        self.assertEqual(self.client.messages, [])
+        with patch("capo.slack.time.time", return_value=130):
+            restarted.tick()
+        self.assertEqual(len(self.client.messages), 1)
+        with patch("capo.slack.time.time", return_value=132):
+            SlackService(self.store, self.config, self.client).tick()
+        self.assertEqual(len(self.client.messages), 2)
+        self.assertEqual("".join(m["text"] for m in self.client.messages).count("Q"), 2700)
+        with patch("capo.slack.time.time", return_value=134):
+            SlackService(self.store, self.config, self.client).tick()
+        self.assertEqual(len(self.client.messages), 2)
+
+    def test_undelivered_question_is_suppressed_after_followup_or_policy_change(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective.update(status="awaiting_input", question="Stale question?")
+        self.store.save(objective, "clarification_requested")
+        with patch("capo.slack.time.time", return_value=100):
+            self.service.delivery_delay(30)
+            self.service.tick()
+        self.assertEqual(self.client.messages, [])
+        self.store.add_followup(objective["id"], "EvAnswer", "Answer already supplied")
+        with patch("capo.slack.time.time", return_value=140):
+            SlackService(self.store, self.config, self.client).tick()
+        self.assertEqual(self.client.messages, [])
+        objective = self.store.get(objective["id"])
+        objective.update(status="completed")
+        self.store.save(objective, "accepted")
+        for key in ("owner_user_id", "channel_id", "team_id"):
+            with self.subTest(key=key):
+                config = dict(self.config, **{key: self.config[key][0] + "OTHER"})
+                SlackService(self.store, config, self.client).tick()
+        self.assertEqual(self.client.messages, [])
+
     def test_dispatch_itself_rechecks_owner(self):
         body = self.body()
         body["event"]["user"] = "UOTHER"

@@ -114,8 +114,28 @@ def verified_workspace(objective):
     return workspace, diff
 
 
-def prepare(store, objective_id, repo, base_branch, title=None):
+def _record_preparation(store, objective, publication, diff):
+    with store.db:
+        store.db.execute("BEGIN IMMEDIATE")
+        if (store.get(objective["id"]) != objective
+                or store.followups(objective["id"]) != objective.get("followups", [])):
+            raise ValueError("Objective changed during preparation; inspect and retry")
+        directory = store.home / "artifacts" / objective["id"]
+        payload = publication["payload"]
+        (directory / "pull-request.md").write_text(f"# {payload['title']}\n\n{payload['body']}")
+        (directory / "publication.json").write_text(json.dumps(publication, indent=2))
+        (directory / "changes.patch").write_text(diff)
+        if objective.get("publication") != publication:
+            objective["publication"] = publication
+            objective.pop("slack_review_digest", None)
+            store.save(objective, "publication_prepared")
+    return publication
+
+
+def prepare(store, objective_id, repo, base_branch, title=None, body=None):
     repository_name(repo)
+    if body is not None and (not isinstance(body, str) or not body.strip() or len(body) > 65536):
+        raise ValueError("PR body must be nonempty and at most 65536 characters")
     with exclusive(store.home):
         objective = store.get(objective_id)
         workspace, diff = verified_workspace(objective)
@@ -124,21 +144,31 @@ def prepare(store, objective_id, repo, base_branch, title=None):
             raise ValueError("Publication repository must match the source origin")
         git(workspace, "check-ref-format", f"refs/heads/{base_branch}")
         if objective.get("publication"):
-            old = objective["publication"]["payload"]
+            publication = objective["publication"]
+            old = publication["payload"]
             if (old["repository"].lower() != repo.lower() or old["base_branch"] != base_branch
                     or title is not None and old["title"] != title):
                 raise ValueError("A different publication is already prepared for this objective")
-            return objective["publication"]
+            if body is not None and body != old["body"]:
+                if publication["status"] != "prepared":
+                    raise ValueError("Cannot revise a PR body after publication has started")
+                payload = dict(old, body=body)
+                publication = {"status": "prepared", "payload": payload, "digest": payload_digest(payload)}
+            if publication["status"] == "prepared":
+                return _record_preparation(store, objective, publication, diff)
+            return publication
         title = title if title is not None else objective["request"].splitlines()[0][:120]
         if not title.strip() or "\n" in title or "\r" in title or len(title) > 256:
             raise ValueError("PR title must be a single nonempty line, at most 256 characters")
         verification = objective["verification"]
-        body = (f"{objective['plan']['summary']}\n\nValidation:\n"
+        default_body = (f"{objective['plan']['summary']}\n\nValidation:\n"
                 + f"- {len(verification['checks'])} configured verification checks passed."
                 + "\n\nReviewed by: " + ", ".join(row["provider"] for row in verification["reviews"])
                 + f".\n\nTeam: {objective.get('team_name', 'SPARKITscience')}. Capo objective: `{objective_id}`.\n")
         if objective.get("source", "") and objective["source"].startswith("https://github.com/"):
-            body += f"\nRelated issue: {objective['source']}\n"
+            default_body += f"\nRelated issue: {objective['source']}\n"
+        if body is None:
+            body = default_body
         branch = f"capo/{objective_id}-{objective['accepted_tree'][:12]}"
         ref = f"refs/heads/{branch}"
         existing = git(workspace, "for-each-ref", "--format=%(objectname)", ref)
@@ -158,13 +188,7 @@ def prepare(store, objective_id, repo, base_branch, title=None):
                    "branch": branch, "commit": commit, "tree": objective["accepted_tree"],
                    "title": title, "body": body, "draft": True}
         publication = {"status": "prepared", "digest": payload_digest(payload), "payload": payload}
-        directory = store.home / "artifacts" / objective_id
-        (directory / "pull-request.md").write_text(f"# {title}\n\n{body}")
-        (directory / "publication.json").write_text(json.dumps(publication, indent=2))
-        (directory / "changes.patch").write_text(diff)
-        objective["publication"] = publication
-        store.save(objective, "publication_prepared")
-        return publication
+        return _record_preparation(store, objective, publication, diff)
 
 
 def publish(store, objective_id, digest, gateway=None):

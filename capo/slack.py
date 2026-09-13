@@ -2,6 +2,7 @@
 
 import argparse
 import fcntl
+import hashlib
 import html
 import json
 import os
@@ -140,6 +141,10 @@ class SlackService:
             );
             CREATE TABLE IF NOT EXISTS slack_delivery_clock (
                 channel TEXT PRIMARY KEY, not_before REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS slack_notifications (
+                checkpoint TEXT PRIMARY KEY, objective_id TEXT NOT NULL,
+                next_chunk INTEGER NOT NULL DEFAULT 0, delivered INTEGER NOT NULL DEFAULT 0
             );
         """)
 
@@ -296,6 +301,62 @@ class SlackService:
                 "ON CONFLICT(channel) DO UPDATE SET not_before=excluded.not_before",
                 (self.config["channel_id"], time.time() + seconds))
 
+    def send_chunk(self, event, text):
+        clock = self.store.db.execute("SELECT not_before FROM slack_delivery_clock WHERE channel=?",
+                                      (self.config["channel_id"],)).fetchone()
+        if clock and time.time() < clock[0]:
+            return False
+        try:
+            self.reply(event, text)
+        except Exception as exc:
+            headers = getattr(getattr(exc, "response", None), "headers", {}) or {}
+            delay = headers.get("Retry-After", headers.get("retry-after", 5))
+            if isinstance(delay, (list, tuple)):
+                delay = delay[0] if delay else 5
+            try:
+                delay = max(1, float(delay))
+            except (ValueError, TypeError):
+                delay = 5
+            self.delivery_delay(delay)
+            raise
+        self.delivery_delay(1)
+        return True
+
+    def process_notifications(self):
+        # Discover terminal checkpoints independently of the in-memory child
+        # handle, including work completed while this service was disconnected.
+        for objective in reversed(self.store.list()):
+            if not self.owns(objective) or objective["status"] not in (
+                    "completed", "blocked", "cancelled", "awaiting_input"):
+                continue
+            identifier = objective["id"]
+            text = f"{identifier}: {objective['status']}."
+            if objective["status"] == "completed":
+                text += " Verified changes are ready. Request prepare OBJECTIVE_ID to review a draft PR, or reply in this thread with follow-up instructions."
+            elif objective["status"] == "awaiting_input":
+                text += f" Claude needs your input: {objective['question']} Reply here and mention the bot."
+            else:
+                text += " Inspect the objective's CLI status and artifacts for details."
+            identity = json.dumps([identifier, objective["slack"], text,
+                                   objective.get("calls"), objective.get("round")], sort_keys=True)
+            checkpoint = hashlib.sha256(identity.encode()).hexdigest()
+            with self.store.db:
+                self.store.db.execute("INSERT OR IGNORE INTO slack_notifications(checkpoint,objective_id) VALUES (?,?)",
+                                      (checkpoint, identifier))
+            row = self.store.db.execute("SELECT next_chunk,delivered FROM slack_notifications WHERE checkpoint=?",
+                                        (checkpoint,)).fetchone()
+            if row[1]:
+                continue
+            index = row[0]
+            chunks = [text[offset:offset + 2500] for offset in range(0, len(text), 2500)]
+            # Reload after discovery: a queued follow-up supersedes this notice.
+            if self.store.get(identifier) != objective:
+                continue
+            if self.send_chunk(objective["slack"], chunks[index]):
+                with self.store.db:
+                    self.store.db.execute("UPDATE slack_notifications SET next_chunk=?,delivered=? WHERE checkpoint=?",
+                                          (index + 1, int(index + 1 == len(chunks)), checkpoint))
+
     def process_messages(self):
         for event_id, body in self.store.pending_slack():
             # Recheck policy after restart or configuration changes.
@@ -329,30 +390,12 @@ class SlackService:
                                           (json.dumps(data), event_id))
             chunks = [data["text"][offset:offset + 2500] for offset in range(0, len(data["text"]), 2500)]
             if index < len(chunks):
-                clock = self.store.db.execute("SELECT not_before FROM slack_delivery_clock WHERE channel=?",
-                                              (self.config["channel_id"],)).fetchone()
-                if clock and time.time() < clock[0]:
+                if not self.send_chunk(body["event"], chunks[index]):
                     continue
-                try:
-                    self.reply(body["event"], chunks[index])
-                except Exception as exc:
-                    # Slack SDK errors expose Retry-After through response.headers.
-                    # Keep waiting in the event loop, never sleep through cancellation.
-                    headers = getattr(getattr(exc, "response", None), "headers", {}) or {}
-                    delay = headers.get("Retry-After", headers.get("retry-after", 5))
-                    if isinstance(delay, (list, tuple)):
-                        delay = delay[0] if delay else 5
-                    try:
-                        delay = max(1, float(delay))
-                    except (ValueError, TypeError):
-                        delay = 5
-                    self.delivery_delay(delay)
-                    raise
                 index += 1
                 with self.store.db:
                     self.store.db.execute("UPDATE slack_deliveries SET next_chunk=? WHERE event_id=?",
                                           (index, event_id))
-                self.delivery_delay(1)
             if index < len(chunks):
                 continue
             if data.get("review"):
@@ -381,22 +424,16 @@ class SlackService:
                     objective["status"] = "blocked"
                     objective["error"] = "Runner exited without a terminal checkpoint; inspect its artifacts"
                     self.store.save(objective, "slack_runner_failed")
-                text = f"{self.active_id}: {objective['status']}."
-                if objective["status"] == "completed":
-                    text += " Verified changes are ready. Request prepare OBJECTIVE_ID to review a draft PR, or reply in this thread with follow-up instructions."
-                elif objective["status"] == "awaiting_input":
-                    text += f" Claude needs your input: {objective['question']} Reply here and mention the bot."
-                elif objective["status"] == "queued" and pending_followup:
-                    text += " Your follow-up is queued for Claude."
-                else:
-                    text += " Inspect the objective's CLI status and artifacts for details."
-                self.reply(objective["slack"], text)
+                if objective["status"] == "queued" and pending_followup:
+                    self.reply(objective["slack"], f"{self.active_id}: Your follow-up is queued for Claude.")
                 self.active, self.active_id, self.last_stage = None, None, None
+                self.process_notifications()
             elif objective.get("active_stage") != self.last_stage:
                 self.last_stage = objective.get("active_stage")
                 if self.last_stage:
                     self.reply(objective["slack"], f"{self.active_id}: {self.last_stage} in progress.")
             return
+        self.process_notifications()
         if not self.config.get("auto_run", True):
             return
         # A restarted service must not launch a second runner during an existing
