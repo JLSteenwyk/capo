@@ -90,7 +90,7 @@ def add_improvement(store, args):
 CORE_ENFORCEMENT = frozenset({
     "capo/runtime.py", "capo/repository.py", "capo/improvement.py", "capo/providers.py",
     "capo/process.py", "capo/watchdog.py", "capo/transport.py", "capo/guest.py",
-    "capo/finalize.py", "capo/github.py", "capo/store.py", "capo/slack.py", "capo/cli.py", "capo/contracts.py", "capo/conversation.py", "capo/routine.py", "capo/delivery.py", "capo/communication.py",
+    "capo/browser.py", "capo/browser_slack.py", "capo/finalize.py", "capo/github.py", "capo/store.py", "capo/slack.py", "capo/cli.py", "capo/contracts.py", "capo/conversation.py", "capo/routine.py", "capo/delivery.py", "capo/communication.py",
     "capo/__init__.py", "capo/__main__.py", "pyproject.toml", "setup.py", "setup.cfg",
     "sitecustomize.py", "usercustomize.py",
 })

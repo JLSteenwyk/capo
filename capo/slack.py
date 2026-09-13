@@ -136,6 +136,17 @@ def validate_config(config):
     repos = config.get("repositories")
     if not isinstance(repos, dict) or not repos:
         raise ValueError("Configure at least one named repository")
+    browser_settings = config.get("browser", {})
+    if not isinstance(browser_settings, dict) or type(browser_settings.get("enabled", False)) is not bool:
+        raise ValueError("browser.enabled must be true or false")
+    if browser_settings.get("enabled"):
+        from .browser import origin
+        allowed = browser_settings.get("allowed_origins", [])
+        if not isinstance(allowed, list) or not allowed or any(origin(url) != url for url in allowed):
+            raise ValueError("Browser sites must be exact HTTPS origins")
+        if origin(browser_settings.get("start_url", "")) not in allowed:
+            raise ValueError("Browser start URL must belong to an enabled site")
+
     for alias, settings in repos.items():
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", alias) or not isinstance(settings, dict):
             raise ValueError("Invalid repository alias/configuration")
@@ -295,6 +306,8 @@ class SlackService:
         if self.conversation is None:
             self.conversation = ConversationRouter(self.store.home)
         route = self.conversation.poll(event_id, {
+            "browser_enabled": self.config.get("browser", {}).get("enabled", False),
+            "browser_preferences": self.config.get("browser", {}).get("preferences", {}),
             "message": text, "aliases": list(self.config["repositories"]),
             "objectives": [{"id": row["id"], "alias": row["slack"].get("repository_alias", ""),
                             "status": row["status"]} for row in owned],
@@ -303,6 +316,9 @@ class SlackService:
         action, alias, identifier = route["action"], route["repository"], route["objective_id"]
         if action == "reply":
             return route["reply"] or "What would you like me to do, and for which repository?"
+        if action == "browser":
+            from .browser_slack import start
+            return start(self, event_id, event, "\n".join(row["user"] for row in reversed(recent)) + "\n" + text)
         if action == "issues":
             if alias not in self.config["repositories"]:
                 raise ValueError("Choose a configured repository: " + ", ".join(self.config["repositories"]))
@@ -353,6 +369,12 @@ class SlackService:
         if incoming.startswith("*<@") and incoming.endswith("*"):
             incoming = incoming[1:-1]
         text = re.sub(r"^\s*<@[A-Z0-9]+>[\s,:]*", "", incoming).strip()
+        from . import browser_slack
+        if text.lower().startswith("browse:"):
+            return browser_slack.start(self, event_id, event, text.split(":", 1)[1].strip())
+        browser_reply = browser_slack.dispatch(self, event, text)
+        if browser_reply is not None:
+            return browser_reply
         if text.lower() == "help":
             return HELP
         if text.lower() == "approve":
@@ -670,7 +692,9 @@ class SlackService:
             self.store.finish_slack(event_id)
 
     def tick(self):
+        from . import browser_slack
         self.process_messages()
+        browser_slack.tick(self)
         self.process_plan_notifications()
         if self.active:
             objective = self.store.get(self.active_id)
@@ -762,6 +786,8 @@ def serve(home, config_path):
         finally:
             signal.signal(signal.SIGTERM, previous)
             handler.close()
+            from .browser_slack import stop as stop_browser
+            stop_browser(service)
             if service.active and service.active.poll() is None:
                 service.active.terminate()
                 try:

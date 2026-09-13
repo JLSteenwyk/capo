@@ -121,3 +121,7 @@ See the [operations runbook](docs/operations.md) and [release evidence checklist
 ### Finish approved changes
 
 Enable `merge_after_approval: true` in a private Slack repository alias to merge approved changes once GitHub checks pass and delete the PR branch afterward. Reply `@capo approve` in the review thread. Routine automatic delivery uses the same finish step when both options are enabled. Conflicts, failed checks, or changed PR content stop delivery for inspection. See [Slack operation](docs/slack.md) and the [operations runbook](docs/operations.md).
+
+### Browser tasks
+
+Capo can use its own browser on this computer and ask for missing booking details in Slack. Browser interactions require approval; buying tickets requires reviewing the booking and total. Install the optional browser support and configure permitted sites using the [browser guide](docs/browser.md). Native desktop control and merchant-specific automatic checkout are not implemented.

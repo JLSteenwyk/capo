@@ -75,6 +75,17 @@ def parser():
     slack.add_argument("--config", type=Path, required=True)
     slack_setup = commands.add_parser("slack-setup", help="Resolve configured Slack workspace and channel names")
     slack_setup.add_argument("--config", type=Path, required=True)
+    browser = commands.add_parser("browser", help="Start a private browser task")
+    browser.add_argument("request")
+    browser.add_argument("--url", required=True)
+    browser.add_argument("--allow-origin", action="append", required=True)
+    browser_run = commands.add_parser("browser-run", help="Run a queued browser task")
+    browser_run.add_argument("id")
+    browser_run.add_argument("--headless", action="store_true")
+    for name in ("browser-status", "browser-cancel", "browser-approve"):
+        command = commands.add_parser(name)
+        command.add_argument("id")
+        if name == "browser-approve": command.add_argument("--digest", required=True)
     commands.add_parser("list", help="List durable objective states")
     for name in ("show", "events", "recover"):
         sub = commands.add_parser(name)
@@ -182,6 +193,22 @@ def main(argv=None):
         if args.command == "slack-setup":
             from .slack import configure
             print(json.dumps(configure(args.config), indent=2))
+            return 0
+        if args.command.startswith("browser"):
+            from . import browser
+            if args.command == "browser":
+                result = browser.create(args.home, args.request, args.url, args.allow_origin)
+            elif args.command == "browser-run":
+                result = browser.run(args.home, args.id, headless=args.headless)
+            elif args.command == "browser-approve":
+                browser.approve(args.home, args.id, args.digest)
+                result = {"status": "approval recorded"}
+            elif args.command == "browser-cancel":
+                browser.cancel(args.home, args.id)
+                result = {"status": "cancellation requested"}
+            else:
+                result = browser.read(args.home, args.id)
+            print(json.dumps(result, indent=2))
             return 0
         store = Store(args.home)
         if args.command == "add":

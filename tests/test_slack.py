@@ -54,6 +54,28 @@ class SlackCase(unittest.TestCase):
             "type": "app_mention", "channel": "C123", "user": "U123",
             "text": "<@UBOT> " + text, "ts": "123.456"}}
 
+    def test_browser_approval_requires_delivered_step_in_same_thread(self):
+        from capo import browser, browser_slack
+        from capo.conversation import _write
+        self.config['browser'] = {'enabled': True, 'start_url': 'https://cinema.example/',
+                                  'allowed_origins': ['https://cinema.example']}
+        response = self.service.dispatch('EvBrowser', self.body('browse: Find a movie'))
+        self.assertIn('browser', response)
+        state = list(browser_slack.sessions(self.service))[0]
+        state.update(status='awaiting_approval', pid=__import__('os').getpid(), message='Open the showtimes.',
+                     pending={'digest': 'abc', 'expires': 10**12, 'effect': 'click: Showtimes'})
+        directory = browser.location(self.store.home, state['id'])
+        _write(directory/'state.json', state)
+        self.assertIn('wait', self.service.dispatch('EvEarly', self.body('approve')))
+        self.assertFalse((directory/'approval.json').exists())
+        with patch.object(self.service, 'send_chunk', return_value=True):
+            browser_slack.tick(self.service)
+        other = self.body('approve'); other['event']['thread_ts'] = 'different'
+        self.service.dispatch('EvOther', other)
+        self.assertFalse((directory/'approval.json').exists())
+        self.assertIn('Approved', self.service.dispatch('EvApproveBrowser', self.body('approve')))
+        self.assertEqual(json.loads((directory/'approval.json').read_text())['digest'], 'abc')
+
     def test_superseded_blocker_is_not_announced(self):
         self.service.dispatch("Ev123", self.body())
         original = self.store.list()[0]
