@@ -54,6 +54,36 @@ class SlackCase(unittest.TestCase):
             "type": "app_mention", "channel": "C123", "user": "U123",
             "text": "<@UBOT> " + text, "ts": "123.456"}}
 
+    def test_superseded_blocker_is_not_announced(self):
+        self.service.dispatch("Ev123", self.body())
+        original = self.store.list()[0]
+        original.update(status="blocked", error="Revision limit reached")
+        self.store.save(original, "fixture")
+        continuation = self.store.create(dict(original, continuation_of=original["id"]))
+        self.service.process_notifications()
+        self.assertEqual(self.client.messages, [])
+
+    def test_routine_delivery_runs_before_completion_notice(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective["status"] = "completed"
+        self.store.save(objective, "fixture")
+        self.config["repositories"]["project"].update(allow_publication=True, auto_publish_routine=True)
+        def deliver(store, identifier, settings):
+            row = store.get(identifier)
+            row["publication"] = {"status": "published", "pr": {"url": "https://github.com/owner/project/pull/1"}}
+            store.save(row, "fixture_published")
+        with patch("capo.delivery.deliver_routine", side_effect=deliver):
+            self.service.tick()
+        self.assertEqual(len(self.client.messages), 1)
+        self.assertIn("/pull/1", self.client.messages[0]["text"])
+        self.assertNotIn("prepare", self.client.messages[0]["text"])
+
+    def test_routine_policy_requires_publication_permission(self):
+        self.config["repositories"]["project"]["auto_publish_routine"] = True
+        with self.assertRaises(ValueError):
+            validate_config(self.config)
+
     def test_only_owner_in_configured_workspace_and_channel_is_authorized(self):
         self.assertTrue(authorized(self.config, self.body()))
         for key, value in (("user", "UOTHER"), ("channel", "COTHER"), ("bot_id", "B123"),
@@ -205,7 +235,7 @@ class SlackCase(unittest.TestCase):
             self.store.save(objective, "fixture")
             self.service.tick()
         self.assertEqual(len(self.client.messages), 1)
-        self.assertIn("My plan:", self.client.messages[0]["text"])
+        self.assertIn("Update the greeting", self.client.messages[0]["text"])
         restarted = SlackService(self.store, self.config, self.client)
         restarted.tick()
         self.assertEqual(len(self.client.messages), 1)

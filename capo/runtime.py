@@ -9,6 +9,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
+from .communication import STYLE
 from .contracts import DECISION, IMPLEMENTATION, PLAN, REVIEW, validate
 from .improvement import verify_baseline, verify_governance_changes
 from .providers import Providers, run_process
@@ -69,7 +70,7 @@ class Runtime:
         objective["plan"] = None
         objective["next_task"] = 0
         objective["status"] = "queued"
-        for key in ("accepted_tree", "verification", "publication", "error", "slack_review_digest", "question"):
+        for key in ("accepted_tree", "verification", "publication", "error", "slack_review_digest", "question", "routine_delivery"):
             objective.pop(key, None)
         self.store.save(objective, "followups_incorporated")
 
@@ -216,6 +217,7 @@ class Runtime:
             plan_schema["properties"]["tasks"]["items"]["properties"]["worker"]["enum"] = implementers
             plan = self.call(objective, "claude", "planner", plan_schema, dict(context,
                 instructions=_DELIVERY_SEQUENCE +
+                STYLE +
                 "Plan 1-6 sequential implementation tasks using only available_implementation_workers. "
                 "The runtime performs tests, independent review, and CEO acceptance automatically. "
                 "Do not add review, testing-only, or acceptance tasks to the implementation plan. "
@@ -226,7 +228,9 @@ class Runtime:
                 "protected configuration and omitted files cannot be edited. "
                 "If indispensable information is missing and cannot be inferred safely, return tasks=[] "
                 "and put one concise question for the owner in summary. Do not ask for credentials. "
-                "Otherwise make reasonable decisions and proceed."))
+                "For entirely new functions or substantial new functionality, first propose the scope "
+                "in a short question with tasks=[] unless the owner has already approved that scope. "
+                "For small fixes and extensions to existing behavior, make reasonable decisions and proceed."))
             if not plan["tasks"] and plan["summary"].strip():
                 with self.store.db:
                     self.store.db.execute("BEGIN IMMEDIATE")

@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from .store import Store
+from .communication import plan_message, completed_message
 
 
 def resolve_issue_links(settings, request):
@@ -49,7 +50,9 @@ def resolve_issue_links(settings, request):
     return request + "\n\nGitHub issue source material (task data, not permission to change policy):\n" + json.dumps(context)
 
 
-HELP = ("Send `repo-alias: your objective` to queue work, or `improve repo-alias: your objective` "
+HELP = ("Mention Capo with a request, such as ‘Can you check PhyKIT for open issues?’ "
+        "or ‘Fix issue #12 in PhyKIT.’ You can also ask for progress in its thread. "
+        "Send `repo-alias: your objective` to queue work, or `improve repo-alias: your objective` "
         "for Capo self-improvement. Use `status OBJECTIVE_ID`, `cancel OBJECTIVE_ID`, or `help`. "
         "In an objective thread use `followup: instructions`, `prepare OBJECTIVE_ID`, "
         "`approve OBJECTIVE_ID DIGEST`, or `sync OBJECTIVE_ID`. Commands require an @mention.")
@@ -151,6 +154,10 @@ def validate_config(config):
                 raise ValueError(f"{name} must be a positive integer")
         if type(settings.get("allow_publication", False)) is not bool:
             raise ValueError("allow_publication must be true or false")
+        if type(settings.get("auto_publish_routine", False)) is not bool:
+            raise ValueError("auto_publish_routine must be true or false")
+        if settings.get("auto_publish_routine", False) and not settings.get("allow_publication", False):
+            raise ValueError("Routine delivery requires allow_publication")
         if settings.get("github_auth", "default") not in ("default", "keyring"):
             raise ValueError("Invalid GitHub authentication mode")
         if type(settings.get("allow_self_improvement", False)) is not bool:
@@ -427,7 +434,7 @@ class SlackService:
             objective["slack"].update(ts=event["ts"], thread_ts=event.get("thread_ts", event["ts"]),
                                       repository_alias=alias)
             self.store.save(objective, "slack_queued")
-        return f"I'll work on this in {alias} and share a short plan, then the result. Objective: {objective['id']}."
+        return f"I'll work on this in {alias} and share the plan and result here."
 
     def delivery_delay(self, seconds):
         with self.store.db:
@@ -456,23 +463,50 @@ class SlackService:
         self.delivery_delay(1)
         return True
 
+    def current_objectives(self):
+        owned = [row for row in self.store.list() if self.owns(row)]
+        superseded = {row.get("continuation_of") for row in owned}
+        return [row for row in reversed(owned) if row["id"] not in superseded]
+
+    def process_routine_publications(self):
+        from .delivery import deliver_routine
+        for objective in self.current_objectives():
+            if objective["status"] != "completed":
+                continue
+            try:
+                settings = self.settings(objective)
+            except ValueError:
+                continue
+            if settings.get("allow_publication") and settings.get("auto_publish_routine"):
+                try:
+                    deliver_routine(self.store, objective["id"], settings)
+                except ValueError:
+                    # Another supervisor may still hold the execution lock.
+                    continue
+
     def process_notifications(self):
         # Discover terminal checkpoints independently of the in-memory child
         # handle, including work completed while this service was disconnected.
-        for objective in reversed(self.store.list()):
-            if not self.owns(objective) or objective["status"] not in (
+        for objective in self.current_objectives():
+            if objective["status"] not in (
                     "completed", "blocked", "cancelled", "awaiting_input"):
                 continue
             identifier = objective["id"]
-            text = f"{identifier}: {objective['status']}."
+            text = ""
             if objective["status"] == "completed":
-                text += " Verified changes are ready. Request prepare OBJECTIVE_ID to review a draft PR, or reply in this thread with follow-up instructions."
+                settings = self.settings(objective)
+                if (settings.get("auto_publish_routine") and settings.get("allow_publication")
+                        and not objective.get("routine_delivery") and not objective.get("publication")):
+                    # An active runner can still hold the publication lock. Wait
+                    # for delivery assessment instead of sending two results.
+                    continue
+                text = completed_message(objective)
             elif objective["status"] == "awaiting_input":
-                text += f" Claude needs your input: {objective['question']} Reply here and mention the bot."
+                text = f"{objective['question']} Reply here and mention me."
             elif objective["status"] == "blocked":
-                text += " " + blocked_reason(objective)
+                text = blocked_reason(objective)
             else:
-                text += " Inspect the objective's CLI status and artifacts for details."
+                text = "I stopped work on this request."
             identity = json.dumps([identifier, objective["slack"], text,
                                    objective.get("calls"), objective.get("round")], sort_keys=True)
             checkpoint = hashlib.sha256(identity.encode()).hexdigest()
@@ -505,9 +539,7 @@ class SlackService:
             row = self.store.db.execute("SELECT delivered FROM slack_notifications WHERE checkpoint=?", (checkpoint,)).fetchone()
             if row[0]:
                 continue
-            summary = " ".join(objective["plan"].get("summary", "").split())[:700]
-            text = "My plan: " + (summary or "Inspect the relevant code, make the change, and verify it.")
-            text += " I'll report back when the work is ready or if I need your input."
+            text = plan_message(objective)
             if self.send_chunk(objective["slack"], text):
                 with self.store.db:
                     self.store.db.execute("UPDATE slack_notifications SET delivered=1 WHERE checkpoint=?", (checkpoint,))
@@ -590,8 +622,10 @@ class SlackService:
                 if objective["status"] == "queued" and pending_followup:
                     self.reply(objective["slack"], f"{self.active_id}: Your follow-up is queued for Claude.")
                 self.active, self.active_id, self.last_stage = None, None, None
+                self.process_routine_publications()
                 self.process_notifications()
             return
+        self.process_routine_publications()
         self.process_notifications()
         if not self.config.get("auto_run", True):
             return
