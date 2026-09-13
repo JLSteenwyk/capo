@@ -15,6 +15,18 @@ from .providers import Providers, run_process
 from .repository import apply_changes, changed_diff, create_workspace, git, snapshot
 
 
+_DELIVERY_SEQUENCE = (
+    "This stage evaluates the local candidate before delivery. Implementation, correctness, "
+    "regression checks, independent review, and all substantive feature criteria must be "
+    "satisfied with evidence. Commit, push, and draft PR creation happen afterward through "
+    "Capo's publication gateway and its approval policy; they are not prerequisites of "
+    "candidate acceptance. Keep requested delivery steps pending for that later stage, "
+    "including any delivery steps already present in the plan; do not claim they occurred. "
+    "Do not reject an otherwise valid candidate solely because those delivery steps are "
+    "pending, and do not waive any implementation or verification requirement. "
+)
+
+
 @contextmanager
 def exclusive(home):
     with (home / "supervisor.lock").open("a") as handle:
@@ -197,7 +209,10 @@ class Runtime:
                    "checks": objective["checks"]}
         if objective["plan"] is None:
             plan = self.call(objective, "claude", "planner", PLAN, dict(context,
-                instructions="Plan 1-6 sequential implementation tasks. Choose codex or grok for each. "
+                instructions=_DELIVERY_SEQUENCE +
+                "Plan 1-6 sequential implementation tasks. Choose codex or grok for each. "
+                "Do not assign commit, push, or PR creation as implementation tasks or "
+                "candidate acceptance criteria. "
                 "Give concrete acceptance criteria. This first version handles small text/code changes; "
                 "protected configuration and omitted files cannot be edited. "
                 "If indispensable information is missing and cannot be inferred safely, return tasks=[] "
@@ -262,7 +277,8 @@ class Runtime:
                 review = self.call(objective, reviewer, "reviewer", REVIEW, {
                     "objective": objective["request"], "plan": objective["plan"], "diff": diff,
                     "repository": snapshot(workspace, focus=objective["request"]), "checks": checks,
-                    "instructions": "Independently check correctness, regressions, and acceptance. "
+                    "instructions": _DELIVERY_SEQUENCE +
+                    "Independently check correctness, regressions, and acceptance. "
                     "Reject unsupported claims. Return actionable findings."})
                 reviews.append(dict(review, provider=reviewer))
             # Ensure even read-only provider calls did not change the candidate.
@@ -271,7 +287,8 @@ class Runtime:
             decision = self.call(objective, "claude", "acceptance", DECISION, {
                 "objective": objective["request"], "plan": objective["plan"],
                 "diff": diff, "checks": checks, "reviews": reviews,
-                "instructions": "Accept only if every criterion is supported by evidence, "
+                "instructions": _DELIVERY_SEQUENCE +
+                "Accept only if every substantive candidate criterion is supported by evidence, "
                 "all checks passed, and review approved. Explain remaining work otherwise."})
             if changed_diff(workspace, objective["base"]) != diff:
                 raise ValueError("Acceptance step changed the candidate")

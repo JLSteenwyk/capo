@@ -58,6 +58,11 @@ class GitHub:
         return json.loads(self.gh("issue", "view", str(number), "--repo", repo,
                                   "--json", "title,body,url"))
 
+    def issues(self, repo):
+        repository_name(repo)
+        return json.loads(self.gh("issue", "list", "--repo", repo, "--state", "open",
+                                 "--limit", "11", "--json", "number,title,url,labels,updatedAt"))
+
     def remote_ref(self, workspace, repo, branch):
         output = git(workspace, "ls-remote", "--heads", f"https://github.com/{repo}.git",
                      f"refs/heads/{branch}", env=self.env)

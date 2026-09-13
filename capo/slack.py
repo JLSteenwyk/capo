@@ -167,6 +167,7 @@ class SlackService:
         self.active_id = None
         self.last_stage = None
         self.pending_review = None
+        self.conversation = None
         self.store.db.executescript("""
             CREATE TABLE IF NOT EXISTS slack_deliveries (
                 event_id TEXT PRIMARY KEY, data TEXT NOT NULL,
@@ -192,6 +193,12 @@ class SlackService:
         origin = objective.get("slack", {})
         return all(origin.get(key) == self.config[key] for key in ("team_id", "channel_id", "owner_user_id"))
 
+    def thread_objectives(self, thread):
+        owned = [row for row in self.store.list() if self.owns(row)]
+        superseded = {row.get("continuation_of") for row in owned}
+        return [row for row in owned if row["id"] not in superseded
+                and row["slack"].get("thread_ts") == thread]
+
     def objective(self, identifier):
         objective = self.store.get(identifier)
         if not self.owns(objective):
@@ -211,6 +218,75 @@ class SlackService:
             raise ValueError("Repository alias changed since this objective was created")
         return settings
 
+    def natural_dispatch(self, event_id, body, text):
+        from .conversation import ConversationRouter
+        from .github import GitHub, remote_repository
+        from .repository import git
+
+        event = body["event"]
+        thread = event.get("thread_ts", event["ts"])
+        owned = [row for row in self.store.list() if self.owns(row)]
+        in_thread = self.thread_objectives(thread)
+        recent = []
+        for row in self.store.db.execute("SELECT id,data FROM slack_inbox ORDER BY rowid DESC LIMIT 100"):
+            prior = json.loads(row["data"])
+            if row["id"] == event_id or not authorized(self.config, prior):
+                continue
+            prior_event = prior["event"]
+            if prior_event.get("thread_ts", prior_event["ts"]) != thread:
+                continue
+            delivery = self.store.db.execute("SELECT data FROM slack_deliveries WHERE event_id=?", (row["id"],)).fetchone()
+            recent.append({"user": prior_event["text"][:4000],
+                           "capo": json.loads(delivery[0])["text"][:4000] if delivery else ""})
+            if len(recent) == 5:
+                break
+        if self.conversation is None:
+            self.conversation = ConversationRouter(self.store.home)
+        route = self.conversation.poll(event_id, {
+            "message": text, "aliases": list(self.config["repositories"]),
+            "objectives": [{"id": row["id"], "alias": row["slack"].get("repository_alias", ""),
+                            "status": row["status"]} for row in owned],
+            "thread_objective_id": in_thread[0]["id"] if len(in_thread) == 1 else "",
+            "recent_messages": list(reversed(recent))})
+        action, alias, identifier = route["action"], route["repository"], route["objective_id"]
+        if action == "reply":
+            return route["reply"] or "What would you like me to do, and for which repository?"
+        if action == "issues":
+            if alias not in self.config["repositories"]:
+                raise ValueError("Choose a configured repository: " + ", ".join(self.config["repositories"]))
+            settings = self.config["repositories"][alias]
+            repository = remote_repository(git(settings["path"], "remote", "get-url", "origin"))
+            issues = GitHub(settings.get("github_auth", "default")).issues(repository)
+            if not issues:
+                return f"{repository} has no open GitHub issues."
+            lines = [f"Open GitHub issues in {repository}:"]
+            for issue in issues[:10]:
+                labels = ", ".join(label["name"] for label in issue.get("labels", []))
+                lines.append(f"#{issue['number']}: {issue['title']}" + (f" [{labels}]" if labels else "") + f"\n{issue['url']}")
+            if len(issues) > 10:
+                lines.append("Showing the first 10; more issues are open.")
+            lines.append("These are open reports, not confirmed bugs. Tell me which issue to work on, including its link.")
+            return "\n\n".join(lines)
+        if action in ("status", "cancel", "prepare", "followup"):
+            if not identifier:
+                return "Which objective do you mean? Reply in its thread or include its objective ID."
+            objective = self.objective(identifier)
+            self.settings(objective)
+            if action == "followup":
+                if len(in_thread) != 1 or in_thread[0]["id"] != identifier:
+                    return "Please send that follow-up in the objective's original thread."
+                translated = "followup: " + text
+            else:
+                translated = f"{action} {identifier}"
+        elif action == "objective":
+            if alias not in self.config["repositories"]:
+                return "Which configured repository should I use: " + ", ".join(self.config["repositories"]) + "?"
+            translated = f"{alias}: {text}"
+        else:
+            raise ValueError("Unsupported conversational action")
+        forwarded = dict(body, event=dict(event, text="<@UCAPO> " + translated))
+        return self.dispatch(event_id, forwarded)
+
     def dispatch(self, event_id, body):
         from .cli import add_objective
         from .improvement import add_improvement
@@ -219,7 +295,7 @@ class SlackService:
         if not authorized(self.config, body):
             raise ValueError("Unauthorized Slack request")
         event = body["event"]
-        text = re.sub(r"^\s*<@[A-Z0-9]+>\s*", "", event["text"]).strip()
+        text = re.sub(r"^\s*<@[A-Z0-9]+>[\s,:]*", "", event["text"]).strip()
         if text.lower() == "help":
             return HELP
         match = re.fullmatch(r"(prepare|approve|sync)\s+([a-f0-9]{16})(?:\s+([a-f0-9]{64}))?", text)
@@ -262,9 +338,8 @@ class SlackService:
             return (f"{result['url']}: {result['state']}. Verified commit matches: "
                     f"{result['matches_verified_commit']}. CI: {', '.join(states) or 'No checks reported'}.")
         thread = event.get("thread_ts")
-        if thread and not re.match(r"(?:status|cancel|help|prepare|approve|sync)(?:\s|$)", text):
-            matches = [row for row in self.store.list() if self.owns(row)
-                       and row["slack"].get("thread_ts") == thread]
+        if thread and re.match(r"(?:followup|clarify):", text, re.I):
+            matches = self.thread_objectives(thread)
             if len(matches) == 1:
                 request = re.sub(r"^(?:followup|clarify):\s*", "", text, flags=re.I).strip()
                 if not request:
@@ -301,7 +376,7 @@ class SlackService:
             return f"{identifier}: {objective['status']}. Provider calls: {objective['calls']}. {pr} {question}".strip()
         match = re.fullmatch(r"(?:(improve)\s+)?([a-zA-Z0-9_-]+):\s*(.+)", text, re.DOTALL)
         if not match:
-            return HELP
+            return self.natural_dispatch(event_id, body, text)
         improve, alias, request = match.groups()
         if alias not in self.config["repositories"]:
             raise ValueError("Unknown repository alias")
@@ -329,7 +404,7 @@ class SlackService:
             objective["slack"].update(ts=event["ts"], thread_ts=event.get("thread_ts", event["ts"]),
                                       repository_alias=alias)
             self.store.save(objective, "slack_queued")
-        return f"Queued {objective['id']} for {alias}. Claude Code will lead the work."
+        return f"I'll work on this in {alias} and share a short plan, then the result. Objective: {objective['id']}."
 
     def delivery_delay(self, seconds):
         with self.store.db:
@@ -393,7 +468,28 @@ class SlackService:
                     self.store.db.execute("UPDATE slack_notifications SET next_chunk=?,delivered=? WHERE checkpoint=?",
                                           (index + 1, int(index + 1 == len(chunks)), checkpoint))
 
+    def process_plan_notifications(self):
+        for objective in reversed(self.store.list()):
+            if (not self.owns(objective) or objective["status"] not in ("queued", "running")
+                    or not objective.get("plan")):
+                continue
+            checkpoint = "plan:" + objective["id"]
+            with self.store.db:
+                self.store.db.execute("INSERT OR IGNORE INTO slack_notifications(checkpoint,objective_id) VALUES (?,?)",
+                                      (checkpoint, objective["id"]))
+            row = self.store.db.execute("SELECT delivered FROM slack_notifications WHERE checkpoint=?", (checkpoint,)).fetchone()
+            if row[0]:
+                continue
+            summary = " ".join(objective["plan"].get("summary", "").split())[:700]
+            text = "My plan: " + (summary or "Inspect the relevant code, make the change, and verify it.")
+            text += " I'll report back when the work is ready or if I need your input."
+            if self.send_chunk(objective["slack"], text):
+                with self.store.db:
+                    self.store.db.execute("UPDATE slack_notifications SET delivered=1 WHERE checkpoint=?", (checkpoint,))
+
     def process_messages(self):
+        from .conversation import ConversationError, ConversationPending
+
         for event_id, body in self.store.pending_slack():
             # Recheck policy after restart or configuration changes.
             if not authorized(self.config, body):
@@ -405,6 +501,11 @@ class SlackService:
                 self.pending_review = None
                 try:
                     text = self.dispatch(event_id, body)
+                except ConversationPending:
+                    continue
+                except ConversationError as exc:
+                    text = str(exc)
+                    self.pending_review = None
                 except (ValueError, RuntimeError, OSError) as exc:
                     text = f"Could not handle this request: {exc}"
                     self.pending_review = None
@@ -447,6 +548,7 @@ class SlackService:
 
     def tick(self):
         self.process_messages()
+        self.process_plan_notifications()
         if self.active:
             objective = self.store.get(self.active_id)
             if self.active.poll() is not None:
@@ -464,10 +566,6 @@ class SlackService:
                     self.reply(objective["slack"], f"{self.active_id}: Your follow-up is queued for Claude.")
                 self.active, self.active_id, self.last_stage = None, None, None
                 self.process_notifications()
-            elif objective.get("active_stage") != self.last_stage:
-                self.last_stage = objective.get("active_stage")
-                if self.last_stage:
-                    self.reply(objective["slack"], f"{self.active_id}: {self.last_stage} in progress.")
             return
         self.process_notifications()
         if not self.config.get("auto_run", True):

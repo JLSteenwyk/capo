@@ -2,7 +2,7 @@
 
 Capo is the platform. **SPARKITscience** is the default team name for this installation. Set `CAPO_TEAM_NAME` or pass `--team-name "Your team"` before a command to customize the name used in objectives, agent context, delivery reports, and PR descriptions.
 
-Slack is the primary human interface. The included [Slack adapter](docs/slack.md) accepts owner-only objectives, provides threaded progress, and supports status, cancellation, thread follow-ups, and exact-candidate publication approval. It is ready to configure for the SPARKITscience workspace; it has not been connected to a live channel.
+Slack is the primary human interface. The included [Slack adapter](docs/slack.md) accepts owner-only objectives, provides a short plan and final result, and supports status, cancellation, thread follow-ups, and exact-candidate publication approval. The SPARKITscience workspace connection has been verified live. Natural-language messages can list repository issues, request work, check progress, and ask for a preview; publication still requires an exact approval command.
 
 Claude Code leads development objectives, delegates implementation to Codex and Grok Build, evaluates reviews, and decides whether the result meets the objective. A local Python runtime owns the queue, checkpoints, process supervision, verification, and artifacts.
 

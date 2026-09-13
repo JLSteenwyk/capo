@@ -4,7 +4,7 @@ September 12, 2026, macOS, Python 3.14.5.
 
 ## Automated checks
 
-`python3 -m unittest discover -s tests -q` passes 107 tests. Coverage includes the full objective loop with fake providers, replayable Git patches, review-driven revision, verification/acceptance gates, bounded model calls, interrupted-run recovery, exclusive supervisor ownership, path protections, provider errors, subprocess termination, log-size limits, explicit team selection, GitHub publication reconciliation, frozen self-improvement regressions, and owner-only Slack intake.
+`python3 -m unittest discover -s tests -q` passes 126 tests. Coverage includes the full objective loop with fake providers, replayable Git patches, review-driven revision, verification/acceptance gates, bounded model calls, interrupted-run recovery, exclusive supervisor ownership, path protections, provider errors, subprocess termination, log-size limits, explicit team selection, GitHub publication reconciliation, frozen self-improvement regressions, and owner-only Slack intake.
 
 `git diff --check` passes. The CLI help and executable doctor run successfully.
 
@@ -84,3 +84,10 @@ The mainline suite now passes 107 tests, including restart discovery of undelive
 ## Live GitHub CI
 
 After the owner added workflow authorization, commit `dfb14d3` installed `.github/workflows/tests.yml`. Both Python 3.11 and 3.14 jobs passed in [the first mainline run](https://github.com/JLSteenwyk/capo/actions/runs/34760445246). This verifies mainline CI installation and execution. Draft PR #2 predates the workflow and still requires checks against its own code; mainline success is not evidence for that PR head. Slack setup remains a separate live-verification requirement.
+
+
+## Live Slack intake and conversational interface
+
+The owner’s app mention reached Capo over Socket Mode and received a threaded help response. A PhyKIT objective also reached planning, clarification, implementation, tests, review, and acceptance evaluation through the live Slack service. The implementation passed its targeted 326-test suite, but a circular plan criterion incorrectly demanded PR publication before candidate acceptance. The prompts now separate code acceptance from the subsequent approval-gated publication step; that failed attempt remains retained rather than marked complete.
+
+A live Claude interpretation of “Can you check if PhyKIT has any issues that need to be addressed?” selected read-only issue listing for the configured PhyKIT alias. The 126-test automated suite covers bounded asynchronous interpretation, durable replay, owner/repository restrictions, conversational follow-ups and status, explicit-only publication approval, and a single persisted plan notification instead of per-stage chatter. Live conversational delivery and PhyKIT publication remain to be exercised after the service update.

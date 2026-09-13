@@ -20,6 +20,13 @@ class Client:
 
 class SlackCase(unittest.TestCase):
     def setUp(self):
+        router_patch = patch("capo.conversation.ConversationRouter")
+        self.router = router_patch.start().return_value
+        self.addCleanup(router_patch.stop)
+        self.router.poll.side_effect = lambda event_id, context: {
+            "action": "followup" if context["thread_objective_id"] else "reply",
+            "repository": "", "objective_id": context["thread_objective_id"],
+            "reply": "Which repository?" if not context["thread_objective_id"] else ""}
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
@@ -135,6 +142,96 @@ class SlackCase(unittest.TestCase):
     def test_plain_text_reply_preserves_apostrophes_and_escapes_mentions(self):
         self.service.reply(self.body()["event"], "The issue's title <@UOTHER> & details")
         self.assertEqual(self.client.messages[-1]["text"], "The issue's title &lt;@UOTHER&gt; &amp; details")
+
+    def test_natural_issue_question_reads_selected_repository_without_queuing(self):
+        git(self.repo, "remote", "add", "origin", "https://github.com/example/project.git")
+        self.router.poll.side_effect = None
+        self.router.poll.return_value = {"action": "issues", "repository": "project", "objective_id": "", "reply": ""}
+        body = self.body(", can you check if Project has any issues that need attention?")
+        with patch("capo.github.GitHub.issues", return_value=[{"number": 7, "title": "Fix bug", "url": "https://github.com/example/project/issues/7", "labels": []}]) as issues:
+            response = self.service.dispatch("Ev123", body)
+        issues.assert_called_once_with("example/project")
+        self.assertIn("#7: Fix bug", response)
+        self.assertEqual(self.store.list(), [])
+        self.assertFalse(self.router.poll.call_args.args[1]["message"].startswith(","))
+
+    def test_natural_objective_uses_original_request_and_trusted_checks(self):
+        self.router.poll.side_effect = None
+        self.router.poll.return_value = {"action": "objective", "repository": "project", "objective_id": "", "reply": ""}
+        request = "Please improve Project's greeting"
+        self.service.dispatch("Ev123", self.body(request))
+        self.service.dispatch("Ev123", self.body(request))
+        self.assertEqual(len(self.store.list()), 1)
+        objective = self.store.list()[0]
+        self.assertEqual(objective["request"], request)
+        self.assertEqual(objective["checks"], [["python3", "hello.py"]])
+
+    def test_natural_status_in_thread_does_not_reopen_completed_objective(self):
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective["status"] = "completed"
+        self.store.save(objective, "fixture")
+        self.router.poll.side_effect = None
+        self.router.poll.return_value = {"action": "status", "repository": "", "objective_id": objective["id"], "reply": ""}
+        body = self.body("How is it going?", "Ev456")
+        body["event"]["thread_ts"] = "123.456"
+        self.assertIn("completed", self.service.dispatch("Ev456", body))
+        self.assertEqual(self.store.followups(objective["id"]), [])
+
+    def test_work_updates_send_one_plan_and_no_stage_chatter_across_restart(self):
+        from unittest.mock import Mock
+        self.service.dispatch("Ev123", self.body())
+        objective = self.store.list()[0]
+        objective.update(status="running", plan={"summary": "Update the greeting and check its output."})
+        self.store.save(objective, "fixture")
+        self.service.active = Mock()
+        self.service.active.poll.return_value = None
+        self.service.active_id = objective["id"]
+        for stage in ["implementer", "verification", "reviewer", "acceptance", "implementer"]:
+            objective["active_stage"] = stage
+            self.store.save(objective, "fixture")
+            self.service.tick()
+        self.assertEqual(len(self.client.messages), 1)
+        self.assertIn("My plan:", self.client.messages[0]["text"])
+        restarted = SlackService(self.store, self.config, self.client)
+        restarted.tick()
+        self.assertEqual(len(self.client.messages), 1)
+
+    def test_thread_followup_targets_explicit_continuation(self):
+        self.service.dispatch("Ev123", self.body())
+        original = self.store.list()[0]
+        original["status"] = "blocked"
+        self.store.save(original, "fixture")
+        continuation = self.store.create(dict(original, continuation_of=original["id"]))
+        body = self.body("followup: Preserve compatibility", "Ev456")
+        body["event"]["thread_ts"] = "123.456"
+        self.service.dispatch("Ev456", body)
+        self.assertEqual(self.store.followups(original["id"]), [])
+        self.assertEqual(len(self.store.followups(continuation["id"])), 1)
+
+    def test_pending_conversation_does_not_block_other_commands(self):
+        from capo.conversation import ConversationPending
+        self.router.poll.side_effect = ConversationPending()
+        ingest(self.store.home, self.config, self.body("What's happening?", "Ev123"))
+        ingest(self.store.home, self.config, self.body("help", "Ev456"))
+        self.service.tick()
+        self.assertEqual([row[0] for row in self.store.pending_slack()], ["Ev123"])
+        self.assertEqual(len(self.client.messages), 1)
+
+    def test_conversation_cannot_publish_or_cross_current_policy(self):
+        self.router.poll.side_effect = None
+        for route in [
+            {"action": "approve", "repository": "project", "objective_id": "", "reply": ""},
+            {"action": "issues", "repository": "not_configured", "objective_id": "", "reply": ""}]:
+            self.router.poll.return_value = route
+            with self.assertRaises(ValueError):
+                self.service.dispatch("Ev123", self.body("Do it"))
+        body = self.body("List project issues")
+        body["event"]["user"] = "UOTHER"
+        self.router.poll.reset_mock()
+        with self.assertRaisesRegex(ValueError, "Unauthorized"):
+            self.service.dispatch("Ev123", body)
+        self.router.poll.assert_not_called()
 
     def test_changed_policy_is_checked_again_before_dispatch(self):
         ingest(self.store.home, self.config, self.body())

@@ -85,6 +85,30 @@ class RepositoryCase(unittest.TestCase):
         self.assertEqual(result["round"], 2)
         self.assertIn("Needs another look", fake.calls[4][1])
 
+    def test_candidate_prompts_defer_delivery_without_dropping_feature_criteria(self):
+        class DeliveryPlanProviders(FakeProviders):
+            def call(self, provider, prompt, schema, cwd, directory):
+                result = super().call(provider, prompt, schema, cwd, directory)
+                if "planner" in prompt:
+                    result["acceptance"].append("Open a draft PR")
+                return result
+
+        objective = self.objective()
+        fake = DeliveryPlanProviders()
+        result = Runtime(self.store, fake).run(objective["id"])
+        self.assertEqual(result["status"], "completed")
+        for index in (0, 2, 3):
+            context = json.loads(fake.calls[index][1].split("\n", 1)[1])
+            instructions = context["instructions"]
+            self.assertIn("not prerequisites of candidate acceptance", instructions)
+            self.assertIn("publication gateway and its approval policy", instructions)
+            self.assertIn("do not waive any implementation or verification requirement", instructions)
+            if index != 0:
+                self.assertEqual(context["plan"]["acceptance"],
+                                 ["add(2, 3) returns 5", "Open a draft PR"])
+                self.assertTrue(all(check["passed"] for check in context["checks"]))
+        self.assertNotIn("publication", result)
+
     def test_failed_check_cannot_be_overruled_by_models(self):
         objective = self.objective(check=f'{sys.executable} -c "raise SystemExit(1)"', max_rounds=1)
         with self.assertRaisesRegex(ValueError, "Revision limit"):
