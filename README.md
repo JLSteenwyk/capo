@@ -36,6 +36,23 @@ python3 -m boardroom issue 42 --github OWNER/REPO \
 
 This reads the issue and queues a local objective. Repeated intake of the same issue for the same checkout returns the existing objective. It does not publish comments or change the issue.
 
+### Deliver a draft pull request
+
+After an objective completes, prepare the exact commit and PR text locally:
+
+```bash
+python3 -m boardroom prepare OBJECTIVE_ID --github OWNER/REPO --base main
+
+# Inspect changes.patch, pull-request.md, and publication.json in its artifacts directory.
+# Use the digest printed by prepare to publish that exact candidate:
+python3 -m boardroom publish OBJECTIVE_ID --digest PREPARED_DIGEST
+python3 -m boardroom sync OBJECTIVE_ID
+```
+
+`prepare` creates a commit in the isolated clone and performs no remote writes. `publish` pushes only its objective branch and creates a draft PR. The target must match the source repository's GitHub origin. Changed code, a moved remote base, a conflicting branch, or a mismatched digest prevents publication. Retries reconcile existing remote work, including a PR created before a connection failure. `sync` records PR state, review status, and CI results, and reports whether the remote commit still matches the verified candidate. It does not merge or close anything.
+
+GitHub commands normally honor `GH_TOKEN`/`GITHUB_TOKEN` and the normal `gh` configuration. To deliberately use a saved keyring login when an environment token is invalid, put `--github-auth keyring` before the subcommand, for example `python3 -m boardroom --github-auth keyring publish OBJECTIVE_ID --digest PREPARED_DIGEST`. Credentials are never copied into Boardroom state.
+
 ## What a run does
 
 1. Creates an independent local clone at the recorded source commit and removes its `origin` remote.
@@ -64,7 +81,7 @@ A hard supervisor crash leaves an uncertain running state. Inspect the workspace
 - **Implementation:** workers propose full text replacements. This first version uses sequential tasks and bounded snapshots; it does not yet offer general repository exploration, large/binary changes, parallel task graphs, or learned routing.
 - **Permissions:** Claude and Grok are invoked with built-in tools disabled; Codex uses its read-only sandbox. File proposals cannot modify protected agent/Git/GitHub configuration, common secret files, or symlink paths. A separate clone prevents edit collisions. These controls are **not a complete sandbox**: CLIs can load host customizations, read-only does not imply no network, and trusted verification commands run with your OS account's privileges. Do not run this on untrusted repositories or assume that account credentials are isolated.
 - **Context:** obvious secret paths are omitted, but there is no general secret scanner. Source snapshots are sent to the chosen providers. A task cannot modify files explicitly omitted from its snapshot.
-- **GitHub delivery:** issue intake works; automated pushes, PR publication, merge gates, and CI monitoring are planned. Review and commit the generated patch using your normal Git workflow.
+- **GitHub delivery:** issue intake, local PR preparation, explicit draft publication, retry reconciliation, and PR/CI status reads work. Automatic issue polling, CI-triggered repair, standing publication policies, and merging are not implemented. The original repository is kept unchanged.
 - **Persistence:** objectives, checkpoints, events, and artifacts persist. There is no unattended scheduler, automatic rate-limit recovery, service installer, remote host controller, or desktop automation yet.
 - **Learning:** stored evidence is a foundation for memory and evaluation. Automatic skill creation, learned routing, self-modification, and promotion/rollback are not implemented.
 
@@ -75,6 +92,8 @@ python3 -m unittest discover -s tests -v
 ```
 
 Tests use temporary repositories and fake providers. They exercise delivery, patch replay, revision, hard acceptance gates, budgets, recovery, locks, path validation, environment filtering, and timeouts without consuming model quota.
+
+Publication tests additionally exercise GitHub retry reconciliation, exact-content digests, remote branch conflicts, base movement, and commit identity checks. GitHub operations use the supported [PR creation](https://cli.github.com/manual/gh_pr_create) and [PR listing](https://cli.github.com/manual/gh_pr_list) CLI interfaces.
 
 Provider interfaces were checked against installed CLI help and official documentation: [Claude](https://code.claude.com/docs/en/headless), [Codex](https://developers.openai.com/codex/noninteractive), and [Grok Build](https://docs.x.ai/build/cli/headless-scripting). See the architecture for the staged roadmap and the distinction between current behavior and intended capabilities.
 

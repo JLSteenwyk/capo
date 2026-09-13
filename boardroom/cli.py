@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from .repository import git
+from .github import GitHub, prepare, publish, sync
 from .runtime import Runtime, exclusive
 from .store import Store
 
@@ -18,6 +19,8 @@ def parser():
     root = argparse.ArgumentParser(description="Boardroom — development objectives led by Claude Code")
     root.add_argument("--home", type=Path, default=Path(os.environ.get(
         "BOARDROOM_HOME", str(Path.home() / ".local/share/boardroom"))))
+    root.add_argument("--github-auth", choices=("default", "keyring"), default="default",
+                      help="Use normal gh authentication, or explicitly prefer its saved keyring login")
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Check executables without invoking models")
     add = commands.add_parser("add", help="Queue a local development objective")
@@ -40,6 +43,16 @@ def parser():
     run = commands.add_parser("run", help="Run one objective in the foreground")
     run.add_argument("id")
     run.add_argument("--retry", action="store_true")
+    draft = commands.add_parser("prepare", help="Prepare a verified commit and local PR preview")
+    draft.add_argument("id")
+    draft.add_argument("--github", required=True, help="OWNER/REPO matching source origin")
+    draft.add_argument("--base", required=True, help="Target branch, e.g. main")
+    draft.add_argument("--title")
+    publication = commands.add_parser("publish", help="Push the prepared commit and create its draft PR")
+    publication.add_argument("id")
+    publication.add_argument("--digest", required=True, help="Exact digest from prepare")
+    status = commands.add_parser("sync", help="Read published PR and CI status")
+    status.add_argument("id")
     commands.add_parser("list", help="List durable objective states")
     for name in ("show", "events", "recover"):
         sub = commands.add_parser(name)
@@ -126,12 +139,7 @@ def main(argv=None):
         if args.command == "add":
             result = add_objective(store, args, args.request)
         elif args.command == "issue":
-            if args.number < 1 or len(args.github.split("/")) != 2 or args.github.startswith("-"):
-                raise ValueError("Expected a positive issue number and OWNER/REPO")
-            response = subprocess.run(["gh", "issue", "view", str(args.number), "--repo", args.github,
-                                       "--json", "title,body,url"], check=True, capture_output=True,
-                                      text=True, timeout=30)
-            issue = json.loads(response.stdout)
+            issue = GitHub(args.github_auth).issue(args.github, args.number)
             result = add_objective(store, args, f"{issue['title']}\n\n{issue['body']}", issue["url"])
         elif args.command == "run":
             result = Runtime(store).run(args.id, retry=args.retry)
@@ -142,6 +150,12 @@ def main(argv=None):
             result = store.get(args.id)
         elif args.command == "events":
             result = store.events(args.id)
+        elif args.command == "prepare":
+            result = prepare(store, args.id, args.github, args.base, args.title)
+        elif args.command == "publish":
+            result = publish(store, args.id, args.digest, GitHub(args.github_auth))
+        elif args.command == "sync":
+            result = sync(store, args.id, GitHub(args.github_auth))
         else:
             result = recover(store, args.id)
         print(json.dumps(result, indent=2))

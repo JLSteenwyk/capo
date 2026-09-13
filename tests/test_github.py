@@ -1,0 +1,181 @@
+import argparse
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from boardroom.cli import add_objective
+from boardroom.github import (GitHub, github_environment, payload_digest, prepare, publish,
+                             remote_repository, repository_name, sync)
+from boardroom.repository import git
+from boardroom.runtime import Runtime
+from boardroom.store import Store
+from test_boardroom import FakeProviders
+
+
+class FakeGitHub:
+    def __init__(self, base):
+        self.base = base
+        self.head = None
+        self.pr = None
+        self.pushes = 0
+        self.creates = 0
+        self.timeout_after_create = False
+
+    def remote_ref(self, workspace, repo, branch):
+        return self.base if branch == "main" else self.head
+
+    def find_pr(self, payload):
+        return self.pr
+
+    def push_new(self, workspace, payload):
+        self.pushes += 1
+        self.head = payload["commit"]
+
+    def create_pr(self, payload, body_file):
+        self.creates += 1
+        assert body_file.read_text() == payload["body"]
+        self.pr = {"number": 1, "url": "https://github.com/owner/project/pull/1",
+                   "headRefOid": self.head, "title": payload["title"], "body": payload["body"],
+                   "isDraft": True, "state": "OPEN"}
+        if self.timeout_after_create:
+            raise RuntimeError("Connection lost after GitHub created the PR")
+        return self.pr
+
+    def status(self, repo, number):
+        return {"number": number, "headRefOid": self.head, "state": "OPEN", "statusCheckRollup": []}
+
+
+class PublicationCase(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        git(self.repo, "init", "-b", "main")
+        git(self.repo, "config", "user.name", "Test")
+        git(self.repo, "config", "user.email", "test@example.invalid")
+        git(self.repo, "remote", "add", "origin", "https://github.com/owner/project.git")
+        (self.repo / "maths.py").write_text("def add(a,b):\n    return a-b\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "fixture")
+        self.store = Store(self.root / "state")
+        args = argparse.Namespace(repo=self.repo, check=[f'{sys.executable} -c "from maths import add; assert add(2,3)==5"'])
+        objective = add_objective(self.store, args, "Fix addition")
+        self.objective = Runtime(self.store, FakeProviders()).run(objective["id"])
+        self.gateway = FakeGitHub(self.objective["base"])
+
+    def tearDown(self):
+        self.store.db.close()
+        self.temp.cleanup()
+
+    def prepare(self):
+        return prepare(self.store, self.objective["id"], "owner/project", "main")
+
+    def test_prepare_preserves_verified_tree_and_source(self):
+        result = self.prepare()
+        self.assertEqual(result["digest"], payload_digest(result["payload"]))
+        self.assertEqual(git(self.repo, "status", "--porcelain"), "")
+        workspace = Path(self.objective["workspace"])
+        self.assertEqual(git(workspace, "rev-parse", result["payload"]["commit"] + "^{tree}"),
+                         self.objective["accepted_tree"])
+        self.assertEqual(self.prepare(), result)
+
+    def test_different_target_repository_refused(self):
+        with self.assertRaisesRegex(ValueError, "match the source"):
+            prepare(self.store, self.objective["id"], "other/project", "main")
+
+    def test_changes_after_verification_refused(self):
+        (Path(self.objective["workspace"]) / "maths.py").write_text("not verified")
+        with self.assertRaisesRegex(ValueError, "changed since verification"):
+            self.prepare()
+
+    def test_publish_is_idempotent(self):
+        draft = self.prepare()
+        for _ in range(2):
+            result = publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+            self.assertEqual(result["status"], "published")
+        self.assertEqual((self.gateway.pushes, self.gateway.creates), (1, 1))
+
+    def test_retry_after_uncertain_pr_creation_reconciles(self):
+        draft = self.prepare()
+        self.gateway.timeout_after_create = True
+        with self.assertRaises(RuntimeError):
+            publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+        result = publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+        self.assertEqual(result["status"], "published")
+        self.assertEqual((self.gateway.pushes, self.gateway.creates), (1, 1))
+
+    def test_wrong_digest_causes_no_external_writes(self):
+        self.prepare()
+        with self.assertRaisesRegex(ValueError, "digest"):
+            publish(self.store, self.objective["id"], "wrong", self.gateway)
+        self.assertEqual((self.gateway.pushes, self.gateway.creates), (0, 0))
+
+    def test_remote_base_movement_prevents_publish(self):
+        draft = self.prepare()
+        self.gateway.base = "f" * 40
+        with self.assertRaisesRegex(ValueError, "base moved"):
+            publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+        self.assertEqual(self.gateway.pushes, 0)
+
+    def test_remote_branch_collision_is_not_overwritten(self):
+        draft = self.prepare()
+        self.gateway.head = "f" * 40
+        with self.assertRaisesRegex(ValueError, "different work"):
+            publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+        self.assertEqual(self.gateway.pushes, 0)
+
+    def test_remote_branch_from_prior_push_is_reused(self):
+        draft = self.prepare()
+        self.gateway.head = draft["payload"]["commit"]
+        publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+        self.assertEqual((self.gateway.pushes, self.gateway.creates), (0, 1))
+
+    def test_sync_marks_remote_commit_changes(self):
+        draft = self.prepare()
+        publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+        self.assertTrue(sync(self.store, self.objective["id"], self.gateway)["matches_verified_commit"])
+        self.gateway.head = "f" * 40
+        self.assertFalse(sync(self.store, self.objective["id"], self.gateway)["matches_verified_commit"])
+
+    def test_existing_pr_with_different_content_is_not_adopted(self):
+        draft = self.prepare()
+        self.gateway.head = draft["payload"]["commit"]
+        self.gateway.pr = {"headRefOid": draft["payload"]["commit"], "title": "Unexpected title", "body": ""}
+        with self.assertRaisesRegex(ValueError, "differs"):
+            publish(self.store, self.objective["id"], draft["digest"], self.gateway)
+
+
+class GitHubContractCase(unittest.TestCase):
+    def test_remote_url_normalization(self):
+        for url in ("https://github.com/owner/project.git", "git@github.com:owner/project.git",
+                    "ssh://git@github.com/owner/project", "https://github.com/owner/project"):
+            self.assertEqual(remote_repository(url), "owner/project")
+        with self.assertRaises(ValueError):
+            remote_repository("https://attacker.invalid/owner/project")
+
+    def test_invalid_repo_names(self):
+        for name in ("../project", "owner/..", "-owner/project", "owner/repo/extra", "owner/repo?x=1"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                repository_name(name)
+
+    def test_keyring_mode_is_explicit(self):
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "fake", "GH_TOKEN": "fake"}):
+            self.assertIn("GH_TOKEN", github_environment())
+            self.assertNotIn("GH_TOKEN", github_environment("keyring"))
+            self.assertNotIn("GITHUB_TOKEN", github_environment("keyring"))
+
+    def test_push_uses_absent_branch_lease(self):
+        payload = {"branch": "boardroom/123", "repository": "owner/project", "commit": "a" * 40}
+        with patch("boardroom.github.git") as command:
+            GitHub().push_new(Path("/tmp"), payload)
+            args = command.call_args.args
+            self.assertIn("--force-with-lease=refs/heads/boardroom/123:", args)
+            self.assertIn("a" * 40 + ":refs/heads/boardroom/123", args)
+
+
+if __name__ == "__main__":
+    unittest.main()

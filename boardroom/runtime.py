@@ -191,6 +191,7 @@ class Runtime:
             objective["round"] += 1
             if all(check["passed"] for check in checks) and all(r["approved"] for r in reviews) and decision["accepted"]:
                 objective["status"] = "completed"
+                objective["accepted_tree"] = git(workspace, "write-tree")
                 objective.pop("error", None)
                 report = (f"# Boardroom delivery\n\n{objective['request']}\n\n"
                           f"Claude acceptance: {decision['reason']}\n\n"

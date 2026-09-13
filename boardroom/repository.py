@@ -9,9 +9,9 @@ PROTECTED = {".git", ".github", ".claude", ".codex", ".grok", ".boardroom",
 CONFIG_NAMES = {"agents.md", "claude.md", "grok.md", ".mcp.json"}
 
 
-def git(repo, *args, raw=False):
+def git(repo, *args, raw=False, env=None):
     result = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", str(repo), *args],
-                            capture_output=True, text=True, timeout=60)
+                            capture_output=True, text=True, timeout=60, env=env)
     if result.returncode:
         raise ValueError(result.stderr.strip() or "Git command failed")
     return result.stdout if raw else result.stdout.strip()
