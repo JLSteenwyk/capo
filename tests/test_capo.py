@@ -143,7 +143,8 @@ class RepositoryCase(unittest.TestCase):
     def test_symlink_and_protected_paths_rejected(self):
         (self.repo / "outside").symlink_to(self.root, target_is_directory=True)
         for name in ("outside/escape", ".git/config", ".github/workflows/publish.yml", ".env.local",
-                     "../escape", "/tmp/escape", "CLAUDE.md"):
+                     "../escape", "/tmp/escape", "CLAUDE.md", "slack.json", "config.local.json",
+                     ".netrc", ".config/capo/slack.json"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 apply_changes(self.repo, [{"path": name, "content": "oops", "delete": False}])
 

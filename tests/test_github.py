@@ -75,8 +75,13 @@ class PublicationCase(unittest.TestCase):
         return prepare(self.store, self.objective["id"], "owner/project", "main")
 
     def test_prepare_preserves_verified_tree_and_source(self):
+        objective = self.store.get(self.objective["id"])
+        objective["verification"]["decision"]["reason"] = "Passed checks at " + str(self.root)
+        self.store.save(objective, "private_verification_fixture")
         result = self.prepare()
         self.assertEqual(result["digest"], payload_digest(result["payload"]))
+        self.assertNotIn(sys.executable, result["payload"]["body"])
+        self.assertNotIn(str(self.root), result["payload"]["body"])
         self.assertEqual(git(self.repo, "status", "--porcelain"), "")
         workspace = Path(self.objective["workspace"])
         self.assertEqual(git(workspace, "rev-parse", result["payload"]["commit"] + "^{tree}"),

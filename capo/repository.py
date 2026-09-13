@@ -4,9 +4,10 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 
-PROTECTED = {".git", ".github", ".claude", ".codex", ".grok", ".capo",
+PROTECTED = {".git", ".github", ".claude", ".codex", ".grok", ".capo", ".config",
              ".env", ".ssh", ".aws", "node_modules", ".venv", "__pycache__"}
-CONFIG_NAMES = {"agents.md", "claude.md", "grok.md", ".mcp.json"}
+CONFIG_NAMES = {"agents.md", "claude.md", "grok.md", ".mcp.json", ".netrc", ".npmrc",
+                ".pypirc", ".git-credentials", "credentials.json", "slack.json"}
 
 
 def git(repo, *args, raw=False, env=None):
@@ -24,6 +25,7 @@ def safe_path(name):
             or any(part.lower() in PROTECTED for part in path.parts)
             or path.name.lower() in CONFIG_NAMES
             or path.name.lower().startswith(".env")
+            or path.name.lower().endswith(".local.json")
             or path.suffix.lower() in (".pem", ".key", ".p12")):
         raise ValueError(f"Protected or invalid path: {name!r}")
     return path

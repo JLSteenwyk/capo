@@ -133,9 +133,8 @@ def prepare(store, objective_id, repo, base_branch, title=None):
         if not title.strip() or "\n" in title or "\r" in title or len(title) > 256:
             raise ValueError("PR title must be a single nonempty line, at most 256 characters")
         verification = objective["verification"]
-        body = (f"{objective['plan']['summary']}\n\n"
-                f"{verification['decision']['reason']}\n\nValidation:\n"
-                + "\n".join(f"- Passed: `{json.dumps(check['command'])}`" for check in verification["checks"])
+        body = (f"{objective['plan']['summary']}\n\nValidation:\n"
+                + f"- {len(verification['checks'])} configured verification checks passed."
                 + "\n\nReviewed by: " + ", ".join(row["provider"] for row in verification["reviews"])
                 + f".\n\nTeam: {objective.get('team_name', 'SPARKITscience')}. Capo objective: `{objective_id}`.\n")
         if objective.get("source", "") and objective["source"].startswith("https://github.com/"):

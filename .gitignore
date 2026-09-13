@@ -6,3 +6,28 @@ __pycache__/
 .DS_Store
 dist/
 build/
+
+# Credentials and private machine configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+.netrc
+.npmrc
+.pypirc
+.git-credentials
+*.local.json
+/slack.json
+/credentials.json
+/.config/
+
+# Agent state and transcripts
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.log
+/artifacts/
+/baselines/
+/workspaces/
