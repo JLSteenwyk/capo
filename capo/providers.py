@@ -30,6 +30,8 @@ class Providers:
     def call(self, provider, prompt, schema, cwd, directory, images=None):
         if images and provider != "claude":
             raise ValueError("Image input is currently supported by Claude only")
+        from .communication import writing_style
+        prompt = writing_style() + prompt
         directory.mkdir(parents=True, exist_ok=True)
         prompt_file = directory / "prompt.txt"
         prompt_file.write_text(prompt)

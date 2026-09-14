@@ -137,3 +137,5 @@ Meet [Capo’s specialist team](docs/team.md) and connect [Gmail inbox checks](d
 [Hourly Capo checks](docs/heartbeat.md) quietly watch for items that need your attention.
 
 [Shared capabilities](docs/capabilities.md) let Capo and its specialists combine tools for new requests.
+
+[Slack activity status](docs/slack-activity.md) confirms that a reply is being prepared. [Shared writing style](docs/writing-style.md) applies the approved voice across the team.

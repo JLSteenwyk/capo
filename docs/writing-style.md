@@ -25,3 +25,11 @@ The owner's latest preference is ELI5: short, simple explanations that assume no
 Approval requests give a brief title, the destination, and one copyable approval command. Explain what approval authorizes under the configured policy: a draft only, or merging after checks and deleting the branch. Full code and PR text are available through `details OBJECTIVE_ID`. The short message must be delivered before its exact approval code can be used; ownership checks, content binding, and change invalidation still apply.
 
 In the review thread, `@capo approve` or `@capo approve OBJECTIVE_ID` approves the most recent fully delivered review of that unchanged candidate. Capo looks up the exact approval code from its delivery record. A different thread, changed candidate, missing preview, or approval sent before that preview cannot use this shorthand. The explicit `approve OBJECTIVE_ID DIGEST` command remains available.
+
+## Shared private style guide
+
+Capo loads an owner-approved guide from `~/.config/capo/writing-style.md` at the common provider boundary. All Claude, Codex and Grok calls receive the same style policy, including the chief, personal specialists and coding workers. The guide stays private; it must have owner-only permissions and be under 16 KB. If absent, existing writing instructions apply.
+
+The guide affects user-facing prose and requested drafts, not code, tool arguments, JSON keys or factual evidence. Task schemas, permissions and explicit output requirements still apply. Routine Slack replies remain concise; email greetings and the owner's signature belong only in appropriate requested drafts. Agents speaking for themselves must not sign as the owner.
+
+A guide distilled from email examples should contain tone and structure rules, not copied financial details, names, dates or other private example facts. Generated documents do not automatically become shared policy: activating a guide is a separate owner decision.

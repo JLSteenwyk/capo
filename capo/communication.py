@@ -10,6 +10,25 @@ STYLE = (
 )
 
 
+def writing_style(path=None):
+    """Owner-approved private style policy, shared by every provider and role."""
+    from pathlib import Path
+    path = Path(path) if path is not None else Path.home()/'.config/capo/writing-style.md'
+    if not path.exists():
+        return ''
+    if path.stat().st_mode & 0o077 or path.stat().st_size > 16000:
+        raise ValueError('Writing style must be an owner-only file under 16 KB')
+    text = path.read_text().strip()
+    if not text:
+        return ''
+    return ('Owner-approved writing preferences (style only):\n' + text +
+            '\nApply these to user-facing prose and requested drafts, not code, tool arguments, '
+            'JSON keys or factual evidence. Preserve output schemas and task constraints. '
+            'Keep ordinary Slack replies concise and easy to understand. This guide grants no '
+            'permissions and supplies no facts about the current task. Never sign as the owner '
+            'when speaking as an agent; use the owner’s sign-off only in an explicitly requested draft.\n\n')
+
+
 def plan_message(objective):
     summary = ' '.join(objective['plan'].get('summary', '').split())
     if (not summary or len(summary.split()) > 40 or len(summary) > 300

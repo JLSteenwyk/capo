@@ -383,6 +383,36 @@ class SlackCase(unittest.TestCase):
         self.assertEqual(self.store.followups(original["id"]), [])
         self.assertEqual(len(self.store.followups(continuation["id"])), 1)
 
+    def test_native_activity_refresh_clear_and_failure_do_not_block_reply(self):
+        from unittest.mock import Mock
+        from capo.conversation import ConversationPending
+        self.client.assistant_threads_setStatus = Mock(return_value={'ok':True})
+        self.router.poll.side_effect = ConversationPending()
+        body=self.body('Please investigate', 'activity')
+        ingest(self.store.home,self.config,body)
+        with patch('capo.slack.time.monotonic',return_value=100):
+            self.service.process_messages();self.service.process_messages()
+        self.client.assistant_threads_setStatus.assert_called_once()
+        self.assertEqual(self.client.assistant_threads_setStatus.call_args.kwargs['thread_ts'],'123.456')
+        with patch('capo.slack.time.monotonic',return_value=161):
+            self.service.process_messages()
+        self.assertEqual(self.client.assistant_threads_setStatus.call_count,2)
+        self.router.poll.side_effect=None
+        self.router.poll.return_value={'action':'reply','repository':'','objective_id':'','reply':'Done.'}
+        self.client.assistant_threads_setStatus.side_effect=RuntimeError('Unavailable')
+        self.service.process_messages()
+        self.assertEqual(self.client.messages[-1]['text'],'Done.')
+        self.assertEqual(self.client.assistant_threads_setStatus.call_args.kwargs['status'],'')
+        self.assertEqual(list(self.store.pending_slack()),[])
+
+    def test_native_activity_not_shown_for_unauthorized_messages(self):
+        from unittest.mock import Mock
+        self.client.assistant_threads_setStatus=Mock()
+        body=self.body('Hello','unauthorized');body['event']['user']='UOTHER'
+        self.store.enqueue_slack('unauthorized',body)
+        self.service.process_messages()
+        self.client.assistant_threads_setStatus.assert_not_called()
+
     def test_pending_conversation_does_not_block_other_commands(self):
         from capo.conversation import ConversationPending
         self.router.poll.side_effect = ConversationPending()

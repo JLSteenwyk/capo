@@ -269,6 +269,7 @@ class SlackService:
         self.last_stage = None
         self.pending_review = None
         self.conversation = None
+        self.activity_refresh = {}
         self.store.db.executescript("""
             CREATE TABLE IF NOT EXISTS slack_deliveries (
                 event_id TEXT PRIMARY KEY, data TEXT NOT NULL,
@@ -733,6 +734,25 @@ class SlackService:
                 with self.store.db:
                     self.store.db.execute("UPDATE slack_notifications SET delivered=1 WHERE checkpoint=?", (checkpoint,))
 
+    def activity_status(self, event, active=True):
+        """Native ephemeral status; failure must never block the actual reply."""
+        method = getattr(self.client, "assistant_threads_setStatus", None)
+        if method is None:
+            return
+        thread = event.get("thread_ts", event["ts"])
+        now = time.monotonic()
+        if active and now < self.activity_refresh.get(thread, 0):
+            return
+        # Slack expires status after two minutes. Refresh once a minute while pending.
+        self.activity_refresh[thread] = now + 60
+        try:
+            method(channel_id=self.config["channel_id"], thread_ts=thread,
+                   status="is working on it…" if active else "")
+        except Exception:
+            pass  # Status is optional; normal work and delivery continue.
+        if not active:
+            self.activity_refresh.pop(thread, None)
+
     def process_messages(self):
         from .conversation import ConversationError, ConversationPending
 
@@ -744,6 +764,7 @@ class SlackService:
             row = self.store.db.execute("SELECT data,next_chunk FROM slack_deliveries WHERE event_id=?",
                                         (event_id,)).fetchone()
             if row is None:
+                self.activity_status(body["event"])
                 self.pending_review = None
                 try:
                     text = self.dispatch(event_id, body)
@@ -791,6 +812,7 @@ class SlackService:
                         objective["slack_review_digest"] = digest
                         self.store.save(objective, "slack_preview_delivered")
             self.store.finish_slack(event_id)
+            self.activity_status(body["event"], active=False)
 
     def tick(self):
         from . import browser_slack
