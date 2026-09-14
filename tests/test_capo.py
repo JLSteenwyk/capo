@@ -11,6 +11,7 @@ from unittest.mock import patch
 from capo.cli import add_objective, recover
 from capo.contracts import PLAN, validate
 from capo.providers import Providers, WorkerError, run_process
+from capo.process import CleanupUncertain
 from capo.repository import apply_changes, git, safe_path, snapshot
 from capo.runtime import Runtime, exclusive
 from capo.store import Store
@@ -85,6 +86,30 @@ class RepositoryCase(unittest.TestCase):
         self.assertEqual(result["round"], 2)
         self.assertIn("Needs another look", fake.calls[4][1])
 
+    def test_candidate_prompts_defer_delivery_without_dropping_feature_criteria(self):
+        class DeliveryPlanProviders(FakeProviders):
+            def call(self, provider, prompt, schema, cwd, directory):
+                result = super().call(provider, prompt, schema, cwd, directory)
+                if "planner" in prompt:
+                    result["acceptance"].append("Open a draft PR")
+                return result
+
+        objective = self.objective()
+        fake = DeliveryPlanProviders()
+        result = Runtime(self.store, fake).run(objective["id"])
+        self.assertEqual(result["status"], "completed")
+        for index in (0, 2, 3):
+            context = json.loads(fake.calls[index][1].split("\n", 1)[1])
+            instructions = context["instructions"]
+            self.assertIn("not prerequisites of candidate acceptance", instructions)
+            self.assertIn("publication gateway and its approval policy", instructions)
+            self.assertIn("do not waive any implementation or verification requirement", instructions)
+            if index != 0:
+                self.assertEqual(context["plan"]["acceptance"],
+                                 ["add(2, 3) returns 5", "Open a draft PR"])
+                self.assertTrue(all(check["passed"] for check in context["checks"]))
+        self.assertNotIn("publication", result)
+
     def test_failed_check_cannot_be_overruled_by_models(self):
         objective = self.objective(check=f'{sys.executable} -c "raise SystemExit(1)"', max_rounds=1)
         with self.assertRaisesRegex(ValueError, "Revision limit"):
@@ -125,8 +150,49 @@ class RepositoryCase(unittest.TestCase):
         directory = self.store.home / "artifacts" / objective["id"] / "001"
         directory.mkdir(parents=True)
         (directory / "process.json").write_text(json.dumps({"pid": os.getpid()}))
-        with self.assertRaisesRegex(ValueError, "may still be active"):
+        with self.assertRaisesRegex(CleanupUncertain, "may still be active"):
             recover(self.store, objective["id"])
+
+    def test_cleanup_uncertainty_aborts_checks_without_revision(self):
+        from capo.process import CleanupUncertain
+        objective = self.objective()
+        objective["checks"].append([sys.executable, "-c", "print('second')"])
+        self.store.save(objective, "configured")
+        fake = FakeProviders()
+        with patch("capo.runtime.run_process", side_effect=CleanupUncertain("Worker cleanup could not be confirmed")) as check:
+            with self.assertRaises(CleanupUncertain):
+                Runtime(self.store, fake).run(objective["id"])
+        self.assertEqual(check.call_count, 1)
+        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(self.store.get(objective["id"])["status"], "blocked")
+
+    def test_uncertain_group_blocks_retry_recovery_and_other_objective(self):
+        from capo.process import CleanupUncertain
+        objective = self.objective()
+        objective["status"] = "blocked"
+        self.store.save(objective, "uncertain_cleanup")
+        directory = self.store.home / "artifacts" / objective["id"] / "001"
+        directory.mkdir(parents=True)
+        (directory / "process.json").write_text(json.dumps({"pid": 12340, "supervision": "watchdog-v2"}))
+        (directory / "worker.json").write_text(json.dumps({"pgid": 12341, "cleanup_confirmed": False}))
+        (directory / "exit.json").write_text(json.dumps({"returncode": 126}))
+        other = self.objective()
+        fake = FakeProviders()
+        with patch("capo.process.os.killpg", side_effect=PermissionError()):
+            with self.assertRaises(CleanupUncertain):
+                Runtime(self.store, fake).run(objective["id"], retry=True)
+            with self.assertRaises(CleanupUncertain):
+                Runtime(self.store, fake).run(other["id"])
+            objective["status"] = "running"
+            self.store.save(objective, "interrupted")
+            with self.assertRaises(CleanupUncertain):
+                recover(self.store, objective["id"])
+        self.assertEqual(fake.calls, [])
+        blocked = self.store.get(other["id"])
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertIn("cleanup could not be confirmed", blocked["error"])
+        with patch("capo.process.os.killpg", side_effect=ProcessLookupError()):
+            self.assertEqual(recover(self.store, objective["id"])["status"], "blocked")
 
     def test_second_supervisor_refused(self):
         with exclusive(self.store.home):
@@ -155,6 +221,22 @@ class RepositoryCase(unittest.TestCase):
         self.assertNotIn(".env", data["files"])
         self.assertNotIn("private.pem", data["files"])
 
+    def test_excerpt_does_not_authorize_replacement_of_omitted_source(self):
+        source = "# padding\n" * 4000 + (self.repo / "maths.py").read_text()
+        (self.repo / "maths.py").write_text(source)
+        git(self.repo, "add", "maths.py")
+        git(self.repo, "commit", "-m", "large source fixture")
+        objective = self.objective()
+        objective["request"] = "Fix addition in maths.py"
+        self.store.save(objective, "fixture_request")
+        fake = FakeProviders()
+        with self.assertRaisesRegex(ValueError, "Cannot edit an omitted file"):
+            Runtime(self.store, fake).run(objective["id"])
+        context = json.loads(fake.calls[-1][1].split("\n", 1)[1])
+        self.assertIn("maths.py", context["repository"]["supporting_excerpts"])
+        self.assertEqual((Path(objective["workspace"]) / "maths.py").read_text(), source)
+        self.assertEqual(len(fake.calls), 2)
+
     def test_dirty_source_refused(self):
         (self.repo / "maths.py").write_text("uncommitted work")
         with self.assertRaisesRegex(ValueError, "Commit or stash"):
@@ -174,15 +256,29 @@ class RepositoryCase(unittest.TestCase):
         objective = self.objective()
         objective["workers"] = ["grok"]
         self.store.save(objective, "configured")
-        with self.assertRaisesRegex(ValueError, "outside the configured set"):
+        with self.assertRaisesRegex(ValueError, "unsupported value"):
             Runtime(self.store, FakeProviders()).run(objective["id"])
 
     def test_plan_cannot_assign_implementation_to_reviewer(self):
         objective = self.objective()
         objective["reviewer"] = "codex"
         self.store.save(objective, "configured")
-        with self.assertRaisesRegex(ValueError, "different providers"):
+        with self.assertRaisesRegex(ValueError, "unsupported value"):
             Runtime(self.store, FakeProviders()).run(objective["id"])
+
+    def test_planner_schema_reserves_explicit_reviewer(self):
+        objective = self.objective()
+        objective["reviewer"] = "grok"
+        self.store.save(objective, "configured")
+        class InspectingProviders(FakeProviders):
+            def call(inner, provider, prompt, schema, cwd, directory):
+                if "planner" in prompt:
+                    self.assertEqual(schema["properties"]["tasks"]["items"]["properties"]["worker"]["enum"], ["codex"])
+                    self.assertIn('"available_implementation_workers": ["codex"]', prompt)
+                    self.assertIn("Do not add review", prompt)
+                return super().call(provider, prompt, schema, cwd, directory)
+        result = Runtime(self.store, InspectingProviders()).run(objective["id"])
+        self.assertEqual(result["status"], "completed")
 
 
 class ProcessCase(unittest.TestCase):

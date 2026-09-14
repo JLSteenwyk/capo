@@ -64,6 +64,8 @@ def parser():
     draft.add_argument("--github", required=True, help="OWNER/REPO matching source origin")
     draft.add_argument("--base", required=True, help="Target branch, e.g. main")
     draft.add_argument("--title")
+    draft.add_argument("--body-file", type=Path,
+                       help="Use exact PR text from a local file; may revise an unpublished prepared body")
     publication = commands.add_parser("publish", help="Push the prepared commit and create its draft PR")
     publication.add_argument("id")
     publication.add_argument("--digest", required=True, help="Exact digest from prepare")
@@ -73,6 +75,36 @@ def parser():
     slack.add_argument("--config", type=Path, required=True)
     slack_setup = commands.add_parser("slack-setup", help="Resolve configured Slack workspace and channel names")
     slack_setup.add_argument("--config", type=Path, required=True)
+    daemon = commands.add_parser("slack-daemon", help="Run Slack using a private token file")
+    daemon.add_argument("--config", type=Path, required=True)
+    daemon.add_argument("--env-file", type=Path, required=True)
+    digest_settings = commands.add_parser("digest-settings", help="Inspect or configure the private morning digest")
+    digest_settings.add_argument("--config", type=Path, required=True)
+    digest_settings.add_argument("--time")
+    digest_settings.add_argument("--artists-file", type=Path)
+    enabled = digest_settings.add_mutually_exclusive_group()
+    enabled.add_argument("--enable", action="store_true")
+    enabled.add_argument("--pause", action="store_true")
+    preview = commands.add_parser("digest-preview", help="Send one real digest preview to Slack")
+    preview.add_argument("--config", type=Path, required=True)
+    preview.add_argument("--env-file", type=Path, required=True)
+    preview.add_argument("--id", required=True, help="Stable preview ID; reuse it to resume without duplication")
+    gmail_auth = commands.add_parser("gmail-auth", help="Connect read-only Gmail inbox access")
+    gmail_auth.add_argument("--client-secrets", type=Path, required=True)
+    calendar_auth = commands.add_parser("calendar-auth", help="Connect a private Google Calendar account")
+    calendar_auth.add_argument("--client-secrets", type=Path, required=True)
+    commands.add_parser("calendar-check", help="Check Google Calendar access without changing events")
+    browser = commands.add_parser("browser", help="Start a private browser task")
+    browser.add_argument("request")
+    browser.add_argument("--url", required=True)
+    browser.add_argument("--allow-origin", action="append", required=True)
+    browser_run = commands.add_parser("browser-run", help="Run a queued browser task")
+    browser_run.add_argument("id")
+    browser_run.add_argument("--headless", action="store_true")
+    for name in ("browser-status", "browser-cancel", "browser-approve"):
+        command = commands.add_parser(name)
+        command.add_argument("id")
+        if name == "browser-approve": command.add_argument("--digest", required=True)
     commands.add_parser("list", help="List durable objective states")
     for name in ("show", "events", "recover"):
         sub = commands.add_parser(name)
@@ -154,18 +186,9 @@ def recover(store, objective_id):
             if not record.with_name("remote-exit.json").exists():
                 status = reconcile(record)
                 record.with_name("remote-exit.json").write_text(json.dumps(status))
+        from .process import reconcile_local
         for record in (store.home / "artifacts" / objective_id).rglob("process.json"):
-            if record.with_name("exit.json").exists():
-                continue
-            pid = json.loads(record.read_text())["pid"]
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                try:
-                    os.killpg(pid, 0)
-                except ProcessLookupError:
-                    continue
-            raise ValueError(f"Process {pid} may still be active; inspect it before recovery")
+            reconcile_local(record.parent)
         data["status"] = "blocked"
         data["error"] = "Recovered interrupted run; inspect workspace and use run --retry"
         store.save(data, "recovered")
@@ -176,6 +199,41 @@ def main(argv=None):
     args = parser().parse_args(argv)
     store = None
     try:
+        if args.command.startswith("digest-"):
+            if args.providers_config:
+                os.environ["CAPO_PROVIDERS_CONFIG"] = str(args.providers_config.expanduser().resolve())
+            from .digest_cli import command
+            return command(args)
+        if args.command == "slack-daemon":
+            from .digest_cli import load_slack_environment
+            load_slack_environment(args.env_file)
+            args.command = "slack"
+        if args.command == "gmail-auth":
+            from .gmail import authorize
+            try:
+                authorize(args.client_secrets.expanduser())
+            except Exception:
+                raise RuntimeError("Gmail sign-in failed. Check the private client file and Google OAuth setup.") from None
+            print("Gmail connected. Enable gmail in your private Slack configuration.")
+            return 0
+        if args.command == "calendar-auth":
+            from .calendar import authorize
+            try:
+                authorize(args.client_secrets.expanduser())
+            except Exception:
+                raise RuntimeError("Calendar sign-in failed. Check the private client file and Google OAuth setup.") from None
+            print("Google Calendar connected. You can now enable calendar support in your private Slack config.")
+            return 0
+        if args.command == "calendar-check":
+            from .calendar import GoogleCalendar
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(timezone.utc)
+            try:
+                GoogleCalendar().events(now.isoformat(), (now + timedelta(days=1)).isoformat())
+            except Exception:
+                raise RuntimeError("Calendar access failed. Check the connection with calendar-auth.") from None
+            print("Google Calendar access works. No events were changed.")
+            return 0
         if args.command == "doctor":
             return doctor(args.providers_config)
         if args.command == "slack":
@@ -189,6 +247,22 @@ def main(argv=None):
         if args.command == "slack-setup":
             from .slack import configure
             print(json.dumps(configure(args.config), indent=2))
+            return 0
+        if args.command.startswith("browser"):
+            from . import browser
+            if args.command == "browser":
+                result = browser.create(args.home, args.request, args.url, args.allow_origin)
+            elif args.command == "browser-run":
+                result = browser.run(args.home, args.id, headless=args.headless)
+            elif args.command == "browser-approve":
+                browser.approve(args.home, args.id, args.digest)
+                result = {"status": "approval recorded"}
+            elif args.command == "browser-cancel":
+                browser.cancel(args.home, args.id)
+                result = {"status": "cancellation requested"}
+            else:
+                result = browser.read(args.home, args.id)
+            print(json.dumps(result, indent=2))
             return 0
         store = Store(args.home)
         if args.command == "add":
@@ -215,7 +289,8 @@ def main(argv=None):
         elif args.command == "events":
             result = store.events(args.id)
         elif args.command == "prepare":
-            result = prepare(store, args.id, args.github, args.base, args.title)
+            body = args.body_file.read_text() if args.body_file is not None else None
+            result = prepare(store, args.id, args.github, args.base, args.title, body=body)
         elif args.command == "publish":
             result = publish(store, args.id, args.digest, GitHub(args.github_auth))
         elif args.command == "sync":

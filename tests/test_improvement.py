@@ -1,3 +1,4 @@
+from capo.process import CleanupUncertain
 import argparse
 import tempfile
 import unittest
@@ -181,7 +182,7 @@ class ImprovementCase(unittest.TestCase):
         directory.mkdir(parents=True)
         (directory / "process.json").write_text(json.dumps({"pid": os.getpid()}))
         self.store.add_followup(objective["id"], "event-new", "Continue")
-        with self.assertRaisesRegex(ValueError, "still be active"):
+        with self.assertRaisesRegex(CleanupUncertain, "still be active"):
             Runtime(self.store, FakeProviders()).run(objective["id"])
         self.assertEqual(self.store.get(objective["id"])["calls"], 0)
 

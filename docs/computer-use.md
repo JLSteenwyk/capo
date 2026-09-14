@@ -1,12 +1,14 @@
 # Dedicated computer and computer use
 
+Guided Chromium browser tasks are now implemented; see [browser setup and limits](browser.md). Native desktop control remains planned.
+
 The planned deployment includes a computer owned by the agent organization. Design local operation so it can move there without changing the objective, task, or provider contracts. The current runtime supports macOS and Linux; state lives in a configurable `CAPO_HOME` directory. Provider CLIs authenticate on the destination computer separately.
 
 ## Separate host and capability
 
 A computer is an execution host, not another model. Register a host's OS, available browsers/apps, display sessions, network policy, storage, and worker slots. A computer-use worker combines a reasoning provider with an authorized desktop or browser controller. Claude Code remains the CEO and assigns that worker objectives.
 
-Proposed capabilities include `browser.navigate`, `browser.inspect`, `browser.click`, `desktop.screenshot`, `desktop.click`, `desktop.type`, `desktop.keypress`, and `files.transfer`. The exact adapter depends on the chosen OS and available supported controller; no desktop controller is implemented yet.
+Proposed capabilities include `browser.navigate`, `browser.inspect`, `browser.click`, `desktop.screenshot`, `desktop.click`, `desktop.type`, `desktop.keypress`, and `files.transfer`. The exact adapter depends on the chosen OS and available supported controller; the guided browser worker supports navigation, inspection, clicks, fills, and selections; no native desktop controller is implemented yet.
 
 ## Operating model
 

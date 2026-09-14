@@ -2,7 +2,7 @@
 
 Capo is the platform. **SPARKITscience** is the default team name for this installation. Set `CAPO_TEAM_NAME` or pass `--team-name "Your team"` before a command to customize the name used in objectives, agent context, delivery reports, and PR descriptions.
 
-Slack is the primary human interface. The included [Slack adapter](docs/slack.md) accepts owner-only objectives, provides threaded progress, and supports status, cancellation, thread follow-ups, and exact-candidate publication approval. It is ready to configure for the SPARKITscience workspace; it has not been connected to a live channel.
+Slack is the primary human interface. The included [Slack adapter](docs/slack.md) accepts owner-only objectives, provides a short plan and final result, and supports status, cancellation, thread follow-ups, and exact-candidate publication approval. The SPARKITscience workspace connection has been verified live. Natural-language messages can list repository issues, request work, check progress, and ask for a preview; small verified changes can publish draft PRs under an explicitly configured routine policy; broader changes use exact-candidate approval.
 
 Claude Code leads development objectives, delegates implementation to Codex and Grok Build, evaluates reviews, and decides whether the result meets the objective. A local Python runtime owns the queue, checkpoints, process supervision, verification, and artifacts.
 
@@ -53,7 +53,7 @@ python3 -m capo publish OBJECTIVE_ID --digest PREPARED_DIGEST
 python3 -m capo sync OBJECTIVE_ID
 ```
 
-`prepare` creates a commit in the isolated clone and performs no remote writes. `publish` pushes only its objective branch and creates a draft PR. The target must match the source repository's GitHub origin. Changed code, a moved remote base, a conflicting branch, or a mismatched digest prevents publication. Retries reconcile existing remote work, including a PR created before a connection failure. `sync` records PR state, review status, and CI results, and reports whether the remote commit still matches the verified candidate. It does not merge or close anything.
+`prepare` creates a commit in the isolated clone and performs no remote writes. Supply `--body-file /private/path/to/reviewed-pr.md` to use reviewed PR text verbatim. Before publication starts, repeat `prepare` with a new body file to revise the description while retaining the verified commit and branch. This generates a new digest and invalidates any Slack preview approval; inspect the revised artifacts and use the new digest. The title and target cannot change once prepared, and the body cannot change after publication starts. Repeating identical preparation is safe. `publish` pushes only its objective branch and creates a draft PR. The target must match the source repository's GitHub origin. Changed code, a moved remote base, a conflicting branch, or a mismatched digest prevents publication. Retries reconcile existing remote work, including a PR created before a connection failure. `sync` records PR state, review status, and CI results, and reports whether the remote commit still matches the verified candidate. It does not merge or close anything.
 
 GitHub commands normally honor `GH_TOKEN`/`GITHUB_TOKEN` and the normal `gh` configuration. To deliberately use a saved keyring login when an environment token is invalid, put `--github-auth keyring` before the subcommand, for example `python3 -m capo --github-auth keyring publish OBJECTIVE_ID --digest PREPARED_DIGEST`. Credentials are never copied into Capo state.
 
@@ -95,8 +95,8 @@ The improvement runs in an isolated candidate clone. Capo preserves the original
 - **Subscriptions:** CLI authentication is reused. Ambient API-key variables are removed from child environments, but provider configuration or credential helpers can still select another billing mode; verify your setup. Quota is unknown, not estimated from local call counts. The runtime does not buy credits or silently switch providers on failure.
 - **Implementation:** workers propose full text replacements. This first version uses sequential tasks and bounded snapshots that prioritize named task files; it does not yet offer general repository exploration, large/binary changes, parallel task graphs, or learned routing.
 - **Permissions:** Claude and Grok are invoked with built-in tools disabled; Codex uses its read-only sandbox. File proposals cannot modify protected agent/Git/GitHub configuration, common secret files, or symlink paths. A separate clone prevents edit collisions. These controls are **not a complete sandbox**: CLIs can load host customizations, read-only does not imply no network, and trusted verification commands run with your OS account's privileges. Do not run this on untrusted repositories or assume that account credentials are isolated.
-- **Context:** obvious secret paths are omitted, but there is no general secret scanner. Source snapshots are sent to the chosen providers. A task cannot modify files explicitly omitted from its snapshot.
-- **GitHub delivery:** issue intake, local PR preparation, explicit draft publication, retry reconciliation, and PR/CI status reads work. Automatic issue polling, CI-triggered repair, standing publication policies, and merging are not implemented. The original repository is kept unchanged.
+- **Context:** obvious secret paths are omitted, but there is no general secret scanner. Source snapshots are sent to the chosen providers. A task cannot modify files explicitly omitted from its snapshot. Explicitly referenced text files over 30 KB may supply bounded, line-numbered supporting excerpts. These remain incomplete, read-only evidence; workers must ask for more context when excerpts do not establish the behavior. Excerpts share the snapshot content budget, with at most 12,000 characters per file and 24,000 total; files over 2 MB are skipped.
+- **GitHub delivery:** issue intake, local PR preparation, explicit draft publication, retry reconciliation, and PR/CI status reads work. Slack supports opt-in routine draft publication. Automatic issue polling, CI-triggered repair, and merging are not implemented. The original repository is kept unchanged.
 - **Persistence:** objectives, checkpoints, events, Slack intake, and artifacts persist. The Slack service executes its queued objectives serially. There is no general scheduled-job engine, automatic rate-limit recovery, OS service installer, remote host controller, or desktop automation yet.
 - **Learning:** explicit self-improvement objectives with frozen regressions are implemented. Automatic reflection, skill creation, learned routing, unattended promotion, and rollback management remain planned.
 
@@ -117,3 +117,25 @@ Provider interfaces were checked against installed CLI help and official documen
 Live structured-response probes passed with Claude Code 2.1.263 and Codex 0.154.0. Grok 1.0.13 and an isolated copy of stable 1.0.30 both refused to initialize the read-only sandbox on this Mac because `/var/run/docker.sock` is a symlink. The installed Grok executable was preserved. Capo keeps the sandbox enabled. A subsequent [Linux VM test](docs/grok-linux.md) passed using Grok 1.0.30, the existing CLI login, and the read-only sandbox: implementation, three arithmetic checks, and a separate review all succeeded. An explicit [Lima transport](docs/grok-linux.md) now routes Grok requests into the VM with isolated staging, heartbeat cancellation, deadlines, and recovery receipts. The explicit Claude/Codex team above can be used meanwhile. This is a host integration failure, not evidence of a subscription quota problem.
 
 See the [operations runbook](docs/operations.md) and [release evidence checklist](docs/completion.md) for setup, recovery, and outstanding live checks.
+
+### Finish approved changes
+
+Enable `merge_after_approval: true` in a private Slack repository alias to merge approved changes once GitHub checks pass and delete the PR branch afterward. Reply `@capo approve` in the review thread. Routine automatic delivery uses the same finish step when both options are enabled. Conflicts, failed checks, or changed PR content stop delivery for inspection. See [Slack operation](docs/slack.md) and the [operations runbook](docs/operations.md).
+
+### Browser tasks
+
+Capo can use its own browser on this computer and ask for missing booking details in Slack. Browser interactions require approval; buying tickets requires reviewing the booking and total. Install the optional browser support and configure permitted sites using the [browser guide](docs/browser.md). Native desktop control and merchant-specific automatic checkout are not implemented.
+
+Google Calendar: [connect your calendar](docs/calendar.md) to check your schedule and create, edit, or delete personal events from Slack.
+
+Morning briefings: [daily digest and feedback](docs/digest.md) covers scheduling, news preferences, and private setup.
+
+Screenshots and diagrams: [Slack image support](docs/images.md) explains supported formats and the required Slack permission.
+
+Meet [Capo’s specialist team](docs/team.md) and connect [Gmail inbox checks](docs/gmail.md).
+
+[Hourly Capo checks](docs/heartbeat.md) quietly watch for items that need your attention.
+
+[Shared capabilities](docs/capabilities.md) let Capo and its specialists combine tools for new requests.
+
+[Slack activity status](docs/slack-activity.md) confirms that a reply is being prepared. [Shared writing style](docs/writing-style.md) applies the approved voice across the team.

@@ -1,6 +1,6 @@
 # Operating Capo
 
-Capo is a local supervisor for trusted GitHub development projects. Claude Code plans and accepts work; configured Codex and Grok workers implement and review it. SPARKITscience is the default display name. This runbook covers operating the first development workflow, not the broader [proposed architecture](architecture.md). Consult [validation](validation.md) and the [completion checklist](completion.md) for what has actually been verified.
+Capo is a local supervisor for trusted GitHub development projects. Claude Code plans and accepts work; configured Codex and Grok workers implement and review it. SPARKITscience is the default team name; the Slack bot is named `capo`. This runbook covers operating the first development workflow, not the broader [proposed architecture](architecture.md). Consult [validation](validation.md) and the [completion checklist](completion.md) for what has actually been verified.
 
 ## Prepare the agent computer
 
@@ -79,13 +79,13 @@ Issue intake reads and deduplicates the issue; it does not post comments. For an
 
 ## Clarification and follow-up in Slack
 
-Every command requires an @mention in the configured channel. Reply in the objective's original thread:
+Starting a conversation requires an @mention in the configured channel. Replies in that Capo thread do not require another mention:
 
 ```text
-@SPARKITscience clarify: Preserve the existing function signature.
-@SPARKITscience followup: Also cover an empty input.
-@SPARKITscience status OBJECTIVE_ID
-@SPARKITscience cancel OBJECTIVE_ID
+@capo clarify: Preserve the existing function signature.
+@capo followup: Also cover an empty input.
+@capo status OBJECTIVE_ID
+@capo cancel OBJECTIVE_ID
 ```
 
 When Claude needs indispensable information to plan, the objective enters `awaiting_input` and the thread receives its question. An owner reply resumes planning in the same checkout. Waiting does not spend additional worker calls. Follow-ups are durable, deduplicated, and incorporated at safe execution boundaries. They retain existing candidate changes and cumulative budgets, invalidate unpublished acceptance/publication state, and cannot change trusted checks or policy. Once publication has started, use a new objective after integrating the published work.
@@ -101,17 +101,17 @@ capo publish OBJECTIVE_ID --digest PREPARED_DIGEST
 capo sync OBJECTIVE_ID
 ```
 
-Preparation creates a local candidate commit and exact publication digest. Publication pushes the new objective branch and opens a draft PR. The target must match the source GitHub origin. Changed content, a conflicting branch, or movement of the remote base prevents publication. An uncertain publication should be retried against its existing record and exact digest so Capo can reconcile remote state; do not create another objective merely to repeat the write.
+Preparation creates a local candidate commit and exact publication digest. Supply `--body-file /private/path/to/reviewed-pr.md` to use reviewed PR text verbatim. Before publication starts, repeat `prepare` with a new body file to revise the description while retaining the verified commit and branch. This generates a new digest and invalidates any Slack preview approval; inspect the revised artifacts and use the new digest. The title and target cannot change once prepared, and the body cannot change after publication starts. Repeating identical preparation is safe. Publication pushes the new objective branch and opens a draft PR. The target must match the source GitHub origin. Changed content, a conflicting branch, or movement of the remote base prevents publication. An uncertain publication should be retried against its existing record and exact digest so Capo can reconcile remote state; do not create another objective merely to repeat the write.
 
 For Slack publication, the repository alias must privately enable `allow_publication` and set the intended `publication_base` and `github_auth`. In the objective thread:
 
 ```text
-@SPARKITscience prepare OBJECTIVE_ID
-@SPARKITscience approve OBJECTIVE_ID EXACT_DIGEST_FROM_PREVIEW
-@SPARKITscience sync OBJECTIVE_ID
+@capo prepare OBJECTIVE_ID
+@capo approve OBJECTIVE_ID EXACT_DIGEST_FROM_PREVIEW
+@capo sync OBJECTIVE_ID
 ```
 
-Preparation sends the full diff and PR preview with the target and digest. Approval is available only after the full preview was delivered. It binds to that exact verified candidate; follow-ups or changed content require new verification and preparation. Oversized previews require CLI review and publication. Slack authorization is still checked for every action. No command merges a PR.
+Preparation sends a short description, target, and exact approval command. Use `@capo details OBJECTIVE_ID` for the full diff, PR body, and commit. Approval is available only after the short review message was delivered. It binds to that exact verified candidate; follow-ups or changed content require new verification and preparation. Oversized code details require CLI review. Slack authorization is still checked for every action. With `merge_after_approval: true`, approval also authorizes merging after GitHub checks pass and deleting the unchanged objective branch.
 
 `sync` reads PR state, review status, and CI results. Verify the reported remote commit still matches the accepted candidate. Publication is not merging, and the service does not automatically repair failed CI. Use an explicitly authorized follow-up objective for additional work.
 
@@ -125,9 +125,10 @@ Start with `capo list`, `capo show OBJECTIVE_ID`, and `capo events OBJECTIVE_ID`
 | --- | --- |
 | Worker is confirmed active | Observe that existing attempt or cancel it through its owning supervisor; do not start another. |
 | Objective is `blocked` because of authentication or VM availability | Restore the selected integration, inspect the retained candidate, then use `capo run OBJECTIVE_ID --retry`. |
-| Objective is `awaiting_input` | Answer the recorded question with an @mention in its original Slack thread, or cancel it. Re-running without new input does not resume planning. |
+| Objective is `awaiting_input` | Answer the recorded question in its original Slack thread, or cancel it. Re-running without new input does not resume planning. |
 | Objective is `cancelled` | Inspect the last applied task and use explicit `--retry` only when continuation is intended. |
 | Supervisor is gone but objective remains `running` | Reconcile local and remote attempts, then run `capo recover OBJECTIVE_ID`; if recovery succeeds, use `capo run OBJECTIVE_ID --retry`. |
+| Worker cleanup could not be confirmed | Inspect private attempt diagnostics and current process groups before retrying. A denied group probe does not prove that the worker stopped. Capo retains a worker-group receipt and blocks retries and other objectives until a read-only probe confirms termination. Interrupted legacy attempts without such a receipt require operator investigation; a dead watchdog alone is insufficient. |
 | Recovery reports a possibly active process | Investigate its identity and process group; do not delete process metadata or bypass the guard. |
 | Round or call budget is exhausted | Create a revised, bounded objective; retries do not reset consumed budgets. |
 | PR publication outcome is uncertain | Inspect the publication record and remote PR/branch, then retry the same exact publication. |
@@ -164,6 +165,26 @@ Desktop automation, general recurring schedules, learned routing, unrestricted w
 
 ## Enable GitHub CI
 
-A ready-to-install workflow is provided at `integrations/github/tests.yml`. It runs the credential-free unit suite on Python 3.11 and 3.14 with read-only repository permissions. Install it at `.github/workflows/tests.yml` using a GitHub login authorized to manage workflows.
+The installed workflow at `.github/workflows/tests.yml` runs the credential-free unit suite on Python 3.11 and 3.14 with read-only repository permissions. A reusable copy is provided at `integrations/github/tests.yml`. Both jobs passed on the first mainline run.
 
-The current saved CLI login rejected workflow publication because it lacks the `workflow` scope. Application-code pushes and draft PRs can still proceed. To authorize workflow installation, the owner can run `gh auth refresh --hostname github.com --scopes workflow` locally, complete the browser flow, and then publish the prepared workflow. Do not paste credentials into chat. Until installation, an empty CI status is not a passing CI run.
+Installing or updating a workflow requires an appropriately authorized GitHub login. If GitHub rejects a workflow push for missing scope, run `gh auth refresh --hostname github.com --scopes workflow` locally and complete the browser flow. Do not paste credentials into chat. An empty CI status is not a passing CI run; inspect the checks on the exact commit being reviewed.
+
+
+To validate an older, inspected candidate that predates the CI workflow, run the workflow from the default branch and supply its exact commit:
+
+```sh
+gh workflow run tests.yml --ref main -f commit=FULL_40_CHARACTER_COMMIT_SHA
+gh run list --workflow tests.yml --event workflow_dispatch
+```
+
+The workflow validates the SHA, checks out that exact code, records it in each job summary, and runs the same Python matrix without provider or service credentials. Inspect both job outcomes and their recorded commit. A manually dispatched run belongs to the dispatch ref in GitHub metadata; it is separate evidence for the tested candidate and does not manufacture a required PR status check. Normal pull-request runs remain the preferred delivery evidence.
+
+Manual dispatch follows [GitHub's workflow interface](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
+In the review thread, `@capo approve` or `@capo approve OBJECTIVE_ID` approves the most recent fully delivered review of that unchanged candidate. Capo looks up the exact approval code from its delivery record. A different thread, changed candidate, missing preview, or approval sent before that preview cannot use this shorthand. The explicit `approve OBJECTIVE_ID DIGEST` command remains available.
+
+## Finish approved work
+
+Set `merge_after_approval: true` in a private repository alias to make approval finish delivery: publish, wait for passing GitHub checks, mark the draft ready, squash-merge the exact approved commit, then delete its branch. The default is false. With routine automatic publication enabled, that standing permission also covers this finish step for newly delivered routine changes. Existing PRs are not enrolled retroactively; approve one explicitly to enroll it.
+
+Capo checks at most once per minute while waiting. Missing or pending checks and GitHub branch rules delay merging. Failed checks, requested changes, conflicts, changed PR content, or uncertain writes stop automatic delivery for inspection. It does not use administrator overrides. Branch deletion uses an exact-commit lease and only the objective's own branch; new work pushed to that branch is preserved. The final Slack message confirms both merging and cleanup, or reports that delivery needs attention. Old local candidate checkouts remain as private evidence.
