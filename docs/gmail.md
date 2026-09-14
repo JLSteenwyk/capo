@@ -18,3 +18,13 @@ The Slack email route now uses Capo’s [shared tool loop](capabilities.md). Cap
 For the owner’s prose, Capo should search sent mail and filter quoted replies. Other requests can preserve quotes for correspondence context. The tool returns labels, headers, truncation flags and partial errors. Attachments are skipped. Search/read budgets prevent unrestricted mailbox extraction.
 
 New reusable documents are saved under CAPO_HOME/documents with an owner-specific scope and can be discovered by the chief and specialists. The earlier CAPO_HOME/gmail/writing-guide.json file remains intact as a legacy artifact. No new Google permission is required: the existing read-only grant covers message bodies and sent mail.
+
+## Draft permission and write boundary
+
+The draft integration uses `gmail.compose` in addition to existing `gmail.readonly` access. Google bundles draft management and sending in that scope; Capo's host adapter exposes only create, replace, and delete draft operations. It does not expose a send endpoint. Reconnecting with `capo gmail-auth --client-secrets /path/to/client.json --drafts` requests that additional permission. Existing read-only connections continue working unchanged.
+
+The transport and authorization support are implemented; shared natural-language draft tools and live verification are still in progress. Do not treat successful authorization alone as a completed draft integration.
+
+External changes use private durable action receipts. An unconfirmed operation is not automatically repeated, even after restart or an identical new request. Read-only reconciliation must establish the result before that action can proceed.
+
+References: [Google's Gmail scopes](https://developers.google.com/workspace/gmail/api/auth/scopes), [draft management](https://developers.google.com/workspace/gmail/api/guides/drafts), and [reply threading requirements](https://developers.google.com/workspace/gmail/api/guides/threads).

@@ -13,12 +13,14 @@ from .providers import Providers
 
 TOKEN = Path.home()/'.config/capo/google-gmail-token.json'
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+DRAFT_SCOPE = 'https://www.googleapis.com/auth/gmail.compose'
 
 
-def authorize(client_secrets):
+def authorize(client_secrets, drafts=False):
     from google_auth_oauthlib.flow import InstalledAppFlow
     TOKEN.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), SCOPES)
+    scopes = SCOPES + ([DRAFT_SCOPE] if drafts else [])
+    flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), scopes)
     credentials = flow.run_local_server(host='localhost', port=0, timeout_seconds=300,
         authorization_prompt_message='Opening Gmail sign-in in your browser.')
     if not credentials.refresh_token: raise RuntimeError('Offline Gmail access was not granted')
@@ -26,16 +28,37 @@ def authorize(client_secrets):
 
 
 class Gmail:
-    def __init__(self):
+    def __init__(self, drafts=False):
         from google.auth.transport.requests import AuthorizedSession, Request
         from google.oauth2.credentials import Credentials
         if not TOKEN.exists(): raise RuntimeError('Gmail needs to be connected first.')
         TOKEN.chmod(0o600)
-        credentials = Credentials.from_authorized_user_file(str(TOKEN), SCOPES)
+        stored = json.loads(TOKEN.read_text())
+        scopes = stored.get('scopes', SCOPES)
+        if isinstance(scopes, str): scopes = scopes.split()
+        if drafts and DRAFT_SCOPE not in scopes:
+            raise RuntimeError('Gmail draft permission requires reconnecting with --drafts.')
+        self.drafts_enabled = drafts
+        credentials = Credentials.from_authorized_user_file(str(TOKEN), scopes)
         if not credentials.valid:
             credentials.refresh(Request())
             _write(TOKEN, json.loads(credentials.to_json()))
         self.session = AuthorizedSession(credentials)
+
+    def draft_write(self, method, draft_id='', payload=None):
+        """Only draft CRUD, even though Google's compose scope also permits send."""
+        if not self.drafts_enabled:
+            raise ValueError('Draft permission is not enabled')
+        if method not in ('POST', 'PUT', 'DELETE'):
+            raise ValueError('Unsupported draft operation')
+        if (method == 'POST' and draft_id) or (method != 'POST' and not re.fullmatch(r'[A-Za-z0-9_-]+', draft_id)):
+            raise ValueError('Invalid draft ID')
+        path = 'drafts' + ('/'+draft_id if draft_id else '')
+        response = self.session.request(method, 'https://gmail.googleapis.com/gmail/v1/users/me/'+path,
+                                        json=payload, timeout=20)
+        if not response.ok:
+            raise RuntimeError('Gmail draft change was not confirmed')
+        return {'deleted': True, 'id': draft_id} if method == 'DELETE' else response.json()
 
     def get(self, path, params):
         response = self.session.get('https://gmail.googleapis.com/gmail/v1/users/me/'+path,
