@@ -1,3 +1,4 @@
+import base64
 import unittest
 from unittest.mock import Mock
 from capo.gmail import Gmail, SCOPES
@@ -39,16 +40,25 @@ class GmailTests(unittest.TestCase):
         self.assertEqual(client.get.call_args_list[0].args[1]['q'],'in:sent')
         self.assertEqual(client.get.call_args_list[1].args[1]['format'],'full')
 
-    def test_style_request_reads_sent_mail_and_saves_private_guide(self):
+    def test_style_request_composes_search_read_and_saves_private_document(self):
         import tempfile,time,json
         from pathlib import Path
         from unittest.mock import patch
         from capo.gmail import InboxConversation
         from capo.conversation import ConversationPending
+        def step(tool, arguments):
+            return {'action':'tool','tool':tool,'arguments_json':json.dumps(arguments),
+                    'reply':'','document_title':'','document':''}
         with tempfile.TemporaryDirectory() as tmp, patch('capo.gmail.Providers') as provider, patch('capo.gmail.Gmail') as gmail:
-            provider.return_value.call.side_effect=[{'action':'writing_style','query':'irrelevant','limit':'25'},
-                {'reply':'Your writing is concise.','guide':'Use short sentences.'}]
-            gmail.return_value.messages.return_value={'messages':[{'body':'Thanks!'}], 'more_available':False}
+            provider.return_value.call.side_effect=[
+                step('mail.search', {'query':'in:sent','page_size':'25','page_token':''}),
+                step('mail.read', {'ids':['synthetic-one'],'strip_quotes':True}),
+                {'action':'finish','tool':'','arguments_json':'{}',
+                 'reply':'One usable sent message suggests concise writing; limited evidence.',
+                 'document_title':'Writing guide','document':'Use short sentences; provisional from one sample.'}]
+            body=base64.urlsafe_b64encode(b'Thanks for the update.').decode()
+            gmail.return_value.get.side_effect=[{'messages':[{'id':'synthetic-one'}]},
+                {'labelIds':['SENT'],'payload':{'mimeType':'text/plain','body':{'data':body}}}]
             router=InboxConversation(Path(tmp))
             for _ in range(300):
                 try:
@@ -56,8 +66,13 @@ class GmailTests(unittest.TestCase):
                 except ConversationPending:time.sleep(.005)
             else:self.fail('Style request did not finish')
             self.assertIn('concise',result['reply'])
-            gmail.return_value.messages.assert_called_once_with('in:sent',25)
+            self.assertEqual(gmail.return_value.get.call_args_list[0].args,
+                ('messages', {'q':'in:sent','maxResults':25}))
+            self.assertEqual(gmail.return_value.get.call_args_list[1].args[1], {'format':'full'})
             gmail.return_value.inbox.assert_not_called()
-            p=router.root.parent/'writing-guide.json'
-            self.assertEqual(json.loads(p.read_text())['sample_count'],1)
+            p=next(router.root.glob('*/document.json'))
+            document=json.loads(p.read_text())
+            self.assertEqual(document['message_ids'],['synthetic-one'])
+            self.assertIn('short sentences',document['content'])
             self.assertEqual(p.stat().st_mode & 0o777,0o600)
+            self.assertNotIn('writing_style', provider.return_value.call.call_args_list[0].args[2]['properties'])

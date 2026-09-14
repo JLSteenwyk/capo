@@ -1,3 +1,4 @@
+import json
 import tempfile
 import time
 import unittest
@@ -23,11 +24,17 @@ class TeamTests(unittest.TestCase):
     def test_memory_scoped_by_role_owner_and_replay_cached(self):
         style = Specialist(self.home, 'style_assistant', 'owner-a')
         with patch('capo.team.Providers') as provider:
-            provider.return_value.call.return_value = {'reply': 'I will use that preference.', 'remember': 'Prefers blue.'}
+            provider.return_value.call.side_effect = [
+                {'action':'tool','tool':'preferences.remember','arguments_json':json.dumps({'note':'Prefers blue.'}),
+                 'reply':'','document_title':'','document':''},
+                {'action':'finish','tool':'','arguments_json':'{}','reply':'I will use that preference.',
+                 'document_title':'','document':''}]
             self.finish(style, 'first', 'I prefer blue.')
             self.finish(style, 'first', 'I prefer blue.')
-            self.assertEqual(provider.return_value.call.call_count, 1)
-            provider.return_value.call.return_value = {'reply': 'Here is some advice.', 'remember': ''}
+            self.assertEqual(provider.return_value.call.call_count, 2)
+            provider.return_value.call.side_effect = None
+            provider.return_value.call.return_value = {'action':'finish','tool':'','arguments_json':'{}',
+                'reply':'Here is some advice.','document_title':'','document':''}
             self.finish(Specialist(self.home, 'style_assistant', 'owner-a'), 'second', 'Suggest an outfit.')
             self.assertIn('Prefers blue.', provider.return_value.call.call_args.args[1])
             for role, owner in [('shopping_assistant', 'owner-a'), ('style_assistant', 'owner-b')]:

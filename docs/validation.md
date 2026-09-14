@@ -168,3 +168,7 @@ After reinstallation, the live app’s `files:read` scope was confirmed. The ada
 ## Hourly checks and sent-mail analysis
 
 The full suite passed 248 tests. New checks cover inclusive local scheduling hours, quiet receipts across restarts, daily alert deduplication, bounded ID-based alert selection, stale delivery suppression, and sent-message MIME/quote handling. A live read-only hourly preview completed without posting to Slack. A separate live request read 25 sent messages and saved a private writing guide. No email or calendar data was modified.
+
+## Shared capability loop
+
+The full suite passed 259 tests. The shared registry was tested with strict tool arguments, discovered mail IDs, query-bound pagination, failed reads, budget enforcement, private document isolation, and a single request combining mail and calendar evidence. A live Claude request independently chose mail search and message reading, inspected 25 sent messages, and saved a reusable private writing guide. No email or calendar mutations were performed.

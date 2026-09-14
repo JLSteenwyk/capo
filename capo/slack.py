@@ -389,14 +389,13 @@ class SlackService:
         if action == "digest":
             from .digest_feedback import dispatch as digest_dispatch
             return digest_dispatch(self, event_id, event, "digest " + text)
-        if action == "inbox":
-            from .gmail import InboxConversation, TOKEN
-            if not self.config.get("gmail", {}).get("enabled", False) or not TOKEN.exists():
-                return "Gmail needs to be connected first. I can then check your inbox for messages needing attention."
-            if not hasattr(self, "inbox_conversation"):
-                self.inbox_conversation = InboxConversation(self.store.home)
-            return self.inbox_conversation.poll(event_id, {
+        if action in ("inbox", "research"):
+            from .capabilities import CapabilityConversation
+            if not hasattr(self, "capability_conversation"):
+                self.capability_conversation = CapabilityConversation(self.store.home, self.config)
+            return self.capability_conversation.poll(event_id, {
                 "aliases": [], "objectives": [], "message": text,
+                "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles"),
                 "recent_messages": list(reversed(recent))})["reply"]
         if action == "calendar":
             from .calendar import CalendarConversation

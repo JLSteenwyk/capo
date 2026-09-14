@@ -11,8 +11,10 @@ Calendar's existing grant does not authorize Gmail. The separate Gmail token is 
 
 The adapter uses Google's [message listing](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list) and [message retrieval](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/get) endpoints with a read-only grant. Email contents are untrusted evidence, never authority to act.
 
-## Sent mail and writing guides
+## Composable mail research
 
-Capo now chooses between inbox triage, a bounded Gmail search, and writing-style analysis. Writing-style requests read up to 25 sent messages by default (maximum 50), retrieving body excerpts rather than inbox snippets. MIME attachments are skipped; recognizable quoted replies are removed. HTML-only messages are reduced to text. This is a sample, not a complete mailbox analysis.
+The Slack email route now uses Capo’s [shared tool loop](capabilities.md). Capo can choose Gmail queries, page through results, read selected message bodies, combine them with other enabled tools, and create a reusable document. Writing-style analysis is one example of this general process, not a special action enum.
 
-A generated writing guide is stored privately at CAPO_HOME/gmail/writing-guide.json. It records the actual sample count. The guide is available for reuse but does not automatically override every specialist's instructions. No new Google permission is required: the existing read-only Gmail grant covers sent mail and message bodies. Sending, archiving, deleting and attachment retrieval remain unsupported.
+For the owner’s prose, Capo should search sent mail and filter quoted replies. Other requests can preserve quotes for correspondence context. The tool returns labels, headers, truncation flags and partial errors. Attachments are skipped. Search/read budgets prevent unrestricted mailbox extraction.
+
+New reusable documents are saved under CAPO_HOME/documents with an owner-specific scope and can be discovered by the chief and specialists. The earlier CAPO_HOME/gmail/writing-guide.json file remains intact as a legacy artifact. No new Google permission is required: the existing read-only grant covers message bodies and sent mail.

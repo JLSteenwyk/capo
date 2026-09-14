@@ -135,3 +135,5 @@ Screenshots and diagrams: [Slack image support](docs/images.md) explains support
 Meet [Capo’s specialist team](docs/team.md) and connect [Gmail inbox checks](docs/gmail.md).
 
 [Hourly Capo checks](docs/heartbeat.md) quietly watch for items that need your attention.
+
+[Shared capabilities](docs/capabilities.md) let Capo and its specialists combine tools for new requests.
