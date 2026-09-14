@@ -34,7 +34,7 @@ def addresses(values):
 class DraftTools:
     def __init__(self, client, mail, home, owner, request=None):
         self.client=client;self.mail=mail;self.effects=Effects(home,owner)
-        self.known=set();self.attachments={};self.cursors={}
+        self.known=set();self.attachments={};self.cursors={};self.actions={};self.reconcile_cursors={}
         request=request or {}
         owner_text=request.get('message','')+'\n'+'\n'.join(x.get('user','') for x in request.get('recent_messages',[]))
         self.explicit=set(re.findall(r'[^\s<>@,;]+@[^\s<>@,;]+\.[A-Za-z]{2,}',owner_text))
@@ -106,6 +106,7 @@ class DraftTools:
                      body=body,reply_to_message=reply_to_message,attachment_ids=attachment_ids)
         existing=self.effects.completed(operation_id,request)
         if existing is not None:return existing
+        self.client.ready()
         if len(body)>12000 or not body.strip() or len(subject)>300 or '\r' in subject or '\n' in subject:
             raise ValueError('Invalid draft body or subject')
         if len(attachment_ids)>10 or len(set(attachment_ids))!=len(attachment_ids):raise ValueError('Invalid attachments')
@@ -130,6 +131,7 @@ class DraftTools:
         message['Subject']=subject
         tag=hashlib.sha256(operation_id.encode()).hexdigest()
         message['Message-ID']='<capo-'+tag+'@capo.invalid>'
+        message['X-Capo-Action']='capo-'+tag+'@capo.invalid'
         thread_id=''
         if parent:
             reference=headers.get('message-id','')
@@ -167,8 +169,53 @@ class DraftTools:
         return self.effects.run(operation_id,{'kind':'gmail-draft-delete','id':id,'revision':revision},
                                 lambda:self.client.draft_write('DELETE',id))
 
+    def pending(self):
+        result=[]
+        for operation,request in self.effects.pending('gmail-draft-'):
+            key=hashlib.sha256(operation.encode()).hexdigest()
+            self.actions[key]=(operation,request)
+            result.append({'id':key,'operation':request['kind'],'draft_id':request.get('id',''),
+                           'subject':request.get('subject',''),'status':'unconfirmed'})
+        return {'actions':result,'coverage':'Up to 100 recent unconfirmed actions. Reconcile before retrying a write.'}
+
+    def reconcile(self,id,cursor=''):
+        if id not in self.actions:raise ValueError('List pending actions first')
+        if len(cursor)>2000 or (cursor and self.reconcile_cursors.get(cursor)!=id):raise ValueError('Use the returned cursor for this action')
+        operation,request=self.actions[id]
+        completed=self.effects.completed(operation,request)
+        if completed is not None:return completed
+        if request['kind']=='gmail-draft-delete':
+            if self.client.draft_exists(request['id']):return {'confirmed':False,'reason':'Draft still exists; no change was made.'}
+            return self.effects.resolve(operation,request,{'deleted':True,'id':request['id'],'reconciled':True})
+        tag='capo-'+hashlib.sha256(operation.encode()).hexdigest()+'@capo.invalid'
+        next_cursor=''
+        if request['id']:ids=[request['id']]
+        else:
+            params={'maxResults':10}
+            if cursor:params['pageToken']=cursor
+            page=self.client.get('drafts',params)
+            ids=[v['id'] for v in page.get('drafts',[])[:10]]
+            next_cursor=page.get('nextPageToken','')
+            if next_cursor:self.reconcile_cursors[next_cursor]=id
+        for draft_id in ids:
+            self.known.add(draft_id)
+            try:
+                metadata=self.client.get('drafts/'+quote(draft_id,safe=''),{'format':'metadata'})
+                headers={h['name'].lower():h['value'] for h in metadata['message'].get('payload',{}).get('headers',[])}
+                if headers.get('x-capo-action')!=tag and headers.get('message-id')!='<'+tag+'>':continue
+                data,raw,message=self._raw(draft_id)
+            except Exception:continue
+            if str(message.get('X-Capo-Action',''))!=tag and str(message.get('Message-ID',''))!='<'+tag+'>':continue
+            body=message.get_body(preferencelist=('plain',))
+            changed=body is None or body.get_content().strip()!=request['body'].strip() or str(message.get('Subject',''))!=request['subject']
+            return self.effects.resolve(operation,request,{'saved':True,'id':draft_id,'sent':False,
+                'reconciled':True,'changed_since_write':changed,'thread_id':data['message'].get('threadId','')})
+        return {'confirmed':False,'cursor':next_cursor,'reason':'No matching draft in this page. Follow the returned cursor if present; otherwise the outcome remains unconfirmed. No write was repeated.'}
+
     def tools(self):
         return [
+            ReadTool('mail.drafts.pending','List unconfirmed draft changes after a timeout or interruption. Do this before retrying a failed draft write.',object_schema({}),self.pending),
+            ReadTool('mail.drafts.reconcile','Check a pending action ID against Gmail without repeating the write. Uses a preserved action header or an explicit not-found response after deletion. Start with empty cursor; follow returned cursors for this action. Checks at most ten draft headers per call; missing evidence stays unconfirmed.',object_schema({'id':TEXT,'cursor':TEXT}),self.reconcile),
             ReadTool('mail.attachments','Read attachment metadata and obtain verified references from a searched message; use reference IDs to attach requested files to a draft.',object_schema({'message_id':TEXT}),self.source_attachments),
             ReadTool('mail.drafts.search','Find Gmail drafts using Gmail search syntax. Empty query finds all; use returned cursor for more.',object_schema({'query':TEXT,'cursor':TEXT}),self.search),
             ReadTool('mail.drafts.read','Read a discovered draft, current revision, recipients and attachment references before editing or deleting.',object_schema({'id':TEXT}),self.read),

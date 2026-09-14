@@ -221,10 +221,12 @@ def compose(evidence, p, seen, directory, provider=None):
     picked=[attention[k] for k in dict.fromkeys(decision['attention']) if k in attention][:3]
     now=instant(evidence['now']); local=now.astimezone(ZoneInfo(p['timezone']))
     lines=['Good morning — '+local.strftime('%A, %B %-d')]
+    task_notices=[]
     if picked:
         lines+=['','Needs your attention']
         for item in picked:
             lines.append(f"• {item['status']}: {item['title'][:130]}" + (' '+item['url'] if item['url'] else ''))
+            if item.get('kind')=='personal_task':task_notices.append({'id':item['id'],'day':item['notice_day'],'line':lines[-1]})
     calendar_ok=any(v['source']=='Primary Google Calendar' and v['status']=='ok' for v in evidence['coverage'])
     if calendar_ok:
         today, upcoming, conflicts, gaps=calendar_outlook(evidence['events'],now,p)
@@ -251,4 +253,4 @@ def compose(evidence, p, seen, directory, provider=None):
     if absent: lines+=['','No fresh matching items for some '+', '.join(absent)+' slots today.']
     if missing:lines+=['Coverage unavailable: '+', '.join(missing)+'.']
     lines+=['','Reply with feedback, e.g. “more like item 2,” or “digest settings.”']
-    return dict(text='\n'.join(lines),news=selected,coverage=evidence['coverage'],preferences=p)
+    return dict(text='\n'.join(lines),news=selected,coverage=evidence['coverage'],preferences=p,task_notices=task_notices)

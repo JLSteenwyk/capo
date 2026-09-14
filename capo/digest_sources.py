@@ -163,12 +163,18 @@ def github_attention(config, now):
     return items, coverage
 
 
-def collect(config, preferences, objectives, now):
+def collect(config, preferences, objectives, now, home=None):
     """Sources cannot mutate events, repos or tasks; failures are independent."""
     local = now.astimezone(__import__('zoneinfo').ZoneInfo(preferences['timezone']))
     start = local.replace(hour=0, minute=0, second=0, microsecond=0)
     result = dict(events=[], attention=[], news=[], coverage=[], now=now.isoformat(),
                   calendar='primary Google Calendar', timezone=preferences['timezone'])
+    from .attention import personal_tasks
+    try:
+        result['attention'].extend(personal_tasks(home,config,now))
+        result['coverage'].append(dict(source='Personal tasks',status='ok',checked_at=now.isoformat()))
+    except Exception:
+        result['coverage'].append(dict(source='Personal tasks',status='unavailable',checked_at=now.isoformat()))
     superseded={o.get('continuation_of') for o in objectives if o.get('continuation_of')}
     for objective in objectives:
         if objective['id'] in superseded:continue

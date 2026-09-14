@@ -19,12 +19,15 @@ SCHEMA = object_schema({'reply': TEXT, 'remember': TEXT})
 
 def roster(config):
     return {
-        'chief': 'Capo: delegates, tracks work, manages connected calendar and morning digest.',
+        'chief': 'Capo: delegates, manages personal tasks/reminders, plans days/weeks, and manages connected calendar, email drafts and morning digest.',
         'specialists': {key: name for key, (name, _) in ROLES.items()},
         'coding': 'Coding Agent: existing repository issue, implementation, review and publication workflows.',
         'connections': {'calendar': bool(config.get('calendar', {}).get('enabled')),
                         'repositories': list(config.get('repositories', {})),
-                        'email': bool(config.get('gmail', {}).get('enabled')),  'banking': False, 'retail_accounts': False,
+                        'email': bool(config.get('gmail', {}).get('enabled')),
+                        'email_drafts': bool(config.get('gmail', {}).get('enabled') and config.get('gmail', {}).get('drafts')),
+                        'personal_tasks': True, 'scheduled_readonly_requests': True,
+                        'banking': False, 'retail_accounts': False,
                         'slack': 'Configured owner and channel only',
                         'browser': bool(config.get('browser', {}).get('enabled'))},
     }

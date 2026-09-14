@@ -73,6 +73,7 @@ def shared_tools(home,config,documents,request=None):
                     return self.client
                 def get(self,*args,**kwargs):return self.ready().get(*args,**kwargs)
                 def draft_write(self,*args,**kwargs):return self.ready().draft_write(*args,**kwargs)
+                def draft_exists(self,*args,**kwargs):return self.ready().draft_exists(*args,**kwargs)
             tools.extend(DraftTools(LazyDraftMail(),mail,home,owner_key(config),request).tools())
     if config.get('calendar',{}).get('enabled'):
         def events(start,end):

@@ -937,6 +937,8 @@ def serve(home, config_path):
                 service.heartbeat_manager.db.close()
             if hasattr(service, "digest_manager"):
                 service.digest_manager.db.close()
+            for name in ('reminder_manager','scheduled_manager'):
+                if hasattr(service,name):getattr(service,name).db.close()
             from .browser_slack import stop as stop_browser
             stop_browser(service)
             if service.active and service.active.poll() is None:

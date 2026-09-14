@@ -91,7 +91,7 @@ class DigestManager:
             db=DigestStore(self.service.store.home)
             try:
                 attempt=directory/str(run['attempts']);attempt.mkdir(mode=0o700,exist_ok=True)
-                evidence=collect(config,p,objectives,now)
+                evidence=collect(config,p,objectives,now,self.service.store.home)
                 _write(attempt/'evidence.json',evidence)
                 payload=compose(evidence,p,seen,attempt)
                 if len(payload['text'])>10000:raise ValueError('Digest too long')
@@ -121,13 +121,26 @@ class DigestManager:
     def deliver(self,run,now):
         lock=self.db.root/(hashlib.sha256(run['key'].encode()).hexdigest()+'.delivery.lock')
         fd=os.open(lock,os.O_RDWR|os.O_CREAT,0o600)
+        notice_fd=None
         try:
             try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return
             run=self.db.get(run['key'])
             if run['status'] not in ('ready','sending'):return
+            if now.timestamp()<run.get('retry_at',0):return
+            if run.get('payload',{}).get('task_notices'):
+                notice_fd=os.open(self.service.store.home/'task-notice.delivery.lock',os.O_RDWR|os.O_CREAT,0o600)
+                try:fcntl.flock(notice_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                except BlockingIOError:return
+                from .attention import filter_notices
+                try:
+                    if not filter_notices(self,run,now):return
+                except Exception:
+                    run['retry_at']=now.timestamp()+60;self.db.save(run,now);return
             self._deliver(run,now)
-        finally:os.close(fd)
+        finally:
+            if notice_fd is not None:os.close(notice_fd)
+            os.close(fd)
 
     def _deliver(self,run,now):
         if now.timestamp() < run.get('not_before',0):return

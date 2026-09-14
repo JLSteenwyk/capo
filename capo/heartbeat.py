@@ -35,7 +35,7 @@ def due_slot(now,p):
     return local.replace(minute=0,second=0,microsecond=0)
 
 
-def evidence(config,objectives,now):
+def evidence(config,objectives,now,home=None):
     items=[]
     def add(kind,data):
         key=kind+':'+hashlib.sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()[:24]
@@ -63,6 +63,9 @@ def evidence(config,objectives,now):
         if objective['status'] in ('blocked','awaiting_input'):
             add('task',{'title':objective['request'][:200],'status':objective['status'],
                         'objective_id':objective['id']})
+    from .attention import personal_tasks
+    try:items.extend(personal_tasks(home,config,now,horizon_days=1,heartbeat=True))
+    except Exception:add('connection',{'title':'Personal task check unavailable'})
     return items
 
 
@@ -82,13 +85,14 @@ def select(items,seen,now,directory,provider=None):
         'characters. Never claim to have sent, edited, cancelled or completed anything.\n'+
         json.dumps({'now':now.isoformat(),'items':candidates}),schema,directory/'cwd',directory/'claude')
     validate(result,schema)
-    allowed={x['id']:x for x in candidates};chosen=[];lines=[]
+    allowed={x['id']:x for x in candidates};chosen=[];lines=[];task_notices=[]
     for alert in result['alerts'][:3]:
         key=alert['id']
         if key not in allowed or any(x['id']==key for x in chosen):continue
         item=allowed[key];chosen.append(dict(id=key,day=day))
         lines.append('• '+item['title'][:120]+': '+' '.join(alert['reason'].split())[:160])
-    return {'text':'Needs your attention:\n'+'\n'.join(lines) if lines else '', 'news':chosen}
+        if item.get('kind')=='personal_task':task_notices.append({'id':key,'day':item['notice_day'],'line':lines[-1]})
+    return {'text':'Needs your attention:\n'+'\n'.join(lines) if lines else '', 'news':chosen,'task_notices':task_notices}
 
 
 class HeartbeatManager(DigestManager):
@@ -139,7 +143,7 @@ class HeartbeatManager(DigestManager):
             db=DigestStore(self.home)
             try:
                 attempt=directory/str(run['attempts']);(attempt/'cwd').mkdir(parents=True,mode=0o700,exist_ok=True)
-                items=evidence(config,objectives,now)
+                items=evidence(config,objectives,now,self.service.store.home)
                 _write(attempt/'evidence.json',items)
                 payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt)
                 run.update(status='ready' if payload['text'] else 'quiet',payload=payload)

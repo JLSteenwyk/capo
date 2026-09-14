@@ -10,4 +10,6 @@ Tasks live in an owner-scoped private SQLite database under `CAPO_HOME/tasks`. C
 
 A private reminder ledger uses the existing Slack delivery gateway. Due reminders send once per task/reminder time, including one clearly labeled catch-up after a missed schedule. Cancellation or rescheduling suppresses pending reminders; uncertain posts are reconciled before retries. Reminder threads retain their task identity for follow-ups. The Mac must be awake with Capo running. Hourly checks retain their separate 10 a.m.–4 p.m. schedule; explicitly requested reminders can occur outside those hours.
 
-Digest and weekly-plan integration, broader composition tests, and live deployment are still in progress.
+The morning digest considers deadlines over the next seven days, high-priority tasks and waiting items. Hourly checks consider the next day, respecting the existing 10 a.m.–4 p.m. window. A shared delivery lock and sent/unconfirmed receipts prevent an unchanged task alert from appearing in both streams on the same day. A changed deadline or waiting status creates fresh evidence. Explicitly timed reminders own their alerts instead of appearing in hourly checks; planning summaries may still include those commitments. Up to 100 matching personal tasks are considered per sweep.
+
+Live deployment and final end-to-end checks remain in progress.

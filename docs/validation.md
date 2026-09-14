@@ -172,3 +172,11 @@ The full suite passed 248 tests. New checks cover inclusive local scheduling hou
 ## Shared capability loop
 
 The full suite passed 259 tests. The shared registry was tested with strict tool arguments, discovered mail IDs, query-bound pagination, failed reads, budget enforcement, private document isolation, and a single request combining mail and calendar evidence. A live Claude request independently chose mail search and message reading, inspected 25 sent messages, and saved a reusable private writing guide. No email or calendar mutations were performed.
+
+## Personal tasks, drafts and planning
+
+The suite passed 307 tests covering owner-scoped task storage, revisions, recurrence and daylight saving changes, dependency checks, repeated model mutations, Gmail reply threading and verified attachments, reminder catch-up/restart/cancellation, calendar availability, scheduled read-only requests, and shared task-alert suppression between the morning digest and hourly checks.
+
+Live Gmail verification created, read, edited and deleted a labeled temporary draft without sending email. A simulated lost response after a real draft save was reconciled with exactly one write, followed by cleanup. This caught Google's rewriting of draft Message-ID headers; recovery now uses a preserved custom action header and paginated metadata checks. A private live planning preview read tasks, calendar and Gmail. A separate live check verified the correction for conflicting timezone metadata in calendar responses. No unrelated personal events, tasks or email were changed by these checks.
+
+Final deployment and completion audit are in progress.

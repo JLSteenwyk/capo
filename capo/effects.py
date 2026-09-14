@@ -32,6 +32,26 @@ class Effects:
             return json.loads(row[2]) if row and row[1]=='done' else None
         finally:db.close()
 
+    def pending(self, prefix):
+        db=self.connect()
+        try:
+            values=[]
+            for id,request in db.execute("SELECT id,request FROM effects WHERE status='started' ORDER BY rowid DESC LIMIT 100"):
+                request=json.loads(request)
+                if request.get('kind','').startswith(prefix):values.append((id,request))
+            return values
+        finally:db.close()
+
+    def resolve(self, operation_id, request, result):
+        db=self.connect()
+        try:
+            with db:
+                row=db.execute('SELECT request FROM effects WHERE id=?',(operation_id,)).fetchone()
+                if row is None or row[0]!=json.dumps(request,sort_keys=True):raise ValueError('Unknown action receipt')
+                db.execute("UPDATE effects SET status='done',result=? WHERE id=?",(json.dumps(result),operation_id))
+            return result
+        finally:db.close()
+
     def run(self, operation_id, request, execute, reconcile=None):
         if not operation_id:raise ValueError('Host receipt required')
         encoded=json.dumps(request,sort_keys=True)

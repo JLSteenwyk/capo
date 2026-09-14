@@ -45,6 +45,9 @@ class Gmail:
             _write(TOKEN, json.loads(credentials.to_json()))
         self.session = AuthorizedSession(credentials)
 
+    def ready(self):
+        return self
+
     def draft_write(self, method, draft_id='', payload=None):
         """Only draft CRUD, even though Google's compose scope also permits send."""
         if not self.drafts_enabled:
@@ -59,6 +62,14 @@ class Gmail:
         if not response.ok:
             raise RuntimeError('Gmail draft change was not confirmed')
         return {'deleted': True, 'id': draft_id} if method == 'DELETE' else response.json()
+
+    def draft_exists(self, draft_id):
+        if not re.fullmatch(r'[A-Za-z0-9_-]+',draft_id):raise ValueError('Invalid draft ID')
+        response=self.session.get('https://gmail.googleapis.com/gmail/v1/users/me/drafts/'+draft_id,
+                                  params={'format':'minimal'},timeout=20)
+        if response.status_code==404:return False
+        if not response.ok:raise RuntimeError('Draft status could not be checked')
+        return True
 
     def get(self, path, params):
         response = self.session.get('https://gmail.googleapis.com/gmail/v1/users/me/'+path,

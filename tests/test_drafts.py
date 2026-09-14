@@ -109,3 +109,35 @@ class DraftTests(unittest.TestCase):
         self.assertTrue(all('result' in r for r in result['receipts']))
         self.assertEqual(tasks.search()['tasks'][0]['sources'],['gmail:m1'])
         self.client.draft_write.assert_called_once()
+
+    def test_timeout_recovery_finds_exact_draft_without_another_write(self):
+        import hashlib
+        self.client.draft_write.side_effect=TimeoutError()
+        with self.assertRaises(TimeoutError):self.tools.save(**self.args,operation_id='uncertain')
+        restored=DraftTools(self.client,self.mail,self.home,'owner',{'message':'Draft to friend@example.com'})
+        action=restored.pending()['actions'][0]['id']
+        m=EmailMessage();m['To']='friend@example.com';m['Subject']=self.args['subject']
+        m['Message-ID']='<rewritten@example.com>'
+        m['X-Capo-Action']='capo-'+hashlib.sha256(b'uncertain').hexdigest()+'@capo.invalid'
+        m.set_content(self.args['body'])
+        data={'message':{'raw':base64.urlsafe_b64encode(m.as_bytes()).decode(),'threadId':'thread1'}}
+        self.client.get.side_effect=[{'drafts':[{'id':'draft1'}]}, {'message':{'payload':{'headers':[{'name':'X-Capo-Action','value':str(m['X-Capo-Action'])}]}}},data]
+        result=restored.reconcile(action)
+        self.assertTrue(result['saved']);self.assertTrue(result['reconciled'])
+        self.assertEqual(restored.save(**self.args,operation_id='uncertain'),result)
+        self.assertEqual(self.client.draft_write.call_count,1)
+
+    def test_missing_reconciliation_evidence_never_repeats_write(self):
+        self.client.draft_write.side_effect=TimeoutError()
+        with self.assertRaises(TimeoutError):self.tools.save(**self.args,operation_id='uncertain')
+        action=self.tools.pending()['actions'][0]['id']
+        self.client.get.return_value={'drafts':[]}
+        self.assertFalse(self.tools.reconcile(action)['confirmed'])
+        self.assertEqual(len(self.tools.pending()['actions']),1)
+        self.assertEqual(self.client.draft_write.call_count,1)
+
+    def test_missing_credentials_fail_before_action_is_reserved(self):
+        self.client.ready.side_effect=RuntimeError('Reconnect required')
+        with self.assertRaises(RuntimeError):self.tools.save(**self.args,operation_id='auth')
+        self.assertEqual(self.tools.pending()['actions'],[])
+        self.client.draft_write.assert_not_called()
