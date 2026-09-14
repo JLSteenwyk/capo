@@ -58,8 +58,10 @@ def next_occurrence(value, zone, recurrence):
 
 
 class Tasks:
-    def __init__(self, home, owner):
+    def __init__(self, home, owner, origin=None, allowed_actions=()):
         self.owner = owner
+        self.origin = origin
+        self.allowed_actions = tuple(allowed_actions)
         self.root = Path(home) / 'tasks' / hashlib.sha256(owner.encode()).hexdigest()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.root.chmod(0o700)
@@ -67,6 +69,7 @@ class Tasks:
         with self.connection() as db:
             db.executescript('''
                 CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, data TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS task_authority(task_id TEXT PRIMARY KEY, data TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS receipts(id TEXT PRIMARY KEY, request TEXT NOT NULL, result TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS history(task_id TEXT, revision INTEGER, data TEXT NOT NULL,
                     PRIMARY KEY(task_id, revision));
@@ -196,6 +199,8 @@ class Tasks:
                         task[key] = next_occurrence(task[key], task['timezone'], task['recurrence'])
             task.setdefault('follow_through', {key: [] if schema['type'] == 'array' else ''
                                              for key, schema in FOLLOW_THROUGH['properties'].items()})
+            from .delegation import record_owner_request
+            record_owner_request(db, task, self.origin, self.allowed_actions)
             result = {'task': task, 'saved': True}
             db.execute('INSERT INTO history VALUES (?,?,?)', (id, task['revision'], json.dumps(task)))
             db.execute('INSERT OR REPLACE INTO tasks VALUES (?,?)', (id, json.dumps(task)))
@@ -236,6 +241,8 @@ class Tasks:
             db.execute('INSERT OR IGNORE INTO history VALUES (?,?,?)', (id, task['revision'], json.dumps(task)))
             task.update(follow_through=details, revision=task['revision'] + 1,
                         updated_at=datetime.now(timezone.utc).isoformat())
+            from .delegation import record_owner_request
+            record_owner_request(db, task, self.origin, self.allowed_actions)
             db.execute('INSERT INTO history VALUES (?,?,?)', (id, task['revision'], json.dumps(task)))
             db.execute('UPDATE tasks SET data=? WHERE id=?', (json.dumps(task), id))
             result = {'task': task, 'saved': True}

@@ -59,7 +59,14 @@ def shared_tools(home,config,documents,request=None):
     from .date_tools import tools as date_tools
     tools.extend(date_tools())
     from .tasks import Tasks
-    tools.extend(Tasks(home, owner_key(config)).tools())
+    from .delegation import settings as autonomy_settings
+    policy = autonomy_settings(config)
+    tasks = Tasks(home, owner_key(config), origin=(request or {}).get('owner_request'),
+                  allowed_actions=[])
+    tools.extend(tasks.tools())
+    if (request or {}).get('owner_request') and policy['enabled']:
+        from .delegation import delegation_tool
+        tools.append(delegation_tool(tasks, policy))
     from .schedules import Schedules
     tools.extend(Schedules(home, owner_key(config)).tools())
     if config.get('gmail',{}).get('enabled'):
@@ -143,7 +150,9 @@ class CapabilityConversation(ConversationRouter):
                 'is unavailable because an earlier bot message said so; the current tool catalog is authoritative. '
                 'For daily or weekly planning, combine active tasks, deadlines, dependencies, waiting items, calendar availability and relevant email evidence. '
                 'Highlight conflicts, preparation and work windows; label assumptions about work hours and task duration. '
-                'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first.',max_calls=10, recovery=self.config.get('recovery'))
+                'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first. '
+                'For explicitly requested work that needs later follow-through, save its task and use tasks.delegate. '
+                'A request merely to track something or remind the owner is not permission to execute that underlying activity; do not delegate it.',max_calls=10, recovery=self.config.get('recovery'))
             key=self.documents.save(directory,result)
             _write(directory/'research.json',result)
             if key:_write(directory/'document.json',{'id':key,'title':result['document_title'],'content':result['document']})

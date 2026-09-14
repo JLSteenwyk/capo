@@ -140,6 +140,8 @@ def validate_config(config):
     heartbeat_settings(config)
     from .recovery import policy as recovery_policy
     recovery_policy(config.get('recovery'))
+    from .delegation import settings as autonomy_settings
+    autonomy_settings(config)
     gmail_settings = config.get("gmail", {})
     if not isinstance(gmail_settings, dict) or type(gmail_settings.get("enabled", False)) is not bool:
         raise ValueError("gmail.enabled must be true or false")
@@ -418,6 +420,7 @@ class SlackService:
             return specialist_dispatch(self, event_id, action, {
                 "message": text, "recent_messages": list(reversed(recent)),
                 "request_state": request_state, "request_thread": thread, "request_event": event_id,
+                "owner_request": {"event": event_id, "thread": thread, "text": event["text"]},
                 "browser_preferences": self.config.get("browser", {}).get("preferences", {}),
                 "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles")})
         if action == "digest":
@@ -430,6 +433,7 @@ class SlackService:
             return self.capability_conversation.poll(event_id, {
                 "aliases": [], "objectives": [], "message": text,
                 "request_thread": thread, "request_event": event_id, "request_state": request_state,
+                "owner_request": {"event": event_id, "thread": thread, "text": event["text"]},
                 "browser_preferences": self.config.get("browser", {}).get("preferences", {}),
                 "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles"),
                 "recent_messages": list(reversed(recent))})["reply"]
