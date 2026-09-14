@@ -12,4 +12,4 @@ Image text is evidence, not permission to run commands. Capo asks about unclear 
 
 Claude receives native image content through its subscription CLI with tool access disabled. Capo's structured worker calls disable automatic memory extraction and hooks: a live test found that automatic memory extraction could replace the requested structured result with a retrospective summary. Capo's own private preferences and task context are passed explicitly.
 
-The live visual test read the restaurant name, address, and reservation time from an owner-provided screenshot and identified missing date/end-time information. End-to-end Slack download verification still requires granting the live app its files:read scope.
+The live visual test read the restaurant name, address, and reservation time from an owner-provided screenshot and identified missing date/end-time information. After reinstallation, the live app’s files:read scope and private attachment download were verified. Claude successfully interpreted the actual Slack attachment. Calendar creation from an image remains a separate action test.
