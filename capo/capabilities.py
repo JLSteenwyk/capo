@@ -124,6 +124,9 @@ def shared_tools(home,config,documents,request=None):
 
 
 class CapabilityConversation(ConversationRouter):
+    # Short introduction plus the complete bounded document.
+    reply_limit = 16000
+
     def __init__(self,home,config):
         self.home=Path(home);self.config=json.loads(json.dumps(config))
         self.documents=Documents(home,owner_key(config))

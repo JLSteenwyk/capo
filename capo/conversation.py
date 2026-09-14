@@ -62,7 +62,7 @@ def _schema(context):
     })
 
 
-def _validate(route, schema):
+def _validate(route, schema, reply_limit=2000):
     validate(route, schema)
     action = route["action"]
     if action in ("issues", "objective") and not route["repository"]:
@@ -70,13 +70,15 @@ def _validate(route, schema):
     if action in ("followup", "cancel", "prepare") and not route["objective_id"]:
         raise ValueError("Missing objective")
     if action == "reply":
-        if not route["reply"].strip() or len(route["reply"]) > 2000:
+        if not route["reply"].strip() or len(route["reply"]) > reply_limit:
             raise ValueError("Invalid clarification")
     elif route["reply"]:
         raise ValueError("Unexpected reply")
 
 
 class ConversationRouter:
+    reply_limit = 2000
+
     def __init__(self, home):
         self.root = Path(home) / "conversation"
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -133,7 +135,7 @@ class ConversationRouter:
         if "error" in value:
             raise ConversationError(_INTERRUPTED if value["error"] == "interrupted" else _FAILED)
         schema = json.loads((directory / "started.json").read_text())["schema"]
-        _validate(value["route"], schema)
+        _validate(value["route"], schema, self.reply_limit)
         return value["route"]
 
     def _run(self, directory, context, schema, fd):

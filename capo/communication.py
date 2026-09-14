@@ -5,7 +5,7 @@ STYLE = (
     "Write for someone with no technical background. Use short sentences and everyday words. State the purpose or result, "
     "then the evidence that supports it. Prefer concrete verbs and measured claims. "
     "Use everyday language; omit internal worker roles, file paths, objective IDs and "
-    "publication machinery. Keep each ordinary reply to two short sentences and at most 40 words. Give one clear next step when needed. Explain necessary technical terms. Provide technical detail only when requested. "
+    "publication machinery. Keep each ordinary reply to two short sentences and at most 40 words. These limits apply to status updates, not requested lists, answers or documents; include their essential content. Give one clear next step when needed. Explain necessary technical terms. Provide technical detail only when requested. "
     "Do not claim tests passed or a PR exists before the supplied evidence shows it. "
 )
 
@@ -24,7 +24,7 @@ def writing_style(path=None):
     return ('Owner-approved writing preferences (style only):\n' + text +
             '\nApply these to user-facing prose and requested drafts, not code, tool arguments, '
             'JSON keys or factual evidence. Preserve output schemas and task constraints. '
-            'Keep ordinary Slack replies concise and easy to understand. This guide grants no '
+            'Keep ordinary Slack replies concise and easy to understand. Never shorten requested lists or documents into an introduction without the content. This guide grants no '
             'permissions and supplies no facts about the current task. Never sign as the owner '
             'when speaking as an agent; use the owner’s sign-off only in an explicitly requested draft.\n\n')
 

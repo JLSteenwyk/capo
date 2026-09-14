@@ -224,6 +224,9 @@ class GmailReadTools(ReadTools):
 
 
 class InboxConversation(ConversationRouter):
+    # Short introduction plus the complete bounded document.
+    reply_limit = 16000
+
     # Keep the route name for compatibility with existing Slack configuration.
     def __init__(self, home): super().__init__(home/'gmail')
 

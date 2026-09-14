@@ -707,6 +707,27 @@ class SlackCase(unittest.TestCase):
         self.assertNotIn("slack_review_digest", self.store.get(objective["id"]))
         self.assertTrue(self.store.pending_slack())
 
+    def test_complete_document_delivery_survives_restart_between_chunks(self):
+        from capo.research_tools import complete_reply
+        content = 'Use concrete verbs and keep the necessary details.\n' * 220
+        text = complete_reply({'reply': 'Here is your guide.',
+                               'document_title': 'Writing guide', 'document': content})
+        ingest(self.store.home, self.config, self.body('help', 'EvDocument'))
+        with patch.object(self.service, 'dispatch', return_value=text) as dispatch:
+            self.service.process_messages()
+            dispatch.assert_called_once()
+        restarted = SlackService(self.store, self.config, self.client)
+        with patch.object(restarted, 'dispatch', side_effect=AssertionError('Already generated')):
+            import time
+            now = time.time()
+            for index in range(10):
+                with patch('capo.slack.time.time', return_value=now + 10 * (index + 1)):
+                    restarted.process_messages()
+        delivered = ''.join(row['text'] for row in self.client.messages)
+        self.assertEqual(delivered, text)
+        self.assertIn(content.strip(), delivered)
+        self.assertFalse(self.store.pending_slack())
+
     def test_large_replies_are_sent_completely_without_truncation(self):
         text = "<" * 7000
         self.service.reply(self.body()["event"], text)

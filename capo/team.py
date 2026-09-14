@@ -34,6 +34,9 @@ def roster(config):
 
 
 class Specialist(ConversationRouter):
+    # Short introduction plus the complete bounded document.
+    reply_limit = 16000
+
     def __init__(self, home, role, owner, config=None):
         import hashlib
         if role not in ROLES: raise ValueError('Unknown specialist')

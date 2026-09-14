@@ -59,6 +59,7 @@ class CapabilityTests(unittest.TestCase):
                 except ConversationPending:time.sleep(.005)
             else:self.fail('Research did not finish')
             self.assertIn('Prepared',result['reply'])
+            self.assertIn('Discuss the proposal at the scheduled meeting.', result['reply'])
             prompt=provider.return_value.call.call_args.args[1]
             self.assertIn('Planning meeting',prompt)
             self.assertIn('Please discuss the proposal',prompt)
@@ -74,3 +75,24 @@ class CapabilityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 tools.call('calendar.events',{'start':'2030-01-01T00:00:00Z','end':'2031-01-01T00:00:00Z'})
             calendar.assert_not_called()
+
+    def test_long_document_survives_cached_conversation_validation(self):
+        router = CapabilityConversation(self.root, {})
+        content = 'A complete guide with useful details.\n' * 300
+        with patch('capo.capabilities.Providers') as provider:
+            provider.return_value.call.return_value = {
+                'action': 'finish', 'tool': '', 'arguments_json': '{}',
+                'reply': 'Here is the guide.', 'document_title': 'Guide', 'document': content}
+            for _ in range(500):
+                try:
+                    result = router.poll('guide', {'aliases': [], 'objectives': [],
+                                                  'message': 'Write a detailed guide.'})
+                    break
+                except ConversationPending:
+                    time.sleep(.005)
+            else:
+                self.fail('Research did not finish')
+            self.assertIn(content.strip(), result['reply'])
+            restarted = CapabilityConversation(self.root, {})
+            self.assertEqual(restarted.poll('guide', {})['reply'], result['reply'])
+            self.assertEqual(provider.return_value.call.call_count, 1)

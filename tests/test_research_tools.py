@@ -38,6 +38,27 @@ class ResearchToolsTests(unittest.TestCase):
         self.assertEqual(result['receipts'][0]['result']['text'], 'Synthetic project history')
         self.assertIn('Synthetic project history', provider.call.call_args.args[1])
 
+    def test_generated_lists_and_guides_are_delivered_with_the_introduction(self):
+        for title, content in [('Shopping list', '- Tofu: 500 g\n- Rice: 1 cup'),
+                               ('Writing guide', 'Use concrete verbs.\n' * 300)]:
+            with self.subTest(title=title), tempfile.TemporaryDirectory() as tmp:
+                provider = Mock()
+                provider.call.return_value = {**finish('Here is your requested document.'),
+                                              'document_title': title, 'document': content}
+                result = research(provider, ReadTools([]), {}, Path(tmp))
+                self.assertIn(content.strip(), result['reply'])
+                self.assertIn(title, result['reply'])
+                self.assertEqual(result['document'], content)
+                self.assertEqual(provider.call.call_count, 1)
+
+    def test_content_already_in_reply_is_not_repeated(self):
+        provider = Mock()
+        provider.call.return_value = {**finish('List: apples, rice.'),
+                                      'document_title': 'List', 'document': 'apples, rice.'}
+        with tempfile.TemporaryDirectory() as tmp:
+            result = research(provider, ReadTools([]), {}, Path(tmp))
+        self.assertEqual(result['reply'], 'List: apples, rice.')
+
     def test_failed_tools_are_redacted_and_budgeted(self):
         callback = Mock(side_effect=RuntimeError('SECRET_TOKEN'))
         tools = ReadTools([ReadTool('test.read', 'Synthetic', object_schema({}), callback)])

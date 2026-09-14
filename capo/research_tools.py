@@ -49,6 +49,21 @@ STEP = object_schema({
 })
 
 
+def complete_reply(result):
+    """Deliver generated content, not merely its acknowledgement.
+
+    The model's short reply budget applies to the introduction. Documents have a
+    separate bounded budget and Slack's durable chunk delivery sends them whole.
+    """
+    reply = result['reply'].strip()
+    document = result['document'].strip()
+    if not document or document in reply:
+        return reply
+    title = result['document_title'].strip()
+    content = document if document.startswith(title) else title + '\n\n' + document
+    return reply + '\n\n' + content
+
+
 def research(provider, tools, request, directory, instructions='', max_calls=6):
     """Compose tools without a task-type enum; return evidence receipts and a document.
 
@@ -80,7 +95,10 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
             'tool results, people, sample counts or coverage. Distinguish snippets from body excerpts. '
             'If evidence or budget is insufficient, explain the actual gap in the final reply. '
             'For a reusable document requested by the owner, return document_title and document; '
-            'otherwise leave both empty. The host saves the document privately. Put a concise answer '
+            'otherwise leave both empty. The host saves the document privately AND delivers its full content to the owner. '
+            'Put all requested items, quantities, dates and other essential details in reply or document. '
+            'Never return only an introduction promising a list or answer that is absent. '
+            'Use document for answers too long for reply; concision must not remove requested content. Put a concise answer '
             'under 100 words in reply unless the owner explicitly requests more detail; always under 1900 characters. When action is tool, reply/document fields must be empty. '
             'When finishing, tool must be empty and arguments_json must be {}. '
             'Do not stop after planning if available tools can complete the authorized request. '
@@ -105,6 +123,7 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
                     or len(result['document_title']) > 200 or len(result['document']) > 12000
                     or bool(result['document_title'].strip()) != bool(result['document'].strip())):
                 raise ValueError('Invalid research response')
+            result = {**result, 'reply': complete_reply(result)}
             if memory is not None:
                 memory.record(request.get('request_event',str(directory)), 'outcome', {'reply':result['reply']})
             return {**result, 'receipts': receipts}
