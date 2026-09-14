@@ -78,6 +78,14 @@ class RecoveryTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 policy(value)
 
+    def test_unavailable_worker_uses_only_configured_fallback(self):
+        self.backend.call.side_effect = [FileNotFoundError(), {'answer':'done'}]
+        with self.assertRaises(RetryLater):
+            self.call()
+        self.now += 10
+        self.assertEqual(self.call(), {'answer':'done'})
+        self.assertEqual(self.backend.call.call_args.args[0], 'grok')
+
     def test_provider_reported_reset_is_normalized_without_private_output(self):
         from capo.providers import reported_failure
         with self.assertRaises(RateLimited) as exc:

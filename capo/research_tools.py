@@ -92,7 +92,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         raise ValueError('Invalid research budget')
     directory.mkdir(parents=True,exist_ok=True,mode=0o700)
     (directory/'cwd').mkdir(exist_ok=True,mode=0o700)
-    from .recovery import RecoveringProvider, RecoveryStopped
+    from .recovery import RecoveringProvider, RecoveryStopped, RetryLater
+    import time
     provider = RecoveringProvider(provider, recovery)
     checkpoint = directory/'checkpoint.json'
     fingerprint = hashlib.sha256(json.dumps([request, tools.catalog(), instructions, max_calls], sort_keys=True).encode()).hexdigest()
@@ -108,6 +109,10 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         raise RecoveryStopped('Research was cancelled')
     if 'result' in state:
         return state['result']
+    if state.get('stopped'):
+        raise RecoveryStopped(state['stopped'])
+    if time.time() < state.get('retry_at', 0):
+        raise RetryLater(state['retry_at'], 'Connected service is still cooling down')
     now = state['now']
     receipts = state['receipts']
     if state['pending'] is not None:
@@ -162,6 +167,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         )
         result = provider.call('claude', prompt, STEP, directory/'cwd', directory/f'step-{step}')
         validate(result, STEP)
+        if (directory/'cancelled.json').exists():
+            raise RecoveryStopped('Research was cancelled')
         if result['action'] == 'finish':
             if (result['tool'] or result['arguments_json'].strip() != '{}'
                     or not result['reply'].strip() or len(result['reply']) > 1900
@@ -205,6 +212,23 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         except RecoveryStopped:
             raise
         except Exception as exc:
+            from .providers import AuthenticationError
+            from .recovery import RateLimited, RetryLater, failure_summary
+            import time
+            if isinstance(exc, (RateLimited, AuthenticationError, PermissionError, ConnectionError, TimeoutError)):
+                attempted = tools.tools.get(result['tool'])
+                receipts.append({'tool':result['tool'], 'arguments':arguments,
+                                 'error':failure_summary(exc), 'uncertain':bool(attempted and attempted.mutates)})
+                state['pending'] = None
+                if isinstance(exc, (AuthenticationError, PermissionError)):
+                    state['stopped'] = failure_summary(exc)
+                else:
+                    state['retry_at'] = exc.reset_at if isinstance(exc, RateLimited) else time.time()+min(900, 30*2**len(receipts))
+                _write(checkpoint, state)
+                _write(directory/'receipts.json', receipts)
+                if state.get('stopped'):
+                    raise
+                raise RetryLater(state['retry_at'], 'Connected service needs time to recover') from None
             from .web_tools import WebError
             from .effects import UncertainEffect
             from .calendar import CalendarError

@@ -402,7 +402,7 @@ class SlackService:
             recent.append({'user': '', 'capo': 'Scheduled request context: '+json.dumps(scheduled)})
         from .team import roster
         route = self.conversation.poll(event_id, {
-            "request_state": request_state,
+            "request_state": request_state, "request_thread": thread, "owner_scope": owner_key(self.config),
             "team": roster(self.config),
             "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles"),
             "browser_enabled": self.config.get("browser", {}).get("enabled", False),
@@ -413,6 +413,9 @@ class SlackService:
             "thread_objective_id": in_thread[0]["id"] if len(in_thread) == 1 else "",
             "recent_messages": list(reversed(recent))})
         action, alias, identifier = route["action"], route["repository"], route["objective_id"]
+        if action == 'stop_request':
+            from .request_control import Requests, STOPPED
+            return STOPPED if Requests(self.store.home, owner_key(self.config), thread).cancel(event_id) else 'There is no active research request in this thread.'
         if action == "reply":
             return route["reply"] or "What would you like me to do, and for which repository?"
         if action in ("money_saver", "style_assistant", "shopping_assistant"):
@@ -502,6 +505,11 @@ class SlackService:
         if incoming.startswith("*<@") and incoming.endswith("*"):
             incoming = incoming[1:-1]
         text = re.sub(r"^\s*<@[A-Z0-9]+>[\s,:]*", "", incoming).strip()
+        if re.fullmatch(r"(?:please\s+)?(?:stop(?:\s+(?:working|researching))?|cancel)(?:\s+(?:on\s+)?(?:this|that)(?:\s+request)?)?[.!]?|never\s*mind[.!]?", text, re.I):
+            from .request_control import Requests, STOPPED
+            from .capabilities import owner_key
+            if Requests(self.store.home, owner_key(self.config), event.get('thread_ts', event['ts'])).cancel(event_id):
+                return STOPPED
         from .digest_feedback import dispatch as digest_dispatch
         digest_reply = digest_dispatch(self, event_id, event, text)
         if digest_reply is not None:

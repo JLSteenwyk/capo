@@ -728,6 +728,20 @@ class SlackCase(unittest.TestCase):
         self.assertIn(content.strip(), delivered)
         self.assertFalse(self.store.pending_slack())
 
+    def test_owner_can_cancel_pending_research_without_waiting_for_the_model(self):
+        import hashlib
+        from capo.capabilities import owner_key
+        from capo.conversation import _write
+        from capo.request_control import STOPPED
+        body = self.body('cancel this request', 'cancel-event')
+        thread = body['event'].get('thread_ts', body['event']['ts'])
+        root = self.store.home/'capabilities'/hashlib.sha256(owner_key(self.config).encode()).hexdigest()/'conversation'/'pending'
+        root.mkdir(parents=True)
+        _write(root/'started.json', {'context':{'request_thread':thread}})
+        self.assertEqual(self.service.dispatch('cancel-event', body), STOPPED)
+        self.assertTrue((root/'cancelled.json').exists())
+        self.router.poll.assert_not_called()
+
     def test_large_replies_are_sent_completely_without_truncation(self):
         text = "<" * 7000
         self.service.reply(self.body()["event"], text)

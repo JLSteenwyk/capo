@@ -46,13 +46,13 @@ def evidence(config,objectives,now,home=None):
                 from .monitoring import inbox
                 from .observations import Observations
                 from .capabilities import owner_key
-                mail=inbox(Gmail(), Observations(home, owner_key(config)))
+                mail=inbox(Gmail(), Observations(home, owner_key(config)), include_sent=True)
             else:
                 mail=Gmail().inbox()
             for item in mail['messages']:
-                if item['unread']:
+                if item['unread'] or item.get('sent_by_owner'):
                     add('email',{'title':item['subject'],'sender':item['from'],'snippet':item['snippet'],
-                                 'message_id':item['id'],'date':item['date']})
+                                 'message_id':item['id'],'date':item['date'],'sent_by_owner':item.get('sent_by_owner',False)})
         except Exception:add('connection',{'title':'Gmail check unavailable'})
     if config.get('calendar',{}).get('enabled'):
         try:
@@ -73,6 +73,22 @@ def evidence(config,objectives,now,home=None):
                                'labels':issue.get('labels',[])})
         except Exception:
             add('connection', {'title':'GitHub check unavailable for '+alias})
+    if home is not None and (home/'scheduled/digest/digest.sqlite3').exists():
+        scheduled = DigestStore(home/'scheduled')
+        try:
+            inspected = set()
+            for (data,) in scheduled.db.execute('SELECT data FROM runs WHERE scope=? ORDER BY rowid DESC LIMIT 100', (scope(config),)):
+                run = json.loads(data)
+                id = run.get('schedule_id', run['key'])
+                if id in inspected:
+                    continue
+                inspected.add(id)
+                if run['status'] in ('failed', 'expired'):
+                    add('connection', {'title':'Scheduled work: '+run.get('title','Saved request'),
+                        'summary':run.get('error_summary', 'The allowed delivery window ended before completion; saved progress is preserved.'),
+                        'run_id':run['key']})
+        finally:
+            scheduled.close()
     superseded={o.get('continuation_of') for o in objectives}
     for objective in objectives:
         if objective['id'] in superseded:continue
@@ -170,6 +186,7 @@ class HeartbeatManager(DigestManager):
                 from .monitoring import Monitor
                 monitor = Monitor(self.service.store.home, config)
                 changes = monitor.tick(now, items)
+                items.extend(monitor.notices())
                 items.extend(TaskWork(self.service.store.home, config).tick(now, items, seen, changes))
                 _write(attempt/'evidence.json',items)
                 payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt,assessments=monitor.observations)

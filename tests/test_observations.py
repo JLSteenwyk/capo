@@ -118,3 +118,21 @@ class ObservationTests(unittest.TestCase):
         select([item], {}, self.now, self.home, provider, self.store)
         select([item], {}, self.now, self.home, provider, self.store)
         self.assertEqual(provider.call.call_count, 2)
+
+    def test_recent_sent_messages_supply_owner_commitment_evidence(self):
+        client = Mock()
+        client.get.side_effect = [{'messages':[]}, {'messages':[{'id':'sent-a'}]},
+            {'payload':{'headers':[{'name':'Subject','value':'My commitment'}]}, 'snippet':'I will send the proposal Friday.'}]
+        result = inbox(client, self.store, include_sent=True)
+        self.assertTrue(result['messages'][0]['sent_by_owner'])
+        self.assertFalse(result['messages'][0]['unread'])
+        self.assertEqual(client.get.call_args_list[1].args[1]['q'], 'in:sent newer_than:2d')
+
+    def test_monitor_authentication_failure_has_a_safe_actionable_notice(self):
+        from capo.providers import AuthenticationError
+        with patch('capo.monitoring.research', side_effect=AuthenticationError('private token diagnostic')):
+            monitor = Monitor(self.home, {})
+            monitor.tick(self.now, [self.email])
+            notice = monitor.notices()[0]
+            self.assertIn('login', notice['summary'])
+            self.assertNotIn('private token', notice['summary'])

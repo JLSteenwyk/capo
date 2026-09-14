@@ -68,3 +68,23 @@ class HeartbeatTests(unittest.TestCase):
                 for worker in manager.workers.values():worker.join(3)
                 manager.tick(now.replace(hour=17))
                 client.chat_postMessage.assert_called_once()
+
+    def test_latest_scheduled_failure_is_reported_without_reviving_old_failures(self):
+        from capo.digest import DigestStore, scope
+        from capo.heartbeat import evidence
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            config = {'team_id':'T123','channel_id':'C123','owner_user_id':'U123'}
+            now = datetime(2030,1,3,10,tzinfo=ZoneInfo('America/Los_Angeles'))
+            db = DigestStore(home/'scheduled')
+            try:
+                run = {'key':'failed-week','scope':scope(config),'status':'failed','schedule_id':'weekly',
+                       'title':'Weekly plan','day':'2030-01-03','error_summary':'The AI login needs renewal.'}
+                db.save(run, now)
+                items = evidence(config, [], now, home)
+                self.assertEqual(len(items), 1)
+                self.assertIn('login', items[0]['summary'])
+                db.save(dict(run, key='successful-week', status='sent'), now)
+                self.assertEqual(evidence(config, [], now, home), [])
+            finally:
+                db.close()

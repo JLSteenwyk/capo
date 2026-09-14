@@ -85,7 +85,8 @@ class ScheduledManager(DigestManager):
                     if isinstance(exc, RetryLater):
                         run.update(status='queued', retry_at=exc.retry_at, attempts=max(0, run['attempts']-1))
                     else:
-                        run.update(status='queued', retry_at=datetime.now(timezone.utc).timestamp()+60)
+                        from .recovery import failure_summary
+                        run.update(status='queued', retry_at=datetime.now(timezone.utc).timestamp()+60, error_summary=failure_summary(exc))
                 finally:
                     try:
                         if db is not None:db.save(run,datetime.now(timezone.utc))

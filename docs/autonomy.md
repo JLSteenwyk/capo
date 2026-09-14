@@ -34,7 +34,7 @@ Execution records live under the owner's private task directory, alongside the e
 
 ## Incremental commitment monitoring
 
-Hourly evidence includes unread Gmail messages, the next 24 hours of the primary calendar, open issues from up to ten configured repositories, and relevant existing work. Gmail unread membership is refreshed each time; immutable message headers and snippets are cached by message ID, with at most 1,000 cached entries per owner. Calendar and issue snapshots are compared by stable source reference and content version.
+Hourly evidence includes up to 20 unread Gmail messages and ten sent messages from the past two days, the next 24 hours of the primary calendar, open issues from up to ten configured repositories, and relevant existing work. Gmail unread membership is refreshed each time; immutable message headers and snippets are cached by message ID, with at most 1,000 cached entries per owner. Calendar and issue snapshots are compared by stable source reference and content version.
 
 Only changed source versions enter commitment review. Each review handles up to 100 changed items using the configured tool budget. Older unfinished reviews resume their frozen batch; acknowledging an older version never consumes a newer update. Missing items in these bounded windows are not evidence of completion or cancellation.
 

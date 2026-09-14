@@ -21,6 +21,12 @@ class AuthenticationError(WorkerError):
     """Provider login needs attention; safe to identify without exposing output."""
 
 
+class ServiceAuthenticationError(AuthenticationError):
+    def __init__(self, service):
+        super().__init__(service + ' connection needs renewal.')
+        self.service = service
+
+
 def reported_failure(envelope, provider, directory):
     """Normalize reported errors without copying provider output into user errors."""
     from datetime import datetime
@@ -31,7 +37,7 @@ def reported_failure(envelope, provider, directory):
     message = str(data.get('message', envelope.get('result', raw or ''))).lower()
     if any(word in message for word in ('failed to authenticate', 'oauth session expired', 'authentication required')):
         raise AuthenticationError(provider + ' login has expired. Reconnect on the computer running Capo.')
-    if data.get('status') == 429 or any(word in message for word in ('rate limit', 'usage limit', 'too many requests')):
+    if data.get('status') == 429 or envelope.get('stopReason') in ('rate_limit', 'quota_exceeded') or any(word in message for word in ('rate limit', 'usage limit', 'hit your limit', 'too many requests')):
         reset = time.time() + 3600
         try:
             if 'reset_at' in data:
@@ -45,6 +51,36 @@ def reported_failure(envelope, provider, directory):
     if any(word in message for word in ('overloaded', 'temporarily unavailable', 'service unavailable')):
         raise ConnectionError(provider + ' is temporarily unavailable.')
     raise WorkerError(f'{provider} reported failure; inspect {directory}')
+
+
+def run_cli(provider, argv, cwd, directory, timeout, stdin=None):
+    """Classify structured failures even when the CLI exits nonzero."""
+    from .process import CleanupUncertain
+    try:
+        return run_process(argv, cwd, directory, timeout, stdin)
+    except CleanupUncertain:
+        raise
+    except WorkerError:
+        for name in ('stdout.txt', 'stderr.txt'):
+            path = directory/name
+            if not path.exists():
+                continue
+            with path.open() as stream:
+                lines = stream.read(200000).splitlines()
+            for line in reversed(lines):
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(event, dict) or not (event.get('is_error') or event.get('type') in ('error','turn.failed') or event.get('error')):
+                    continue
+                try:
+                    reported_failure(event, provider, directory)
+                except AuthenticationError:
+                    raise
+                except WorkerError:
+                    continue
+        raise
 
 
 class Providers:
@@ -84,7 +120,7 @@ class Providers:
                 argv[argv.index("--output-format") + 1] = "stream-json"
                 argv += ["--input-format", "stream-json", "--verbose"]
                 input_text = json.dumps({"type": "user", "message": {"role": "user", "content": blocks}}) + "\n"
-            output = run_process(argv, cwd, directory, self.timeout, input_text)
+            output = run_cli("Claude", argv, cwd, directory, self.timeout, input_text)
             if images:
                 results = [decode_json(line) for line in output.splitlines() if line.strip()]
                 envelope = next((value for value in reversed(results) if value.get("type") == "result"), None)
@@ -99,13 +135,13 @@ class Providers:
                 result = decode_json(envelope.get("result", ""))
         elif provider == "codex":
             final = directory / "result.json"
-            argv = ["codex", "exec", "--sandbox", "read-only", "--json",
+            argv = ["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--json",
                     "--output-schema", str(schema_file), "--output-last-message", str(final), "-"]
-            output = run_process(argv, cwd, directory, self.timeout, prompt)
+            output = run_cli("Codex", argv, cwd, directory, self.timeout, prompt)
             for line in output.splitlines():
                 event = json.loads(line)
                 if event.get("type") in ("error", "turn.failed"):
-                    raise WorkerError(f"Codex reported failure; inspect {directory}")
+                    reported_failure(event, 'Codex', directory)
             result = decode_json(final.read_text())
         elif provider == "grok":
             argv = ["grok", "--prompt-file", str(prompt_file), "--output-format", "json",
@@ -115,7 +151,7 @@ class Providers:
                 from .transport import run_grok
                 output = run_grok(self.config["grok"], prompt, schema, directory, self.timeout)
             else:
-                output = run_process(argv, cwd, directory, self.timeout)
+                output = run_cli("Grok", argv, cwd, directory, self.timeout)
             envelope = decode_json(output)
             if (envelope.get("is_error") or envelope.get("error")
                     or envelope.get("type") == "error"

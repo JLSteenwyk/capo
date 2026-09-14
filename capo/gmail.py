@@ -59,6 +59,8 @@ class Gmail:
         path = 'drafts' + ('/'+draft_id if draft_id else '')
         response = self.session.request(method, 'https://gmail.googleapis.com/gmail/v1/users/me/'+path,
                                         json=payload, timeout=20)
+        from .service_errors import check
+        check(response, 'Gmail')
         if not response.ok:
             raise RuntimeError('Gmail draft change was not confirmed')
         return {'deleted': True, 'id': draft_id} if method == 'DELETE' else response.json()
@@ -68,12 +70,16 @@ class Gmail:
         response=self.session.get('https://gmail.googleapis.com/gmail/v1/users/me/drafts/'+draft_id,
                                   params={'format':'minimal'},timeout=20)
         if response.status_code==404:return False
+        from .service_errors import check
+        check(response, 'Gmail')
         if not response.ok:raise RuntimeError('Draft status could not be checked')
         return True
 
     def get(self, path, params):
         response = self.session.get('https://gmail.googleapis.com/gmail/v1/users/me/'+path,
                                    params=params, timeout=20)
+        from .service_errors import check
+        check(response, 'Gmail')
         if not response.ok: raise RuntimeError('Gmail access failed. Check the Google connection and Gmail API setup.')
         return response.json()
 

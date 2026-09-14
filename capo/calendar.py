@@ -24,6 +24,10 @@ class CalendarError(RuntimeError):
     pass
 
 
+class CalendarAccessError(PermissionError, CalendarError):
+    pass
+
+
 def authorize(client_secrets):
     from google_auth_oauthlib.flow import InstalledAppFlow
     TOKEN.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -52,6 +56,11 @@ class GoogleCalendar:
     def request(self, method, event_id='', **kwargs):
         url = BASE + ('/' + quote(event_id, safe='') if event_id else '')
         response = self.session.request(method, url, timeout=25, **kwargs)
+        from .service_errors import check
+        try:
+            check(response, 'Google Calendar')
+        except PermissionError as exc:
+            raise CalendarAccessError(str(exc)) from None
         if response.status_code == 412:
             raise CalendarError('That event changed while I was working. Please ask again so I can use its latest details.')
         if not response.ok:

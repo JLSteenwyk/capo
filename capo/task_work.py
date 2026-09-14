@@ -10,7 +10,7 @@ from .capabilities import Documents, owner_key, shared_tools
 from .conversation import _write
 from .delegation import authority, execution_tools, settings
 from .providers import Providers
-from .recovery import RetryLater
+from .recovery import RetryLater, failure_summary
 from .research_tools import research
 from .tasks import Tasks
 
@@ -151,7 +151,7 @@ class TaskWork:
             state.update(status='waiting', retry_at=exc.retry_at)
             _write(path, state)
             return None, 1
-        except Exception:
+        except Exception as exc:
             current = self.tasks.get(task['id'])
             if current['status'] not in ('open', 'waiting') or digest(authority(self.tasks, task['id'])) != grant_key:
                 state.update(status='cancelled')
@@ -159,7 +159,7 @@ class TaskWork:
                 return None, 1
             state.update(status='failed')
             state['notice'] = {'id': 'task-work:'+state['run'], 'kind': 'task_work', 'title': task['title'],
-                    'task_id': task['id'], 'status': 'blocked', 'summary': 'Follow-through stopped. Saved progress needs a check; no completion was confirmed.',
+                    'task_id': task['id'], 'status': 'blocked', 'summary': failure_summary(exc),
                     'verified_actions': []}
             _write(path, state)
             return state['notice'], 1

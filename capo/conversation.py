@@ -27,7 +27,7 @@ class ConversationError(Exception):
 
 _FAILED = "I couldn't interpret that message. Please try again or use help."
 _INTERRUPTED = "Message interpretation was interrupted. Please send your message again."
-_ACTIONS = ["issues", "status", "objective", "followup", "cancel", "prepare", "reply", "browser", "calendar", "digest", "money_saver", "style_assistant", "shopping_assistant", "inbox", "research"]
+_ACTIONS = ["issues", "status", "objective", "followup", "cancel", "prepare", "reply", "browser", "calendar", "digest", "money_saver", "style_assistant", "shopping_assistant", "inbox", "research", "stop_request"]
 
 
 def _write(path, value):
@@ -96,6 +96,9 @@ class ConversationRouter:
         directory = self.root / key
         outcome = directory / "outcome.json"
         try:
+            if (directory/'cancelled.json').exists():
+                from .request_control import STOPPED
+                return {'action':'reply', 'repository':'', 'objective_id':'', 'reply':STOPPED}
             if outcome.exists():
                 return self._result(directory)
             fd = os.open(self.root / "classifier.lock", os.O_RDWR | os.O_CREAT, 0o600)
@@ -143,6 +146,9 @@ class ConversationRouter:
             raise ConversationError(_FAILED) from None
 
     def _result(self, directory):
+        if (directory/'cancelled.json').exists():
+            from .request_control import STOPPED
+            return {'action':'reply', 'repository':'', 'objective_id':'', 'reply':STOPPED}
         value = json.loads((directory / "outcome.json").read_text())
         if "error" in value:
             raise ConversationError(_INTERRUPTED if value["error"] == "interrupted" else _FAILED)
@@ -157,6 +163,9 @@ class ConversationRouter:
             now = datetime.now(ZoneInfo(zone)).isoformat()
             prompt = (STYLE + f"Current local time: {now}. Timezone: {zone}. " +
                 "Classify the owner's Slack message for Capo, chief of staff. Return only the schema. "
+                "Use stop_request when the owner wants to stop Capo’s ongoing research in this thread. "
+                "This stops execution, not appointments or reminders; those use calendar/research. "
+                "An existing coding objective still uses cancel with its objective ID. "
                 "Delegate subscription/spending analysis and savings to money_saver, clothing/wardrobe advice "
                 "to style_assistant, and product comparison/shopping advice to shopping_assistant. "
                 "For live website tasks use browser only when enabled, preserving its permissions. "

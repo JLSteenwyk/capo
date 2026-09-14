@@ -10,21 +10,25 @@ from .conversation import _write
 from .observations import Observations
 from .delegation import settings
 from .providers import Providers
-from .recovery import RetryLater
+from .recovery import RetryLater, failure_summary
 from .research_tools import ReadTools, research
 
 
-def inbox(client, observations):
+def inbox(client, observations, include_sent=False):
     """Refresh unread membership, reusing immutable message content by Gmail ID."""
     page = client.get('messages', {'q':'in:inbox is:unread', 'maxResults':20})
+    rows = [(row, False) for row in page.get('messages', [])[:20]]
+    if include_sent:
+        sent = client.get('messages', {'q':'in:sent newer_than:2d', 'maxResults':10})
+        rows.extend((row, True) for row in sent.get('messages', [])[:10])
     items = []
-    for row in page.get('messages', [])[:20]:
+    for row, sent_by_owner in rows:
         id = row['id']
         message = observations.cached('gmail-message:'+id, lambda id=id: client.get(
             'messages/'+quote(id, safe=''), {'format':'metadata','metadataHeaders':['From','Subject','Date']}))
         headers = {h['name'].lower():h['value'][:300] for h in message.get('payload', {}).get('headers', [])}
         items.append({'id':id, 'subject':headers.get('subject',''), 'from':headers.get('from',''),
-                      'date':headers.get('date',''), 'snippet':message.get('snippet','')[:700], 'unread':True})
+                      'date':headers.get('date',''), 'snippet':message.get('snippet','')[:700], 'unread':not sent_by_owner, 'sent_by_owner':sent_by_owner})
     return {'messages':items, 'more_available':bool(page.get('nextPageToken'))}
 
 
@@ -83,9 +87,20 @@ class Monitor:
             except RetryLater as exc:
                 state.update(status='waiting', retry_at=exc.retry_at)
                 _write(path, state)
-            except Exception:
-                state.update(status='failed')
+            except Exception as exc:
+                state.update(status='failed', error_summary=failure_summary(exc))
                 _write(path, state)
             return changed
         finally:
             os.close(fd)
+
+    def notices(self):
+        path = self.root/'active.json'
+        if not path.exists():
+            return []
+        state = json.loads(path.read_text())
+        if state['status'] != 'failed':
+            return []
+        return [{'id':'monitor-failure:'+state['key'], 'kind':'connection',
+                 'title':'Commitment review needs attention',
+                 'summary':state.get('error_summary','The review stopped; saved evidence is preserved.')}]

@@ -164,8 +164,9 @@ class CapabilityConversation(ConversationRouter):
                 os.close(fd)
                 return
             from .providers import AuthenticationError
-            if isinstance(exc, AuthenticationError):
-                reply='Claude’s login needs to be renewed on the computer running Capo. Your request and any saved progress are preserved.'
+            if isinstance(exc, (AuthenticationError, PermissionError)):
+                from .recovery import failure_summary
+                reply=failure_summary(exc)
             else:
                 receipts_path=directory/'receipts.json'
                 receipts=json.loads(receipts_path.read_text()) if receipts_path.exists() else []

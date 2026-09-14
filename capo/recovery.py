@@ -165,3 +165,23 @@ class RecoveringProvider:
         state.update(status='done', result=result)
         _write(path, state)
         return result
+
+
+def failure_summary(exc):
+    """One safe explanation shared by interactive and scheduled work."""
+    from .providers import AuthenticationError
+    from .effects import UncertainEffect
+    if isinstance(exc, AuthenticationError):
+        label = getattr(exc, 'service', '')
+        return 'The '+(label+' connection' if label else 'AI login')+' needs to be renewed on the computer running Capo. Saved progress is preserved.'
+    if isinstance(exc, CleanupUncertain):
+        return 'I cannot confirm the previous worker stopped. Saved work is paused until that is checked.'
+    if isinstance(exc, UncertainEffect):
+        return 'I could not confirm the previous change. Its receipt is saved, and I have not repeated it.'
+    if isinstance(exc, PermissionError):
+        return 'The requested action is outside the current permission or task scope. Saved progress is preserved.'
+    if isinstance(exc, RateLimited):
+        return 'The AI usage limit prevented completion. Saved progress is preserved.'
+    if isinstance(exc, (ConnectionError, TimeoutError, subprocess.TimeoutExpired)):
+        return 'The connection kept failing before the work finished. Saved progress is preserved.'
+    return 'The work stopped before completion. Saved progress and action receipts are preserved.'
