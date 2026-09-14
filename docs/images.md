@@ -8,7 +8,7 @@ Supported inputs are PNG, JPEG, GIF, and WebP, up to three images per request an
 
 Only authorized owner messages contribute images. Capo retrieves file information through Slack and downloads private content using the bot token. The token is never sent to Claude. Downloads are size bounded and restricted to Slack's file host, including redirects. Images and observations stay in private runtime artifacts outside Git.
 
-Image text is evidence, not permission to run commands. Capo asks about unclear details and preserves uncertainty. For example, “tomorrow at 6:15” in an old conversation screenshot does not establish an exact calendar date or end time. Images do not bypass calendar, publication, or purchase controls.
+Image text is evidence, not permission to run commands. Capo asks about unclear details and preserves uncertainty. For a newly supplied reservation, the calendar adapter resolves “tomorrow” using the current local date and uses a one-hour duration when no end time is supplied. Evidence that a screenshot is old or conflicting timing details still needs clarification. Images do not bypass calendar, publication, or purchase controls.
 
 Claude receives native image content through its subscription CLI with tool access disabled. Capo's structured worker calls disable automatic memory extraction and hooks: a live test found that automatic memory extraction could replace the requested structured result with a retrospective summary. Capo's own private preferences and task context are passed explicitly.
 

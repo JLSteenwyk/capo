@@ -361,6 +361,7 @@ class SlackService:
         if self.conversation is None:
             self.conversation = ConversationRouter(self.store.home)
         route = self.conversation.poll(event_id, {
+            "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles"),
             "browser_enabled": self.config.get("browser", {}).get("enabled", False),
             "browser_preferences": self.config.get("browser", {}).get("preferences", {}),
             "message": text, "aliases": list(self.config["repositories"]),

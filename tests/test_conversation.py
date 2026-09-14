@@ -58,6 +58,19 @@ class ConversationTests(unittest.TestCase):
             self.assertEqual(list(args[3].iterdir()), [])
             self.assertEqual(args[3].stat().st_mode & 0o777, 0o700)
 
+    def test_router_receives_current_local_clock(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        fixed=datetime(2031,1,2,0,15,tzinfo=ZoneInfo('Pacific/Auckland'))
+        with patch('capo.conversation.datetime') as clock, patch('capo.conversation.Providers') as provider:
+            clock.now.return_value=fixed
+            provider.return_value.call.return_value=self.route
+            self.finish(context=dict(self.context,timezone='Pacific/Auckland'))
+            prompt=provider.return_value.call.call_args.args[1]
+            self.assertIn('2031-01-02T00:15:00+13:00',prompt)
+            self.assertIn('Timezone: Pacific/Auckland',prompt)
+            self.assertEqual(str(clock.now.call_args.args[0]),'Pacific/Auckland')
+
     def test_restart_does_not_retry_started_attempt(self):
         directory = self.router.root / hashlib.sha256(b"event").hexdigest()
         directory.mkdir()
