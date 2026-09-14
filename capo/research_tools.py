@@ -1,6 +1,7 @@
 """Reusable bounded read-tool orchestration; adapters own access and data limits."""
 
 import json
+import hashlib
 from dataclasses import dataclass
 
 from .contracts import TEXT, object_schema, validate
@@ -102,7 +103,8 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
             if len(result['arguments_json']) > 12000:
                 raise ValueError('Arguments too large')
             arguments = json.loads(result['arguments_json'])
-            evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+str(step))
+            action_key = hashlib.sha256(json.dumps([result['tool'], arguments], sort_keys=True).encode()).hexdigest()
+            evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+action_key)
             size = len(json.dumps(evidence))
             if size > 180000 - evidence_size:
                 raise ValueError('Evidence budget exceeded')

@@ -32,6 +32,22 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(Tasks(self.home,'different-owner').search()['tasks'],[])
         with self.assertRaises(ValueError):other.save('', '', fields(title='different'),'event:0')
 
+    def test_model_repeating_a_mutation_does_not_duplicate_task(self):
+        import json
+        from unittest.mock import Mock
+        from capo.research_tools import research
+        registry=shared_tools(self.home,{},Documents(self.home,'local'))
+        args={'id':'','expected_revision':'','fields':fields()}
+        step={'action':'tool','tool':'tasks.save','arguments_json':json.dumps(args),
+              'reply':'','document_title':'','document':''}
+        end={'action':'finish','tool':'','arguments_json':'{}','reply':'Task saved.',
+             'document_title':'','document':''}
+        provider=Mock();provider.call.side_effect=[step,step,end]
+        result=research(provider,registry,{'message':'Remember to prepare the meeting'},self.home/'run')
+        self.assertEqual(result['receipts'][0]['result'],result['receipts'][1]['result'])
+        rows=registry.call('tasks.search',{'query':'','status':'all','cursor':''})
+        self.assertEqual(len(rows['tasks']),1)
+
     def test_dependencies_completion_cancel_and_cycles(self):
         a=self.tasks.save('','',fields(),'a')['task']
         b=self.tasks.save('','',fields(dependencies=[a['id']]),'b')['task']
