@@ -54,6 +54,17 @@ class SlackCase(unittest.TestCase):
             "type": "app_mention", "channel": "C123", "user": "U123",
             "text": "<@UBOT> " + text, "ts": "123.456"}}
 
+    def test_owner_image_reply_file_share_subtype_is_accepted(self):
+        original = self.body()
+        self.assertTrue(ingest(self.store.home, self.config, original))
+        reply = self.body("Here is the screenshot", "image-reply")
+        reply["event"].update(type="message", subtype="file_share", thread_ts="123.456", ts="124.456",
+                              text="Here is the screenshot", files=[{"id":"F123", "mimetype":"image/png"}])
+        self.assertTrue(authorized(self.config, reply, self.store))
+        self.assertTrue(ingest(self.store.home, self.config, reply))
+        reply["event"]["user"]="UOTHER"
+        self.assertFalse(authorized(self.config, reply, self.store))
+
     def test_digest_thread_accepts_only_owner_feedback_without_mention(self):
         from capo.digest import DigestStore, scope
         from datetime import datetime, timezone

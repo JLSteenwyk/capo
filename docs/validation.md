@@ -158,3 +158,9 @@ A real preview was posted to the configured Slack channel and independently reco
 Actual Claude calls interpreted natural-language feedback in an isolated private validation profile. A positive preference increased ranking weight, and an explicit exclusion removed matching items from subsequent candidate selection. Production preferences were not altered by these synthetic feedback tests. The owner's initial music preferences were derived privately from the visible tracks in the supplied public playlist embeds, with newer playlists weighted more heavily.
 
 The daily schedule is enabled for 07:00 America/Los_Angeles, with a five-minute preparation window and a two-hour bounded delivery window. A private user LaunchAgent starts and supervises the Slack service. Its operation requires the Mac to be awake and the user logged in; a late restart skips stale digests. No calendar events, repositories, or external tasks were changed by digest generation.
+
+## Slack image understanding
+
+The full suite passed 234 tests, including native Claude image input, safe private Slack downloads, size/type limits, redirect restrictions, missing-scope guidance, and owner-only image context across thread replies. A live subscription call read an uploaded screenshot and identified uncertainty without taking external actions. Structured Claude calls now disable hooks, session persistence, and automatic memory extraction to prevent a memory retrospective from replacing the requested result.
+
+The live Slack app still needs the `files:read` bot scope and reinstallation before attachment retrieval can be verified end to end. No calendar events were created during validation. See [image setup](images.md).

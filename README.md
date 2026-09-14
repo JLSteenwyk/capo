@@ -129,3 +129,5 @@ Capo can use its own browser on this computer and ask for missing booking detail
 Google Calendar: [connect your calendar](docs/calendar.md) to check your schedule and create, edit, or delete personal events from Slack.
 
 Morning briefings: [daily digest and feedback](docs/digest.md) covers scheduling, news preferences, and private setup.
+
+Screenshots and diagrams: [Slack image support](docs/images.md) explains supported formats and the required Slack permission.

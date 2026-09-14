@@ -194,7 +194,7 @@ def owner_message(config, body):
     return (body.get("team_id") == config["team_id"]
             and event.get("channel") == config["channel_id"]
             and event.get("user") == config["owner_user_id"]
-            and not event.get("bot_id") and not event.get("subtype"))
+            and not event.get("bot_id") and event.get("subtype") in (None, "file_share"))
 
 
 def known_thread(store, config, thread):
@@ -337,6 +337,11 @@ class SlackService:
         from .repository import git
 
         event = body["event"]
+        from .slack_images import context as image_context, ImageError
+        try:
+            text = image_context(self, event_id, body, text)
+        except ImageError as exc:
+            return str(exc)
         thread = event.get("thread_ts", event["ts"])
         owned = [row for row in self.store.list() if self.owns(row)]
         in_thread = self.thread_objectives(thread)
@@ -556,6 +561,11 @@ class SlackService:
         if not match:
             return self.natural_dispatch(event_id, body, text)
         improve, alias, request = match.groups()
+        from .slack_images import context as image_context, ImageError
+        try:
+            request = image_context(self, event_id, body, request)
+        except ImageError as exc:
+            return str(exc)
         if alias not in self.config["repositories"]:
             raise ValueError("Unknown repository alias")
         settings = self.config["repositories"][alias]

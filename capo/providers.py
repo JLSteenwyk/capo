@@ -23,7 +23,9 @@ class Providers:
         self.timeout = timeout
         self.config = load_config() if config is None else validate_config(config)
 
-    def call(self, provider, prompt, schema, cwd, directory):
+    def call(self, provider, prompt, schema, cwd, directory, images=None):
+        if images and provider != "claude":
+            raise ValueError("Image input is currently supported by Claude only")
         directory.mkdir(parents=True, exist_ok=True)
         prompt_file = directory / "prompt.txt"
         prompt_file.write_text(prompt)
@@ -33,8 +35,31 @@ class Providers:
             argv = ["claude", "-p", "--output-format", "json", "--tools", "",
                     "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                     "--setting-sources", "", "--permission-mode", "dontAsk",
-                    "--json-schema", json.dumps(schema)]
-            envelope = decode_json(run_process(argv, cwd, directory, self.timeout, prompt))
+                    "--json-schema", json.dumps(schema), "--no-session-persistence",
+                    "--settings", json.dumps({"autoMemoryEnabled": False, "disableAllHooks": True})]
+            input_text = prompt
+            if images:
+                import base64
+                if len(images) > 3:
+                    raise ValueError("At most three images per request")
+                blocks = [{"type": "text", "text": prompt}]
+                for picture in images:
+                    if picture["media_type"] not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
+                        raise ValueError("Unsupported image type")
+                    if len(base64.b64decode(picture["data"], validate=True)) > 4_000_000:
+                        raise ValueError("Image is too large")
+                    blocks.append({"type": "image", "source": {"type": "base64", **picture}})
+                argv[argv.index("--output-format") + 1] = "stream-json"
+                argv += ["--input-format", "stream-json", "--verbose"]
+                input_text = json.dumps({"type": "user", "message": {"role": "user", "content": blocks}}) + "\n"
+            output = run_process(argv, cwd, directory, self.timeout, input_text)
+            if images:
+                results = [decode_json(line) for line in output.splitlines() if line.strip()]
+                envelope = next((value for value in reversed(results) if value.get("type") == "result"), None)
+                if envelope is None:
+                    raise WorkerError("Claude image request returned no result")
+            else:
+                envelope = decode_json(output)
             if envelope.get("is_error") or envelope.get("subtype", "success") != "success":
                 raise WorkerError(f"Claude reported failure; inspect {directory}")
             result = envelope.get("structured_output")
