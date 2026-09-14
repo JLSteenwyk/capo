@@ -12,4 +12,4 @@ A private reminder ledger uses the existing Slack delivery gateway. Due reminder
 
 The morning digest considers deadlines over the next seven days, high-priority tasks and waiting items. Hourly checks consider the next day, respecting the existing 10 a.m.–4 p.m. window. A shared delivery lock and sent/unconfirmed receipts prevent an unchanged task alert from appearing in both streams on the same day. A changed deadline or waiting status creates fresh evidence. Explicitly timed reminders own their alerts instead of appearing in hourly checks; planning summaries may still include those commitments. Up to 100 matching personal tasks are considered per sweep.
 
-Live deployment and final end-to-end checks remain in progress.
+Live natural-language verification created a synthetic task, moved its deadline, and completed it, preserving one task ID throughout. A delivery-time recheck suppresses queued alerts for completed, cancelled or changed tasks.

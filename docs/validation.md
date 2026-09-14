@@ -175,8 +175,10 @@ The full suite passed 259 tests. The shared registry was tested with strict tool
 
 ## Personal tasks, drafts and planning
 
-The suite passed 307 tests covering owner-scoped task storage, revisions, recurrence and daylight saving changes, dependency checks, repeated model mutations, Gmail reply threading and verified attachments, reminder catch-up/restart/cancellation, calendar availability, scheduled read-only requests, and shared task-alert suppression between the morning digest and hourly checks.
+The suite passed 309 tests covering owner-scoped task storage, revisions, recurrence and daylight saving changes, dependency checks, repeated model mutations, Gmail reply threading and verified attachments, reminder catch-up/restart/cancellation, calendar availability, scheduled read-only requests, and shared task-alert suppression between the morning digest and hourly checks.
 
 Live Gmail verification created, read, edited and deleted a labeled temporary draft without sending email. A simulated lost response after a real draft save was reconciled with exactly one write, followed by cleanup. This caught Google's rewriting of draft Message-ID headers; recovery now uses a preserved custom action header and paginated metadata checks. A private live planning preview read tasks, calendar and Gmail. A separate live check verified the correction for conflicting timezone metadata in calendar responses. No unrelated personal events, tasks or email were changed by these checks.
 
-Final deployment and completion audit are in progress.
+A live natural-language conversation created, rescheduled and completed one synthetic task without duplicating it. Slack authentication and the saved schedule configuration were checked: morning digest at 07:00, hourly checks from 10:00 through 16:00, and the owner-selected weekly plan on Sunday at 17:00, all America/Los_Angeles. Gmail draft access is authorized.
+
+New reminder and scheduled-plan Slack delivery, calendar writes from shared planning, attachment handling, and failure recovery have automated coverage. These checks do not establish a new live Slack conversation for every feature or a live weekly scheduled delivery. Calendar writes were tested with a fake gateway to avoid modifying unrelated personal events.

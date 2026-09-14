@@ -1,6 +1,6 @@
 # Planning with shared tools
 
-Capo handles on-demand daily and weekly planning through the existing capability conversation. It combines task search, calendar events/availability, Gmail search/thread reads, and saved documents. The same tools remain available for other questions and to specialist agents. Suggested work windows are not bookings; task duration, travel and unrecorded commitments need explicit assumptions or owner input.
+Capo handles on-demand daily and weekly planning through the existing capability conversation. It combines task search, calendar events/availability, Gmail search/thread reads, and saved documents. The same tools remain available for other questions and to specialist agents. `calendar.change` applies explicitly requested personal changes through the existing event validation, permission checks and If-Match guard. It requires discovered events for updates/deletes and retains durable action receipts. This permits a request to combine planning and authorized changes without a new intent handler. Suggested work windows are not bookings; task duration, travel and unrecorded commitments need explicit assumptions or owner input.
 
 `calendar.availability` accepts an explicit RFC3339 range of at most 31 days, local work hours, weekdays, and minimum free-window duration. It calculates overlapping events and open intervals, ignores transparent/cancelled events, and includes all-day busy events. Local wall-clock calculations preserve daylight saving transitions.
 
@@ -10,6 +10,6 @@ Scheduled requests use the shared tool loop with mutation tools removed. They ca
 
 Generation is limited to two attempts per occurrence and ten tool calls per attempt. Host leases prevent concurrent workers for one occurrence. The existing Slack delivery gateway stores receipts and reconciles uncertain posts. A restart within the configured catch-up window can finish a missed run; later occurrences are skipped. Paused or revised schedules suppress undelivered old results. The Mac must be awake with Capo running.
 
-Validation covers conflicts, all-day events, DST, changed task deadlines, schedule catch-up, read-only tool enforcement, and one delivery across restart. Broader task/digest integration and live deployment are still in progress.
+Validation covers conflicts, all-day events, DST, changed task deadlines, schedule catch-up, read-only tool enforcement, and one delivery across restart. Task evidence is integrated with morning digests and hourly checks. Cross-stream task alerts are deduplicated, while explicitly timed reminders retain their requested delivery time.
 
 A private live preview on September 14, 2026 successfully combined task search, calendar events and Gmail search/read. It exposed a double-conversion error when Google's response included both a local RFC3339 offset and a recurring event's original timezone label. Calendar tool output now normalizes both fields to the owner's timezone. A focused live recheck returned the correct local event time; an automated regression covers the conflicting source metadata.

@@ -226,7 +226,7 @@ def compose(evidence, p, seen, directory, provider=None):
         lines+=['','Needs your attention']
         for item in picked:
             lines.append(f"• {item['status']}: {item['title'][:130]}" + (' '+item['url'] if item['url'] else ''))
-            if item.get('kind')=='personal_task':task_notices.append({'id':item['id'],'day':item['notice_day'],'line':lines[-1]})
+            if item.get('kind')=='personal_task':task_notices.append({'id':item['id'],'day':item['notice_day'],'task_id':item['task_id'],'line':lines[-1]})
     calendar_ok=any(v['source']=='Primary Google Calendar' and v['status']=='ok' for v in evidence['coverage'])
     if calendar_ok:
         today, upcoming, conflicts, gaps=calendar_outlook(evidence['events'],now,p)

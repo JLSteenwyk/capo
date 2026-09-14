@@ -11,6 +11,11 @@ from .digest import scope
 from .tasks import Tasks
 
 
+def notice_id(task):
+    return 'personal-task:'+hashlib.sha256(json.dumps([task[k] for k in
+        ('id','title','due_at','remind_at','status','priority','waiting_on')],sort_keys=True).encode()).hexdigest()
+
+
 def personal_tasks(home,config,now,horizon_days=7,heartbeat=False):
     if home is None:return []
     owner=owner_key(config);root=Path(home)/'tasks'/hashlib.sha256(owner.encode()).hexdigest()
@@ -27,7 +32,7 @@ def personal_tasks(home,config,now,horizon_days=7,heartbeat=False):
             due=datetime.fromisoformat(t['due_at']) if t['due_at'] else None
             if due and due>now+timedelta(days=horizon_days):continue
             if not due and t['status']!='waiting' and t['priority']!='high':continue
-            key='personal-task:'+hashlib.sha256(json.dumps([t['id'],t['due_at'],t['status'],t['priority'],t['waiting_on']],sort_keys=True).encode()).hexdigest()
+            key=notice_id(t)
             status='Waiting on '+t['waiting_on'] if t['status']=='waiting' else 'High priority' if not due else 'Due '+due.astimezone(ZoneInfo(zone)).strftime('%b %d, %-I:%M %p')
             items.append({'id':key,'kind':'personal_task','title':t['title'],'status':status,'url':'',
                           'task_id':t['id'],'due_at':t['due_at'],'priority':t['priority'],
@@ -63,6 +68,12 @@ def filter_notices(manager,run,now):
     if not notices:return True
     seen=prior_notices(manager.service.store.home,manager.service.config,run['key'])
     duplicates=[n for n in notices if (n['id'],n['day']) in seen]
+    tasks=Tasks(manager.service.store.home,owner_key(manager.service.config))
+    for notice in notices:
+        if not notice.get('task_id') or notice in duplicates:continue
+        try:task=tasks.get(notice['task_id'])
+        except ValueError:duplicates.append(notice);continue
+        if task['status'] not in ('open','waiting') or notice_id(task)!=notice['id']:duplicates.append(notice)
     if not duplicates:return True
     remove={n['line'] for n in duplicates};ids={n['id'] for n in duplicates}
     payload=run['payload']

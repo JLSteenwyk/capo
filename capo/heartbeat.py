@@ -91,7 +91,7 @@ def select(items,seen,now,directory,provider=None):
         if key not in allowed or any(x['id']==key for x in chosen):continue
         item=allowed[key];chosen.append(dict(id=key,day=day))
         lines.append('• '+item['title'][:120]+': '+' '.join(alert['reason'].split())[:160])
-        if item.get('kind')=='personal_task':task_notices.append({'id':key,'day':item['notice_day'],'line':lines[-1]})
+        if item.get('kind')=='personal_task':task_notices.append({'id':key,'day':item['notice_day'],'task_id':item['task_id'],'line':lines[-1]})
     return {'text':'Needs your attention:\n'+'\n'.join(lines) if lines else '', 'news':chosen,'task_notices':task_notices}
 
 

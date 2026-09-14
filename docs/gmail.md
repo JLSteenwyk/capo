@@ -1,6 +1,6 @@
 # Gmail inbox checks
 
-Capo can summarize up to 20 messages in the connected Gmail inbox and flag likely replies, deadlines and commitments. It reads headers and snippets only. It cannot send, delete, archive, inspect attachments, or claim to have reviewed the full mailbox. Sent-mail style analysis and bounded searches are also supported as described below. This connection supports one account. Inbox snippets can also feed the optional [hourly Capo check](heartbeat.md); email inclusion in the morning digest is not implemented yet.
+Capo can summarize up to 20 messages in the connected Gmail inbox and flag likely replies, deadlines and commitments. The inbox summary reads headers and snippets. Shared tools also support bounded message/thread reads, sent-mail analysis, and verified attachment references. With the optional draft grant, Capo can manage drafts as described below. It cannot send email, delete or archive received messages, or claim to have reviewed the full mailbox. This connection supports one account. Inbox snippets can also feed the optional [hourly Capo check](heartbeat.md); email inclusion in the morning digest is not implemented yet.
 
 1. Enable the Gmail API in the Google Cloud project that owns your OAuth client.
 2. Run `capo gmail-auth --client-secrets /private/path/to/client.json` and approve read-only Gmail access in Google's browser sign-in.

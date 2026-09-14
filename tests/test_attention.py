@@ -72,3 +72,15 @@ class AttentionTests(unittest.TestCase):
         self.assertEqual(len(personal_tasks(self.home,self.config,self.now,horizon_days=1,heartbeat=True)),1)
         other=dict(self.config,owner_user_id='U999')
         self.assertEqual(personal_tasks(self.home,other,self.now),[])
+
+    def test_completed_task_is_removed_before_prepared_alert_is_delivered(self):
+        tasks=Tasks(self.home,owner_key(self.config))
+        task=tasks.save('','',fields(due_at='2030-01-07T15:00:00-08:00'),'create')['task']
+        evidence=personal_tasks(self.home,self.config,self.now)[0]
+        notice={'id':evidence['id'],'day':evidence['notice_day'],'task_id':task['id'],'line':'• Task deadline'}
+        manager=self.manager(Path('heartbeat'))
+        run=self.run_record(manager,'ready-before-completion','Needs your attention:\n• Task deadline',notice)
+        tasks.save(task['id'],'1',fields(status='completed',due_at=task['due_at']),'complete')
+        manager.deliver(run,self.now)
+        self.client.chat_postMessage.assert_not_called()
+        self.assertEqual(manager.db.get(run['key'])['status'],'quiet')

@@ -93,3 +93,24 @@ class PlanningTests(unittest.TestCase):
                 self.assertIn('tasks.search',observed[0].tools)
                 self.assertNotIn('tasks.save',observed[0].tools)
             finally:manager.db.close()
+
+    def test_requested_calendar_change_reuses_permissions_and_receipts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home=Path(tmp);config={'calendar':{'enabled':True,'timezone':'America/Los_Angeles'}}
+            tools=shared_tools(home,config,Documents(home,'owner'))
+            target={'id':'personal','summary':'Focus','start':{'dateTime':'2026-09-18T10:00:00-07:00'},
+                    'end':{'dateTime':'2026-09-18T11:00:00-07:00'},'organizer':{'self':True},'etag':'v1'}
+            args={'action':'update','event_id':'personal','title':'Focus','location':'','start':'2026-09-18T11:00:00-07:00',
+                  'end':'2026-09-18T12:00:00-07:00','all_day':False}
+            with patch('capo.calendar.GoogleCalendar') as factory:
+                client=factory.return_value;client.events.return_value=[target];client.request.return_value=target
+                with self.assertRaises(ValueError):tools.call('calendar.change',args,operation_id='before-read')
+                tools.call('calendar.events',{'start':'2026-09-18T00:00:00-07:00','end':'2026-09-19T00:00:00-07:00'})
+                result=tools.call('calendar.change',args,operation_id='change')
+                self.assertTrue(result['changed'])
+                patch_calls=[c for c in client.request.call_args_list if c.args[0]=='PATCH']
+                self.assertEqual(len(patch_calls),1);self.assertEqual(patch_calls[0].kwargs['headers'],{'If-Match':'v1'})
+                self.assertEqual(tools.call('calendar.change',args,operation_id='change'),result)
+                self.assertEqual(len([c for c in client.request.call_args_list if c.args[0]=='PATCH']),1)
+                target['attendees']=[{'email':'guest@example.com'}]
+                with self.assertRaises(ValueError):tools.call('calendar.change',args,operation_id='guest')
