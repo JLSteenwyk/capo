@@ -6,4 +6,18 @@ The implementation must preserve the complete owner objective across routes and 
 
 `dates.shift` is available in the shared registry. It adds a signed number of local calendar days to an ISO date or offset datetime. For example, subtracting fourteen days preserves local wall time across a daylight saving boundary. Timed inputs must match the supplied timezone. Repeated or nonexistent destination times return a clarification requirement rather than silently choosing a time. Date-only values stay date-only, including year and leap-day boundaries.
 
-Web research, durable cross-route objective state, and full end-to-end request resolution are still being implemented. The date tool alone does not establish those capabilities.
+Full end-to-end request resolution is still being verified. The primitives below do not yet establish every multi-step behavior.
+
+## Shared research and request memory
+
+`web.search` uses the existing Claude Code subscription in an isolated, bounded process with only WebSearch enabled. Results come from native tool-result records rather than a generated claim that a search occurred. Each request permits three search calls, each with a three-turn and two-minute process limit. Public queries must exclude private source content and identifiers.
+
+`web.read` retrieves bounded public HTTPS text. It rejects credentials and private addresses, validates every redirect, pins the connection to a checked public address, and verifies TLS against the original hostname. It retains source URLs and retrieval times. JavaScript-rendered content, PDFs and authenticated pages are not supported by this reader; failed reads remain explicit evidence gaps.
+
+Slack now saves the original owner request separately from its short recent-message window. The shared `context.read` and `context.save` tools expose this thread's history and working notes. Receipts and outcomes are stored privately with the owner/thread identity. Working notes are interpretations, not permission or proof. History reads are bounded to thirty records and 50 KB, while the original request is retained separately.
+
+The router directs calendar requests requiring outside facts to the shared tool loop. Simple calendar operations retain their existing specialized handler. Research instructions distinguish researchable facts from personal choices and require authoritative verification, duplicate checks, and receipts before claiming completion.
+
+Live probes have confirmed subscription web search and public page reading. Full multi-step behavior, long-term action reconciliation and deployment validation remain in progress.
+
+A live read-only preview of the motivating two-performance question chose two web searches, read two official event pages, and used `dates.shift` twice. Both pages contained the event year. The loop returned source-linked dates and reminder dates without requesting details from the owner. Mutation tools were removed for this preview; it does not prove live calendar creation or the complete Slack follow-up path.

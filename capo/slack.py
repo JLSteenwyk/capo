@@ -357,6 +357,18 @@ class SlackService:
         except ImageError as exc:
             return str(exc)
         thread = event.get("thread_ts", event["ts"])
+        from .request_memory import RequestMemory
+        from .capabilities import owner_key
+        memory = RequestMemory(self.store.home, owner_key(self.config), thread)
+        if memory.read()['original_request'] is None:
+            # Recover the root owner request even if it fell outside the recent-message window.
+            for saved in self.store.db.execute("SELECT id,data FROM slack_inbox ORDER BY rowid"):
+                prior = json.loads(saved['data'])
+                if authorized(self.config, prior, self.store) and prior['event'].get('ts') == thread:
+                    memory.record(saved['id'], 'owner', {'message': prior['event'].get('text', '')})
+                    break
+        memory.record(event_id, 'owner', {'message': text})
+        request_state = memory.read()
         owned = [row for row in self.store.list() if self.owns(row)]
         in_thread = self.thread_objectives(thread)
         recent = []
@@ -384,6 +396,7 @@ class SlackService:
             recent.append({'user': '', 'capo': 'Scheduled request context: '+json.dumps(scheduled)})
         from .team import roster
         route = self.conversation.poll(event_id, {
+            "request_state": request_state,
             "team": roster(self.config),
             "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles"),
             "browser_enabled": self.config.get("browser", {}).get("enabled", False),
@@ -410,6 +423,8 @@ class SlackService:
                 self.capability_conversation = CapabilityConversation(self.store.home, self.config)
             return self.capability_conversation.poll(event_id, {
                 "aliases": [], "objectives": [], "message": text,
+                "request_thread": thread, "request_event": event_id, "request_state": request_state,
+                "browser_preferences": self.config.get("browser", {}).get("preferences", {}),
                 "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles"),
                 "recent_messages": list(reversed(recent))})["reply"]
         if action == "calendar":
@@ -420,7 +435,7 @@ class SlackService:
                 self.calendar_conversation = CalendarConversation(self.store.home)
             return self.calendar_conversation.poll(event_id, {
                 "aliases": [], "objectives": [], "message": text,
-                "recent_messages": list(reversed(recent)),
+                "recent_messages": list(reversed(recent)), "request_state": request_state,
                 "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles")
             })["reply"]
         if action == "browser":

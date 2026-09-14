@@ -51,6 +51,11 @@ def shared_tools(home,config,documents,request=None):
                    lambda:{'now':datetime.now(ZoneInfo(zone)).isoformat(),'timezone':zone}),
            ReadTool('documents.list','List reusable private documents saved for this owner.',object_schema({}),documents.list),
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
+    from .web_tools import WebTools
+    tools.extend(WebTools(home).tools())
+    if request and request.get("request_thread"):
+        from .request_memory import RequestMemory
+        tools.extend(RequestMemory(home,owner_key(config),request["request_thread"]).tools(request.get("request_event", "local")))
     from .date_tools import tools as date_tools
     tools.extend(date_tools())
     from .tasks import Tasks
@@ -157,7 +162,21 @@ class CapabilityConversation(ConversationRouter):
             _write(directory/'research.json',result)
             if key:_write(directory/'document.json',{'id':key,'title':result['document_title'],'content':result['document']})
             reply=result['reply']
-        except Exception:
-            reply='I couldn’t finish that request. The available evidence or tools were insufficient; please try again.'
-        try:_write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply}})
+        except Exception as exc:
+            from .providers import AuthenticationError
+            if isinstance(exc, AuthenticationError):
+                reply='Claude’s login needs to be renewed on the computer running Capo. Your request and any saved progress are preserved.'
+            else:
+                receipts_path=directory/'receipts.json'
+                receipts=json.loads(receipts_path.read_text()) if receipts_path.exists() else []
+                failed=[r['tool'] for r in receipts if 'error' in r]
+                detail=('The '+failed[-1]+' tool did not return usable evidence.' if failed else
+                        'The reasoning step stopped before I could finish.')
+                reply=detail+' Your request and any action receipts are saved; I have not confirmed completion.'
+        try:
+            if context.get('request_thread'):
+                from .request_memory import RequestMemory
+                RequestMemory(self.home,owner_key(self.config),context['request_thread']).record(
+                    context.get('request_event',str(directory)), 'outcome', {'reply':reply})
+            _write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply}})
         finally:os.close(fd)

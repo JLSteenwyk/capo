@@ -62,6 +62,12 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
     now=datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat()
     receipts = []
     evidence_size = 0
+    memory = None
+    if request.get('request_thread'):
+        # The caller supplies only host-authorized thread context.
+        context_tool = tools.tools.get('context.read')
+        if context_tool:
+            memory = getattr(context_tool.execute, '__self__', None)
     for step in range(max_calls + 1):
         remaining = max_calls - step
         prompt = (
@@ -78,6 +84,13 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
             'under 100 words in reply unless the owner explicitly requests more detail; always under 1900 characters. When action is tool, reply/document fields must be empty. '
             'When finishing, tool must be empty and arguments_json must be {}. '
             'Do not stop after planning if available tools can complete the authorized request. '
+            'Preserve the entire original objective across follow-ups. Investigate researchable missing facts before asking the owner. '
+            'Use relevant context as a hypothesis to verify. Prefer official sources, check dates including the year, and retain source URLs. '
+            'Ask one short question only for a material unresolved ambiguity or personal choice. '
+            'Before creating items search for existing matches. After partial success continue only unfinished actions; never repeat unconfirmed writes. '
+            'Use dates.shift for local calendar offsets. Save resolved facts, uncertainties and next steps with context.save when useful. '
+            'Never claim an action succeeded without a successful mutation receipt. '
+
             + instructions + '\n' + json.dumps({
                 'request': request, 'tools': tools.catalog(), 'receipts': receipts,
                 'remaining_tool_calls': remaining,
@@ -110,9 +123,13 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
                 raise ValueError('Evidence budget exceeded')
             evidence_size += size
             receipts.append({'tool': result['tool'], 'arguments': arguments, 'result': evidence})
-        except Exception:
+        except Exception as exc:
+            from .web_tools import WebError
+            safe_error = str(exc) if isinstance(exc, WebError) else 'Tool failed or arguments exceeded its limits. No result available.'
             # Keep provider bodies, credentials, and arbitrary exception messages private.
             receipts.append({'tool': result['tool'], 'error':
-                             'Tool failed or arguments exceeded its limits. No result available.'})
+                             safe_error})
         _write(directory/'receipts.json',receipts)
+        if memory is not None:
+            memory.record(str(directory.resolve())+':'+str(step), 'receipt', receipts[-1])
     raise AssertionError('Unreachable')
