@@ -136,6 +136,8 @@ def validate_config(config):
     repos = config.get("repositories")
     if not isinstance(repos, dict) or not repos:
         raise ValueError("Configure at least one named repository")
+    from .heartbeat import settings as heartbeat_settings
+    heartbeat_settings(config)
     gmail_settings = config.get("gmail", {})
     if not isinstance(gmail_settings, dict) or type(gmail_settings.get("enabled", False)) is not bool:
         raise ValueError("gmail.enabled must be true or false")
@@ -201,6 +203,8 @@ def owner_message(config, body):
 
 
 def known_thread(store, config, thread):
+    from .heartbeat import known_thread as heartbeat_thread
+    if heartbeat_thread(store.home, config, thread):return True
     from .digest_service import known_thread as digest_thread
     if digest_thread(store.home, config, thread):
         return True
@@ -794,6 +798,8 @@ class SlackService:
         self.process_messages()
         from .digest_service import tick as digest_tick
         digest_tick(self)
+        from .heartbeat import tick as heartbeat_tick
+        heartbeat_tick(self)
         browser_slack.tick(self)
         self.process_plan_notifications()
         if self.active:
@@ -888,6 +894,8 @@ def serve(home, config_path):
         finally:
             signal.signal(signal.SIGTERM, previous)
             handler.close()
+            if hasattr(service, "heartbeat_manager"):
+                service.heartbeat_manager.db.close()
             if hasattr(service, "digest_manager"):
                 service.digest_manager.db.close()
             from .browser_slack import stop as stop_browser

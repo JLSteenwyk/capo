@@ -133,3 +133,5 @@ Morning briefings: [daily digest and feedback](docs/digest.md) covers scheduling
 Screenshots and diagrams: [Slack image support](docs/images.md) explains supported formats and the required Slack permission.
 
 Meet [Capo’s specialist team](docs/team.md) and connect [Gmail inbox checks](docs/gmail.md).
+
+[Hourly Capo checks](docs/heartbeat.md) quietly watch for items that need your attention.

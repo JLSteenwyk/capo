@@ -164,3 +164,7 @@ The daily schedule is enabled for 07:00 America/Los_Angeles, with a five-minute 
 The full suite passed 234 tests, including native Claude image input, safe private Slack downloads, size/type limits, redirect restrictions, missing-scope guidance, and owner-only image context across thread replies. A live subscription call read an uploaded screenshot and identified uncertainty without taking external actions. Structured Claude calls now disable hooks, session persistence, and automatic memory extraction to prevent a memory retrospective from replacing the requested result.
 
 After reinstallation, the live app’s `files:read` scope was confirmed. The adapter downloaded an existing owner-uploaded image directly from Slack, and a live Claude subscription call interpreted its visible reservation details and identified missing timing information. This verifies attachment retrieval and visual interpretation; calendar creation from an image remains unverified. No calendar events were created during validation. See [image setup](images.md).
+
+## Hourly checks and sent-mail analysis
+
+The full suite passed 248 tests. New checks cover inclusive local scheduling hours, quiet receipts across restarts, daily alert deduplication, bounded ID-based alert selection, stale delivery suppression, and sent-message MIME/quote handling. A live read-only hourly preview completed without posting to Slack. A separate live request read 25 sent messages and saved a private writing guide. No email or calendar data was modified.
