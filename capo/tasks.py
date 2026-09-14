@@ -153,6 +153,13 @@ class Tasks:
                 id = hashlib.sha256(operation_id.encode()).hexdigest()
                 previous = None
             self._validate(db, fields, id)
+            if previous is None and fields['status'] in ('open','waiting'):
+                for row in db.execute('SELECT data FROM tasks'):
+                    existing=json.loads(row[0])
+                    if all(existing.get(key)==value for key,value in fields.items()):
+                        result={'task':existing,'saved':False,'already_exists':True}
+                        db.execute('INSERT INTO receipts VALUES (?,?,?)',(operation_id,request,json.dumps(result)))
+                        return result
             now = datetime.now(timezone.utc).isoformat()
             task = dict(fields, id=id, revision=previous['revision']+1 if previous else 1,
                         created_at=previous['created_at'] if previous else now, updated_at=now)

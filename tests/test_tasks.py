@@ -82,3 +82,11 @@ class TaskTests(unittest.TestCase):
         read=registry.call('tasks.get',{'id':result['task']['id']})
         self.assertEqual(read['sources'],['gmail:synthetic-message'])
         self.assertIn('now',registry.call('clock.now',{}))
+
+    def test_identical_creation_in_new_event_reuses_active_task(self):
+        first=self.tasks.save('','',fields(sources=['mail:deadline']),'first')
+        next_event=Tasks(self.home,'owner').save('','',fields(sources=['mail:deadline']),'followup')
+        self.assertEqual(first['task']['id'],next_event['task']['id'])
+        self.assertTrue(next_event['already_exists'])
+        self.assertFalse(next_event['saved'])
+        self.assertEqual(len(self.tasks.search()['tasks']),1)

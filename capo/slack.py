@@ -413,6 +413,8 @@ class SlackService:
             from .team import dispatch as specialist_dispatch
             return specialist_dispatch(self, event_id, action, {
                 "message": text, "recent_messages": list(reversed(recent)),
+                "request_state": request_state, "request_thread": thread, "request_event": event_id,
+                "browser_preferences": self.config.get("browser", {}).get("preferences", {}),
                 "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles")})
         if action == "digest":
             from .digest_feedback import dispatch as digest_dispatch

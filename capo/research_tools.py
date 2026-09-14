@@ -125,11 +125,17 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
             receipts.append({'tool': result['tool'], 'arguments': arguments, 'result': evidence})
         except Exception as exc:
             from .web_tools import WebError
-            safe_error = str(exc) if isinstance(exc, WebError) else 'Tool failed or arguments exceeded its limits. No result available.'
+            from .effects import UncertainEffect
+            from .calendar import CalendarError
+            safe_error = str(exc) if isinstance(exc, (WebError, UncertainEffect, CalendarError)) else 'Tool failed or arguments exceeded its limits. No result available.'
             # Keep provider bodies, credentials, and arbitrary exception messages private.
             receipts.append({'tool': result['tool'], 'error':
                              safe_error})
         _write(directory/'receipts.json',receipts)
         if memory is not None:
-            memory.record(str(directory.resolve())+':'+str(step), 'receipt', receipts[-1])
+            key=str(directory.resolve())+':'+str(step)
+            memory.record(key, 'receipt', receipts[-1])
+            attempted=tools.tools.get(result['tool'])
+            if attempted is not None and attempted.mutates:
+                memory.record(key, 'action', receipts[-1])
     raise AssertionError('Unreachable')

@@ -21,3 +21,13 @@ The router directs calendar requests requiring outside facts to the shared tool 
 Live probes have confirmed subscription web search and public page reading. Full multi-step behavior, long-term action reconciliation and deployment validation remain in progress.
 
 A live read-only preview of the motivating two-performance question chose two web searches, read two official event pages, and used `dates.shift` twice. Both pages contained the event year. The loop returned source-linked dates and reminder dates without requesting details from the owner. Mutation tools were removed for this preview; it does not prove live calendar creation or the complete Slack follow-up path.
+
+## Action recovery
+
+The shared calendar adapter checks for an exact matching title, location and time range before creating an event. Existing matches return an explicit “already exists” receipt. Task creation similarly reuses an active task when every supplied field matches, within the same database transaction.
+
+`calendar.pending` and `calendar.reconcile` expose uncertain calendar writes. Recovery reads the deterministic event ID for a create, or the known target for an update/delete. Matching fields confirm the requested saved state; explicit absence confirms deletion. Missing or conflicting evidence for a save remains uncertain. Identical follow-up requests try this read-only reconciliation before any new write. A connection or preflight-read failure does not reserve a write intent.
+
+`context.actions` pages through the thread's durable host-recorded mutation attempts, independent of the recent-history window. Errors remain distinct from successful receipts. Specialized agents receive the same original request state and can use the shared context tools.
+
+These checks suppress exact duplicates; semantically similar events or tasks with different fields still require agent comparison. A calendar state matching an uncertain update confirms the desired state, not who performed the update. External concurrent writers remain subject to the existing calendar revision safeguards.

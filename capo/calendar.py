@@ -58,6 +58,13 @@ class GoogleCalendar:
             raise CalendarError('Google could not finish that request. Check your calendar before trying a change again.')
         return response.json() if response.content else {}
 
+    def lookup(self, event_id):
+        response=self.session.get(BASE+'/'+quote(event_id,safe=''),timeout=25)
+        if response.status_code in (404,410):return None
+        if not response.ok:raise CalendarError('Calendar recovery could not verify the event. Check the connection.')
+        event=response.json()
+        return None if event.get('status')=='cancelled' else event
+
     def events(self, start, end):
         result = self.request('GET', params={'timeMin': start, 'timeMax': end,
                               'singleEvents': 'true', 'orderBy': 'startTime', 'maxResults': 100})

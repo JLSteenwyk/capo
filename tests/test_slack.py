@@ -814,3 +814,22 @@ class SlackCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_research_followup_preserves_original_calendar_request_across_routes(self):
+        self.config['calendar']={'enabled':True,'timezone':'America/Los_Angeles'}
+        self.router.poll.side_effect=None
+        self.router.poll.return_value={'action':'calendar','repository':'','objective_id':'','reply':''}
+        original='Find the dates in this screenshot and create reminders two weeks before each.'
+        with patch('capo.calendar.CalendarConversation') as calendar:
+            calendar.return_value.poll.return_value={'reply':'I need the dates.'}
+            self.service.natural_dispatch('original',self.body(original),original)
+        self.router.poll.return_value={'action':'research','repository':'','objective_id':'','reply':''}
+        followup=self.body('Can you figure out when?',event_id='followup')
+        followup['event']['thread_ts']='123.456';followup['event']['ts']='123.999'
+        with patch('capo.capabilities.CapabilityConversation') as research:
+            research.return_value.poll.return_value={'reply':'Checking the official listings.'}
+            self.service.natural_dispatch('followup',followup,'Can you figure out when?')
+            context=research.return_value.poll.call_args.args[1]
+            self.assertEqual(context['request_state']['original_request']['message'],original)
+            self.assertEqual(context['request_thread'],'123.456')
+            self.assertEqual(context['request_event'],'followup')

@@ -107,26 +107,8 @@ def shared_tools(home,config,documents,request=None):
             return availability(events(start,end)['events'],start,end,zone,work_start,work_end,weekdays,minimum_minutes)
         tools.append(ReadTool('calendar.availability','Find free windows and event conflicts within explicit work hours. Weekdays: 0 Monday through 6 Sunday. Supply owner preferences or label assumptions. Read-only; never books time.',
             object_schema({'start':TEXT,'end':TEXT,'work_start':TEXT,'work_end':TEXT,'weekdays':TEXTS,'minimum_minutes':TEXT}),free_time))
-        def change(action,event_id,title,location,start,end,all_day,operation_id):
-            from .calendar import GoogleCalendar,apply,event_body,writable
-            from .effects import Effects
-            plan=dict(action=action,event_id=event_id,title=title,location=location,start=start,end=end,all_day=all_day,reply='')
-            effects=Effects(home,owner_key(config));request={'kind':'calendar-change','plan':plan}
-            previous=effects.completed(operation_id,request)
-            if previous is not None:return previous
-            if action in ('create','update'):event_body(plan,zone)
-            if action in ('update','delete') and (event_id not in calendar_cache or not writable(calendar_cache[event_id])):
-                raise ValueError('Read the personal event first; guests and recurring events cannot be changed')
-            client=GoogleCalendar()
-            directory=Path(home)/'calendar-tools'/hashlib.sha256(operation_id.encode()).hexdigest()
-            directory.mkdir(parents=True,exist_ok=True,mode=0o700)
-            def execute():
-                reply=apply(client,plan,list(calendar_cache.values()),zone,directory)
-                target=hashlib.sha256(str(directory).encode()).hexdigest() if action=='create' else event_id
-                return {'changed':True,'event_id':target,'reply':reply}
-            return effects.run(operation_id,request,execute)
-        tools.append(ReadTool('calendar.change','Apply an explicitly owner-requested personal calendar change, never a planning suggestion. Reuses the calendar permission and If-Match checks. Read events first before update/delete; no guests or recurring events. Provide full preserved title/location/times on update. Timed values require explicit local offsets; all-day end date is exclusive. Unused strings empty. Never retry an unconfirmed change blindly.',
-            object_schema({'action':{'type':'string','enum':['create','update','delete']},'event_id':TEXT,'title':TEXT,'location':TEXT,'start':TEXT,'end':TEXT,'all_day':{'type':'boolean'}}),change,mutates=True))
+        from .calendar_actions import CalendarActions
+        tools.extend(CalendarActions(home,owner_key(config),zone,calendar_cache).tools())
     repositories=config.get('repositories',{})
     if repositories:
         def issues(repository):
