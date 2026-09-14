@@ -85,6 +85,19 @@ class SlackCase(unittest.TestCase):
                 self.service.dispatch("unauthorized", body)
             router.return_value.poll.assert_called_once()
 
+    def test_specialist_delegation_preserves_owner_boundary(self):
+        self.router.poll.side_effect = None
+        self.router.poll.return_value = {'action':'money_saver','repository':'','objective_id':'','reply':''}
+        with patch('capo.team.dispatch', return_value='Here are the savings.') as specialist:
+            body=self.body('Review these subscription costs.')
+            self.assertEqual(self.service.dispatch('team-request',body),'Here are the savings.')
+            self.assertEqual(specialist.call_args.args[2],'money_saver')
+            self.assertEqual(specialist.call_args.args[3]['message'],'Review these subscription costs.')
+            self.assertFalse(self.router.poll.call_args.args[1]['team']['connections']['email'])
+            body['event']['user']='OTHER'
+            with self.assertRaises(ValueError):self.service.dispatch('other',body)
+            specialist.assert_called_once()
+
     def test_calendar_routing_requires_owner_and_enabled_connection(self):
         self.router.poll.side_effect = None
         self.router.poll.return_value = {"action": "calendar", "repository": "", "objective_id": "", "reply": ""}

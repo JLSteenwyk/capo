@@ -131,3 +131,5 @@ Google Calendar: [connect your calendar](docs/calendar.md) to check your schedul
 Morning briefings: [daily digest and feedback](docs/digest.md) covers scheduling, news preferences, and private setup.
 
 Screenshots and diagrams: [Slack image support](docs/images.md) explains supported formats and the required Slack permission.
+
+Meet [Capo’s specialist team](docs/team.md) and connect [Gmail inbox checks](docs/gmail.md).

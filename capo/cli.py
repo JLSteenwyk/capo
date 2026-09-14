@@ -89,6 +89,8 @@ def parser():
     preview.add_argument("--config", type=Path, required=True)
     preview.add_argument("--env-file", type=Path, required=True)
     preview.add_argument("--id", required=True, help="Stable preview ID; reuse it to resume without duplication")
+    gmail_auth = commands.add_parser("gmail-auth", help="Connect read-only Gmail inbox access")
+    gmail_auth.add_argument("--client-secrets", type=Path, required=True)
     calendar_auth = commands.add_parser("calendar-auth", help="Connect a private Google Calendar account")
     calendar_auth.add_argument("--client-secrets", type=Path, required=True)
     commands.add_parser("calendar-check", help="Check Google Calendar access without changing events")
@@ -206,6 +208,14 @@ def main(argv=None):
             from .digest_cli import load_slack_environment
             load_slack_environment(args.env_file)
             args.command = "slack"
+        if args.command == "gmail-auth":
+            from .gmail import authorize
+            try:
+                authorize(args.client_secrets.expanduser())
+            except Exception:
+                raise RuntimeError("Gmail sign-in failed. Check the private client file and Google OAuth setup.") from None
+            print("Gmail connected. Enable gmail in your private Slack configuration.")
+            return 0
         if args.command == "calendar-auth":
             from .calendar import authorize
             try:

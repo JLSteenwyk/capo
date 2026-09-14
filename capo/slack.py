@@ -136,6 +136,9 @@ def validate_config(config):
     repos = config.get("repositories")
     if not isinstance(repos, dict) or not repos:
         raise ValueError("Configure at least one named repository")
+    gmail_settings = config.get("gmail", {})
+    if not isinstance(gmail_settings, dict) or type(gmail_settings.get("enabled", False)) is not bool:
+        raise ValueError("gmail.enabled must be true or false")
     calendar_settings = config.get("calendar", {})
     if not isinstance(calendar_settings, dict) or type(calendar_settings.get("enabled", False)) is not bool:
         raise ValueError("calendar.enabled must be true or false")
@@ -360,7 +363,9 @@ class SlackService:
                 break
         if self.conversation is None:
             self.conversation = ConversationRouter(self.store.home)
+        from .team import roster
         route = self.conversation.poll(event_id, {
+            "team": roster(self.config),
             "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles"),
             "browser_enabled": self.config.get("browser", {}).get("enabled", False),
             "browser_preferences": self.config.get("browser", {}).get("preferences", {}),
@@ -372,9 +377,23 @@ class SlackService:
         action, alias, identifier = route["action"], route["repository"], route["objective_id"]
         if action == "reply":
             return route["reply"] or "What would you like me to do, and for which repository?"
+        if action in ("money_saver", "style_assistant", "shopping_assistant"):
+            from .team import dispatch as specialist_dispatch
+            return specialist_dispatch(self, event_id, action, {
+                "message": text, "recent_messages": list(reversed(recent)),
+                "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles")})
         if action == "digest":
             from .digest_feedback import dispatch as digest_dispatch
             return digest_dispatch(self, event_id, event, "digest " + text)
+        if action == "inbox":
+            from .gmail import InboxConversation, TOKEN
+            if not self.config.get("gmail", {}).get("enabled", False) or not TOKEN.exists():
+                return "Gmail needs to be connected first. I can then check your inbox for messages needing attention."
+            if not hasattr(self, "inbox_conversation"):
+                self.inbox_conversation = InboxConversation(self.store.home)
+            return self.inbox_conversation.poll(event_id, {
+                "aliases": [], "objectives": [], "message": text,
+                "recent_messages": list(reversed(recent))})["reply"]
         if action == "calendar":
             from .calendar import CalendarConversation
             if not self.config.get("calendar", {}).get("enabled", False):
