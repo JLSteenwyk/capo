@@ -78,6 +78,7 @@ def _validate(route, schema, reply_limit=2000):
 
 class ConversationRouter:
     reply_limit = 2000
+    recoverable = False
 
     def __init__(self, home):
         self.root = Path(home) / "conversation"
@@ -109,8 +110,19 @@ class ConversationRouter:
                     return self._result(directory)
                 marker = directory / "started.json"
                 if marker.exists():
-                    _write(outcome, {"error": "interrupted"})
-                    raise ConversationError(_INTERRUPTED)
+                    if not self.recoverable:
+                        _write(outcome, {"error": "interrupted"})
+                        raise ConversationError(_INTERRUPTED)
+                    import time
+                    retry = directory/'retry.json'
+                    if retry.exists() and time.time() < json.loads(retry.read_text())['retry_at']:
+                        raise ConversationPending()
+                    frozen = json.loads(marker.read_text())
+                    worker = threading.Thread(target=self._run,
+                        args=(directory, frozen['context'], frozen['schema'], fd), daemon=True)
+                    worker.start()
+                    transferred = True
+                    raise ConversationPending()
                 schema = _schema(context)
                 # JSON roundtrip freezes nested input before the caller mutates it.
                 snapshot = json.loads(json.dumps(context))

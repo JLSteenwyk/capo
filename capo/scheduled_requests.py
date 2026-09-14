@@ -50,7 +50,7 @@ class ScheduledManager(DigestManager):
                 run=self.db.create(dict(key=key,scope=self.owner,day=due.date().isoformat(),status='queued',
                     created=now.timestamp(),deadline=deadline.timestamp(),identity=identity(self.service.config),
                     schedule_id=s['id'],revision=s['revision'],request=s['request'],title=s['title'],attempts=0),now)
-            if run['status'] not in ('queued','building'):continue
+            if run['status'] not in ('queued','building') or now.timestamp()<run.get('retry_at',0):continue
             worker=self.workers.get(key)
             if worker and worker.is_alive():continue
             directory=self.db.root/hashlib.sha256(key.encode()).hexdigest();directory.mkdir(mode=0o700,exist_ok=True)
@@ -74,13 +74,18 @@ class ScheduledManager(DigestManager):
                     request={'message':run['request'],'timezone':s['timezone']}
                     registry=shared_tools(self.service.store.home,config,docs,request)
                     readonly=ReadTools([t for t in registry.tools.values() if not t.mutates])
-                    attempt=directory/str(run['attempts'])
+                    attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
-                    result=research(Providers(timeout=90),readonly,request,attempt,max_calls=10,
+                    result=research(Providers(timeout=90),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
                         instructions='This is an owner-scheduled read-only request. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)
                     run.update(status='ready',payload={'text':result['reply'],'news':[]})
-                except Exception:run['status']='queued'
+                except Exception as exc:
+                    from .recovery import RetryLater
+                    if isinstance(exc, RetryLater):
+                        run.update(status='queued', retry_at=exc.retry_at, attempts=max(0, run['attempts']-1))
+                    else:
+                        run.update(status='queued', retry_at=datetime.now(timezone.utc).timestamp()+60)
                 finally:
                     try:
                         if db is not None:db.save(run,datetime.now(timezone.utc))

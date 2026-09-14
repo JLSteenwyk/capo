@@ -138,6 +138,8 @@ def validate_config(config):
         raise ValueError("Configure at least one named repository")
     from .heartbeat import settings as heartbeat_settings
     heartbeat_settings(config)
+    from .recovery import policy as recovery_policy
+    recovery_policy(config.get('recovery'))
     gmail_settings = config.get("gmail", {})
     if not isinstance(gmail_settings, dict) or type(gmail_settings.get("enabled", False)) is not bool:
         raise ValueError("gmail.enabled must be true or false")

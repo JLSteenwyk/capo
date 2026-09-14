@@ -64,7 +64,25 @@ def complete_reply(result):
     return reply + '\n\n' + content
 
 
-def research(provider, tools, request, directory, instructions='', max_calls=6):
+def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None):
+    """Serialize the entire reasoning/tool loop, including external tool calls."""
+    import fcntl
+    import os
+    import time
+    from .recovery import RetryLater
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(directory/'research.lock', os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RetryLater(time.time() + 5, 'This request is already running') from None
+        return _research(provider, tools, request, directory, instructions, max_calls, recovery)
+    finally:
+        os.close(fd)
+
+
+def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None):
     """Compose tools without a task-type enum; return evidence receipts and a document.
 
     max_calls counts tool attempts, including invalid calls. A final provider turn
@@ -74,16 +92,43 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
         raise ValueError('Invalid research budget')
     directory.mkdir(parents=True,exist_ok=True,mode=0o700)
     (directory/'cwd').mkdir(exist_ok=True,mode=0o700)
-    now=datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat()
-    receipts = []
-    evidence_size = 0
+    from .recovery import RecoveringProvider, RecoveryStopped
+    provider = RecoveringProvider(provider, recovery)
+    checkpoint = directory/'checkpoint.json'
+    fingerprint = hashlib.sha256(json.dumps([request, tools.catalog(), instructions, max_calls], sort_keys=True).encode()).hexdigest()
+    if checkpoint.exists():
+        state = json.loads(checkpoint.read_text())
+        if state['fingerprint'] != fingerprint:
+            raise RecoveryStopped('Research input changed; start a new continuation')
+    else:
+        state = {'fingerprint': fingerprint, 'now': datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat(),
+                 'receipts': [], 'pending': None}
+        _write(checkpoint, state)
+    if (directory/'cancelled.json').exists():
+        raise RecoveryStopped('Research was cancelled')
+    if 'result' in state:
+        return state['result']
+    now = state['now']
+    receipts = state['receipts']
+    if state['pending'] is not None:
+        # A process may have died after a write reached the service. Retain the
+        # uncertain attempt as evidence; the agent must use reconciliation tools.
+        pending = state['pending']
+        receipts.append({'tool': pending['tool'], 'arguments': pending['arguments'], 'uncertain': True,
+                         'error': 'Interrupted tool attempt; its outcome is unconfirmed. Read current state and reconcile before any further write.'})
+        state['pending'] = None
+        _write(checkpoint, state)
+        _write(directory/'receipts.json', receipts)
+    evidence_size = sum(len(json.dumps(r.get('result', {}))) for r in receipts)
     memory = None
     if request.get('request_thread'):
         # The caller supplies only host-authorized thread context.
         context_tool = tools.tools.get('context.read')
         if context_tool:
             memory = getattr(context_tool.execute, '__self__', None)
-    for step in range(max_calls + 1):
+    for step in range(len(receipts), max_calls + 1):
+        if (directory/'cancelled.json').exists():
+            raise RecoveryStopped('Research was cancelled')
         remaining = max_calls - step
         prompt = (
             f'Current local time: {now}. Complete the owner request using the registered tools. Choose your next tool '
@@ -126,7 +171,10 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
             result = {**result, 'reply': complete_reply(result)}
             if memory is not None:
                 memory.record(request.get('request_event',str(directory)), 'outcome', {'reply':result['reply']})
-            return {**result, 'receipts': receipts}
+            completed = {**result, 'receipts': receipts}
+            state['result'] = completed
+            _write(checkpoint, state)
+            return completed
         if not remaining or evidence_size >= 180000:
             return {'reply': 'The research limit was reached before the analysis finished. '
                     'The saved evidence is partial; please narrow the request.',
@@ -138,12 +186,24 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
                 raise ValueError('Arguments too large')
             arguments = json.loads(result['arguments_json'])
             action_key = hashlib.sha256(json.dumps([result['tool'], arguments], sort_keys=True).encode()).hexdigest()
+            chosen = tools.tools.get(result['tool'])
+            prior = next((r for r in reversed(receipts) if r['tool'] == result['tool']
+                          and r.get('arguments') == arguments), None)
+            if chosen is not None and chosen.mutates and prior and prior.get('uncertain'):
+                from .effects import UncertainEffect
+                raise UncertainEffect('Interrupted action must be reconciled; no write was repeated')
+            state['pending'] = {'tool': result['tool'], 'arguments': arguments}
+            _write(checkpoint, state)
+            if (directory/'cancelled.json').exists():
+                raise RecoveryStopped('Research was cancelled')
             evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+action_key)
             size = len(json.dumps(evidence))
             if size > 180000 - evidence_size:
                 raise ValueError('Evidence budget exceeded')
             evidence_size += size
             receipts.append({'tool': result['tool'], 'arguments': arguments, 'result': evidence})
+        except RecoveryStopped:
+            raise
         except Exception as exc:
             from .web_tools import WebError
             from .effects import UncertainEffect
@@ -152,6 +212,8 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
             # Keep provider bodies, credentials, and arbitrary exception messages private.
             receipts.append({'tool': result['tool'], 'error':
                              safe_error})
+        state['pending'] = None
+        _write(checkpoint, state)
         _write(directory/'receipts.json',receipts)
         if memory is not None:
             key=str(directory.resolve())+':'+str(step)

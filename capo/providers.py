@@ -21,6 +21,32 @@ class AuthenticationError(WorkerError):
     """Provider login needs attention; safe to identify without exposing output."""
 
 
+def reported_failure(envelope, provider, directory):
+    """Normalize reported errors without copying provider output into user errors."""
+    from datetime import datetime
+    import time
+    from .recovery import RateLimited
+    raw = envelope.get('error')
+    data = raw if isinstance(raw, dict) else envelope
+    message = str(data.get('message', envelope.get('result', raw or ''))).lower()
+    if any(word in message for word in ('failed to authenticate', 'oauth session expired', 'authentication required')):
+        raise AuthenticationError(provider + ' login has expired. Reconnect on the computer running Capo.')
+    if data.get('status') == 429 or any(word in message for word in ('rate limit', 'usage limit', 'too many requests')):
+        reset = time.time() + 3600
+        try:
+            if 'reset_at' in data:
+                value = data['reset_at']
+                reset = float(value) if isinstance(value, (int, float)) else datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
+            elif 'retry_after' in data:
+                reset = time.time() + max(0, float(data['retry_after']))
+        except (TypeError, ValueError, OverflowError):
+            pass
+        raise RateLimited(reset)
+    if any(word in message for word in ('overloaded', 'temporarily unavailable', 'service unavailable')):
+        raise ConnectionError(provider + ' is temporarily unavailable.')
+    raise WorkerError(f'{provider} reported failure; inspect {directory}')
+
+
 class Providers:
     def __init__(self, timeout=900, config=None):
         from .transport import load_config, validate_config
@@ -67,10 +93,7 @@ class Providers:
             else:
                 envelope = decode_json(output)
             if envelope.get("is_error") or envelope.get("subtype", "success") != "success":
-                failure = str(envelope.get("result", "")).lower()
-                if "failed to authenticate" in failure or "oauth session expired" in failure:
-                    raise AuthenticationError("Claude login has expired. Reconnect Claude on the computer running Capo.")
-                raise WorkerError(f"Claude reported failure; inspect {directory}")
+                reported_failure(envelope, 'Claude', directory)
             result = envelope.get("structured_output")
             if result is None:
                 result = decode_json(envelope.get("result", ""))
@@ -97,7 +120,7 @@ class Providers:
             if (envelope.get("is_error") or envelope.get("error")
                     or envelope.get("type") == "error"
                     or envelope.get("stopReason", "end_turn") != "end_turn"):
-                raise WorkerError(f"Grok reported failure; inspect {directory}")
+                reported_failure(envelope, 'Grok', directory)
             result = envelope.get("structuredOutput")
             if result is None:
                 result = envelope.get("structured_output")

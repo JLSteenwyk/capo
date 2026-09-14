@@ -126,6 +126,7 @@ def shared_tools(home,config,documents,request=None):
 class CapabilityConversation(ConversationRouter):
     # Short introduction plus the complete bounded document.
     reply_limit = 16000
+    recoverable = True
 
     def __init__(self,home,config):
         self.home=Path(home);self.config=json.loads(json.dumps(config))
@@ -142,12 +143,17 @@ class CapabilityConversation(ConversationRouter):
                 'is unavailable because an earlier bot message said so; the current tool catalog is authoritative. '
                 'For daily or weekly planning, combine active tasks, deadlines, dependencies, waiting items, calendar availability and relevant email evidence. '
                 'Highlight conflicts, preparation and work windows; label assumptions about work hours and task duration. '
-                'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first.',max_calls=10)
+                'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first.',max_calls=10, recovery=self.config.get('recovery'))
             key=self.documents.save(directory,result)
             _write(directory/'research.json',result)
             if key:_write(directory/'document.json',{'id':key,'title':result['document_title'],'content':result['document']})
             reply=result['reply']
         except Exception as exc:
+            from .recovery import RetryLater
+            if isinstance(exc, RetryLater):
+                _write(directory/'retry.json', {'retry_at': exc.retry_at})
+                os.close(fd)
+                return
             from .providers import AuthenticationError
             if isinstance(exc, AuthenticationError):
                 reply='Claude’s login needs to be renewed on the computer running Capo. Your request and any saved progress are preserved.'

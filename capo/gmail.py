@@ -226,6 +226,7 @@ class GmailReadTools(ReadTools):
 class InboxConversation(ConversationRouter):
     # Short introduction plus the complete bounded document.
     reply_limit = 16000
+    recoverable = True
 
     # Keep the route name for compatibility with existing Slack configuration.
     def __init__(self, home): super().__init__(home/'gmail')
@@ -247,7 +248,12 @@ class InboxConversation(ConversationRouter):
                     'content': result['document'], 'source': 'Gmail research',
                     'message_ids': sorted({m['id'] for receipt in result['receipts']
                         for m in receipt.get('result', {}).get('messages', []) if 'body' in m})})
-        except Exception:
+        except Exception as exc:
+            from .recovery import RetryLater
+            if isinstance(exc, RetryLater):
+                _write(directory/'retry.json', {'retry_at': exc.retry_at})
+                os.close(fd)
+                return
             reply = 'I couldn’t complete the email research. The connection, tool, or analysis failed; '
             reply += 'I have not sent or changed any email.'
         try:_write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply}})
