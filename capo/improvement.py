@@ -90,7 +90,7 @@ def add_improvement(store, args):
 CORE_ENFORCEMENT = frozenset({
     "capo/runtime.py", "capo/repository.py", "capo/improvement.py", "capo/providers.py",
     "capo/process.py", "capo/watchdog.py", "capo/transport.py", "capo/guest.py",
-    "capo/digest_cli.py", "capo/digest.py", "capo/digest_sources.py", "capo/digest_service.py", "capo/digest_feedback.py", "capo/research_tools.py", "capo/capabilities.py", "capo/heartbeat.py", "capo/gmail.py", "capo/team.py", "capo/slack_images.py", "capo/calendar.py", "capo/browser.py", "capo/browser_slack.py", "capo/finalize.py", "capo/github.py", "capo/store.py", "capo/slack.py", "capo/cli.py", "capo/contracts.py", "capo/conversation.py", "capo/routine.py", "capo/delivery.py", "capo/communication.py",
+    "capo/digest_cli.py", "capo/digest.py", "capo/digest_sources.py", "capo/digest_service.py", "capo/digest_feedback.py", "capo/tasks.py", "capo/research_tools.py", "capo/capabilities.py", "capo/heartbeat.py", "capo/gmail.py", "capo/team.py", "capo/slack_images.py", "capo/calendar.py", "capo/browser.py", "capo/browser_slack.py", "capo/finalize.py", "capo/github.py", "capo/store.py", "capo/slack.py", "capo/cli.py", "capo/contracts.py", "capo/conversation.py", "capo/routine.py", "capo/delivery.py", "capo/communication.py",
     "capo/__init__.py", "capo/__main__.py", "pyproject.toml", "setup.py", "setup.cfg",
     "sitecustomize.py", "usercustomize.py",
 })

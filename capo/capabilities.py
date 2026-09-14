@@ -51,6 +51,8 @@ def shared_tools(home,config,documents):
                    lambda:{'now':datetime.now(ZoneInfo(zone)).isoformat(),'timezone':zone}),
            ReadTool('documents.list','List reusable private documents saved for this owner.',object_schema({}),documents.list),
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
+    from .tasks import Tasks
+    tools.extend(Tasks(home, owner_key(config)).tools())
     if config.get('gmail',{}).get('enabled'):
         from .gmail import Gmail, GmailReadTools
         class LazyMail:
