@@ -179,7 +179,8 @@ PLAN = object_schema({'action': {'type': 'string', 'enum': ['read', 'ask', 'crea
 
 
 class CalendarConversation(ConversationRouter):
-    def __init__(self, home):
+    def __init__(self, home, owner=None):
+        self.home=Path(home);self.owner=owner
         super().__init__(Path(home) / 'calendar')
 
     def poll(self, event_id, context):
@@ -244,12 +245,33 @@ class CalendarConversation(ConversationRouter):
                 elif plan['action'] == 'ask':
                     reply = plan['reply'][:1500] or 'What would you like to do with your calendar?'
                 else:
-                    reply = apply(client, plan, events, zone, directory)
+                    if self.owner is None:
+                        reply = apply(client, plan, events, zone, directory)
+                    else:
+                        from .calendar_actions import CalendarActions
+                        arguments={k:v for k,v in plan.items() if k!='reply'}
+                        actions=CalendarActions(self.home,self.owner,zone,{e['id']:e for e in events if e.get('id')})
+                        try:
+                            result=actions.change(**arguments,operation_id=str(directory.resolve()))
+                        except Exception:
+                            if context.get('request_thread'):
+                                from .request_memory import RequestMemory
+                                RequestMemory(self.home,self.owner,context['request_thread']).record(str(directory),'action',
+                                    {'tool':'calendar.change','arguments':arguments,'error':'Calendar change did not return a success receipt. Check pending actions before retrying.'})
+                            raise
+                        if context.get('request_thread'):
+                            from .request_memory import RequestMemory
+                            RequestMemory(self.home,self.owner,context['request_thread']).record(str(directory),'action',
+                                {'tool':'calendar.change','arguments':arguments,'result':result})
+                        reply=result['reply']
         except CalendarError as exc:
             reply = str(exc)
         except Exception:
             pass  # Never expose OAuth or API exception contents in Slack.
         try:
+            if self.owner and context.get('request_thread'):
+                from .request_memory import RequestMemory
+                RequestMemory(self.home,self.owner,context['request_thread']).record(context.get('request_event',str(directory)),'outcome',{'reply':reply})
             _write(directory / 'outcome.json', {'route': {'action': 'reply', 'repository': '',
                                                         'objective_id': '', 'reply': reply}})
         finally:

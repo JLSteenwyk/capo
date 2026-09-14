@@ -8,11 +8,13 @@ class RequestMemoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             memory=RequestMemory(home,'owner','thread')
             memory.record('first','owner',{'message':'Find dates and make reminders'})
+            memory.record('notes','notes',{'objective':'Find dates and make reminders','facts':['Source is known'],'uncertainties':['Which performance?'],'next_steps':['Ask which date']})
             memory.record('first','owner',{'message':'Duplicate must not replace original'})
             for i in range(40):memory.record(str(i),'owner',{'message':'Follow-up '+str(i)})
             result=RequestMemory(home,'owner','thread').read()
             self.assertEqual(result['original_request']['message'],'Find dates and make reminders')
             self.assertEqual(len(result['history']),30)
+            self.assertEqual(result['latest_working_notes']['uncertainties'],['Which performance?'])
             self.assertIsNone(RequestMemory(home,'someone-else','thread').read()['original_request'])
             self.assertIsNone(RequestMemory(home,'owner','another-thread').read()['original_request'])
 

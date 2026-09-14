@@ -37,6 +37,7 @@ class RequestMemory:
         with self.connect() as db:
             first = db.execute("SELECT data FROM entries WHERE thread=? AND kind='owner' ORDER BY rowid LIMIT 1", (self.thread,)).fetchone()
             rows = db.execute('SELECT kind,data FROM entries WHERE thread=? ORDER BY rowid DESC LIMIT 30', (self.thread,)).fetchall()
+            notes = db.execute("SELECT data FROM entries WHERE thread=? AND kind='notes' ORDER BY rowid DESC LIMIT 1", (self.thread,)).fetchone()
         history=[];size=0
         for kind, raw in rows:
             if size+len(raw)>50000:continue
@@ -44,6 +45,7 @@ class RequestMemory:
         # Notes are model interpretations, never new owner authority or verified facts.
         return {'original_request': json.loads(first[0]) if first else None,
                 'history': list(reversed(history)),
+                'latest_working_notes':json.loads(notes[0]) if notes else None,
                 'coverage': 'Original owner request and latest 30 records within 50 KB. Notes are unverified interpretations; receipts describe actual tool outcomes.'}
 
     def actions(self, cursor):

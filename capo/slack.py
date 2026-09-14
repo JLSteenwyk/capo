@@ -434,10 +434,11 @@ class SlackService:
             if not self.config.get("calendar", {}).get("enabled", False):
                 return "Google Calendar is not connected yet. Run capo calendar-auth first."
             if not hasattr(self, "calendar_conversation"):
-                self.calendar_conversation = CalendarConversation(self.store.home)
+                self.calendar_conversation = CalendarConversation(self.store.home, owner_key(self.config))
             return self.calendar_conversation.poll(event_id, {
                 "aliases": [], "objectives": [], "message": text,
                 "recent_messages": list(reversed(recent)), "request_state": request_state,
+                "request_thread": thread, "request_event": event_id,
                 "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles")
             })["reply"]
         if action == "browser":

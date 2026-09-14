@@ -169,3 +169,22 @@ class CalendarTests(unittest.TestCase):
                 self.finish(router)
             self.assertIn('interrupted', self.finish(router)['reply'])
             client.assert_not_called()
+
+    def test_owner_calendar_route_uses_shared_action_receipts(self):
+        from capo.request_memory import RequestMemory
+        router=CalendarConversation(self.home,'owner')
+        context=dict(aliases=[],objectives=[],timezone='America/Los_Angeles',
+                     message='Create the walk event.',request_thread='thread',request_event='test')
+        window=dict(action='window',start=self.plan['start'],end=self.plan['end'],question='')
+        with patch('capo.calendar.GoogleCalendar',return_value=self.client),patch('capo.calendar_actions.GoogleCalendar',return_value=self.client),patch('capo.calendar.Providers') as provider:
+            self.client.events.return_value=[]
+            provider.return_value.call.side_effect=[window,self.plan]
+            for _ in range(500):
+                try:
+                    result=router.poll('test',context);break
+                except ConversationPending:time.sleep(.005)
+            else:self.fail('Calendar worker did not finish')
+            self.assertIn('Added',result['reply'])
+            actions=RequestMemory(self.home,'owner','thread').actions('')['actions']
+            self.assertEqual(len(actions),1);self.assertTrue(actions[0]['result']['changed'])
+            self.assertEqual(self.client.request.call_count,1)

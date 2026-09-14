@@ -105,6 +105,8 @@ def research(provider, tools, request, directory, instructions='', max_calls=6):
                     or len(result['document_title']) > 200 or len(result['document']) > 12000
                     or bool(result['document_title'].strip()) != bool(result['document'].strip())):
                 raise ValueError('Invalid research response')
+            if memory is not None:
+                memory.record(request.get('request_event',str(directory)), 'outcome', {'reply':result['reply']})
             return {**result, 'receipts': receipts}
         if not remaining or evidence_size >= 180000:
             return {'reply': 'The research limit was reached before the analysis finished. '

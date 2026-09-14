@@ -1,12 +1,12 @@
 # Resolving incomplete requests
 
-Capo's shared capability loop is being extended to investigate missing facts before asking the owner. Researchable facts (such as an event date) differ from personal choices (such as which of two performances to attend). Retrieved content is evidence, never permission to act.
+Capo's shared capability loop investigates missing facts before asking the owner. Researchable facts (such as an event date) differ from personal choices (such as which of two performances to attend). Retrieved content is evidence, never permission to act.
 
 The implementation must preserve the complete owner objective across routes and follow-ups, retain resolved facts and unresolved questions, and bind completed actions to durable receipts. Web research needs bounded search and page reads with source links. Contextual guesses must be checked against those sources. A missing or conflicting source must remain visible as uncertainty.
 
 `dates.shift` is available in the shared registry. It adds a signed number of local calendar days to an ISO date or offset datetime. For example, subtracting fourteen days preserves local wall time across a daylight saving boundary. Timed inputs must match the supplied timezone. Repeated or nonexistent destination times return a clarification requirement rather than silently choosing a time. Date-only values stay date-only, including year and leap-day boundaries.
 
-Full end-to-end request resolution is still being verified. The primitives below do not yet establish every multi-step behavior.
+The primitives below are shared across requests. Results depend on source availability and the agent’s interpretation; unresolved ambiguity must remain visible.
 
 ## Shared research and request memory
 
@@ -18,7 +18,7 @@ Slack now saves the original owner request separately from its short recent-mess
 
 The router directs calendar requests requiring outside facts to the shared tool loop. Simple calendar operations retain their existing specialized handler. Research instructions distinguish researchable facts from personal choices and require authoritative verification, duplicate checks, and receipts before claiming completion.
 
-Live probes have confirmed subscription web search and public page reading. Full multi-step behavior, long-term action reconciliation and deployment validation remain in progress.
+Live probes confirmed subscription web search and public page reading. Automated tests cover multi-step composition, action reconciliation and preservation of the original request across routing changes.
 
 A live read-only preview of the motivating two-performance question chose two web searches, read two official event pages, and used `dates.shift` twice. Both pages contained the event year. The loop returned source-linked dates and reminder dates without requesting details from the owner. Mutation tools were removed for this preview; it does not prove live calendar creation or the complete Slack follow-up path.
 
@@ -31,3 +31,14 @@ The shared calendar adapter checks for an exact matching title, location and tim
 `context.actions` pages through the thread's durable host-recorded mutation attempts, independent of the recent-history window. Errors remain distinct from successful receipts. Specialized agents receive the same original request state and can use the shared context tools.
 
 These checks suppress exact duplicates; semantically similar events or tasks with different fields still require agent comparison. A calendar state matching an uncertain update confirms the desired state, not who performed the update. External concurrent writers remain subject to the existing calendar revision safeguards.
+
+
+## Verification and practical limits
+
+The required suite covers researched event/travel dates, an appointment clarification followed by a date-only reply, mail-to-task/draft composition, blocked tools, duplicate events, lost responses, restarts, expired credentials, DST and malicious source text. Live Claude routing selected research for both the initial image-enriched concert request and its short follow-up.
+
+A live Claude evaluation using synthetic sources and fake remote services asked one question when two performances were equally plausible and made no changes. Another evaluation used the real shared adapters with fake remote services: it read an injected page, ignored the unrelated instruction, calculated the requested date, checked existing events and created exactly one valid all-day calendar payload. This evaluates model behavior without modifying personal calendars; it is not a live Google Calendar write.
+
+Simple calendar requests in Slack now share the same action adapter and owner-scoped receipts as researched requests. The latest working notes remain available even after they leave recent history. Reconciliation checks the desired remote state; it never resubmits an uncertain write automatically.
+
+No additional account setup is required on the configured installation. Public search uses the existing Claude subscription. Some public pages block access or require JavaScript, so Capo may need another source or one clarification. Research is bounded; no finite set of evaluations guarantees correct interpretation of every request or resistance to every injected instruction.

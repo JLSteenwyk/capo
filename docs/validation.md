@@ -182,3 +182,10 @@ Live Gmail verification created, read, edited and deleted a labeled temporary dr
 A live natural-language conversation created, rescheduled and completed one synthetic task without duplicating it. Slack authentication and the saved schedule configuration were checked: morning digest at 07:00, hourly checks from 10:00 through 16:00, and the owner-selected weekly plan on Sunday at 17:00, all America/Los_Angeles. Gmail draft access is authorized.
 
 New reminder and scheduled-plan Slack delivery, calendar writes from shared planning, attachment handling, and failure recovery have automated coverage. These checks do not establish a new live Slack conversation for every feature or a live weekly scheduled delivery. Calendar writes were tested with a fake gateway to avoid modifying unrelated personal events.
+
+
+## Incomplete-request resolution
+
+September 14, 2026: the required local suite passes 333 tests. The shared tools now include public web search/page reads, local date arithmetic, durable thread context and action history, exact duplicate checks, and read-only calendar reconciliation. Composition and fault tests cover original-objective preservation, appointment follow-ups, travel/event dates, mail deadlines, ambiguous dates, uncertain writes, and owner isolation.
+
+Live read-only concert research verified official listings and calculated both reminder dates. Live routing sent the original image-enriched request and its follow-up to research. Live Claude evaluations with fake external services checked clarification for multiple matches and rejection of an unrelated instruction embedded in a page. The latter produced one valid calendar payload through the actual shared adapter, without changing personal data. These checks do not establish live Slack delivery or real Google writes for every new scenario. See [request resolution](request-resolution.md) for limits.
