@@ -17,6 +17,10 @@ def decode_json(text):
     return value
 
 
+class AuthenticationError(WorkerError):
+    """Provider login needs attention; safe to identify without exposing output."""
+
+
 class Providers:
     def __init__(self, timeout=900, config=None):
         from .transport import load_config, validate_config
@@ -61,6 +65,9 @@ class Providers:
             else:
                 envelope = decode_json(output)
             if envelope.get("is_error") or envelope.get("subtype", "success") != "success":
+                failure = str(envelope.get("result", "")).lower()
+                if "failed to authenticate" in failure or "oauth session expired" in failure:
+                    raise AuthenticationError("Claude login has expired. Reconnect Claude on the computer running Capo.")
                 raise WorkerError(f"Claude reported failure; inspect {directory}")
             result = envelope.get("structured_output")
             if result is None:

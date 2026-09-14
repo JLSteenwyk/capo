@@ -37,6 +37,16 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(blocks[1]['type'],'image')
         self.assertEqual(base64.b64decode(blocks[1]['source']['data']),self.png)
 
+    def test_expired_login_is_reported_as_authentication_failure(self):
+        from capo.providers import AuthenticationError
+        result={'type':'result','subtype':'success','is_error':True,
+                'result':'Failed to authenticate: OAuth session expired and could not be refreshed'}
+        with patch('capo.providers.run_process',return_value=json.dumps(result)):
+            with self.assertRaisesRegex(AuthenticationError,'login has expired'):
+                Providers(config={}).call('claude','Describe it',object_schema({'answer':TEXT}),
+                    self.root,self.root/'expired',images=[{'media_type':'image/png',
+                    'data':base64.b64encode(self.png).decode()}])
+
     def test_download_only_uses_trusted_slack_url(self):
         client=Mock();client.files_info.return_value={'file':{'size':len(self.png),'mimetype':'image/png','url_private':'https://files.slack.com/files-pri/example/image.png'}}
         response=Mock();response.read.return_value=self.png

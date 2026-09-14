@@ -9,7 +9,7 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 from .contracts import TEXT, object_schema, validate
 from .conversation import ConversationRouter, _write
-from .providers import Providers
+from .providers import Providers, AuthenticationError
 
 LIMIT=4_000_000
 SCHEMA=object_schema({'observations':TEXT, 'uncertainties':TEXT})
@@ -85,7 +85,7 @@ class ImageConversation(ConversationRouter):
             response=value['observations'][:1600]
             if value['uncertainties'].strip():response+='\nUncertain: '+value['uncertainties'][:300]
             _write(directory/'observation.json',value)
-        except ImageError as exc:response=str(exc)
+        except (ImageError, AuthenticationError) as exc:response=str(exc)
         except Exception:response='I couldn’t analyze that image. Please try again or send a clearer version.'
         try:
             _write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':response}})
