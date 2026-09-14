@@ -83,3 +83,13 @@ class TaskWorkTests(unittest.TestCase):
         with patch('capo.task_work.shared_tools', return_value=self.registry), patch('capo.task_work.research', return_value=result) as run:
             self.worker.tick(self.now, [])
             self.assertEqual(run.call_count, 2)
+
+    def test_relevant_new_evidence_wakes_work_once_before_its_next_review(self):
+        self.tasks.save('', '', fields(sources=['email:message-a']), 'task')
+        result = {'reply':'No further change.', 'document':'', 'document_title':'', 'receipts':[]}
+        change = {'id':'updated', 'kind':'email', 'source_reference':'email:message-a', 'title':'Updated proposal'}
+        with patch('capo.task_work.shared_tools', return_value=self.registry), patch('capo.task_work.research', return_value=result) as run:
+            self.worker.tick(self.now, [])
+            self.worker.tick(self.now+timedelta(hours=1), [change], changes=[change])
+            self.worker.tick(self.now+timedelta(hours=2), [change], changes=[change])
+            self.assertEqual(run.call_count, 2)

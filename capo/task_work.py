@@ -29,7 +29,7 @@ class TaskWork:
         self.root = self.tasks.root/'work'
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
 
-    def tick(self, now, evidence, seen=None):
+    def tick(self, now, evidence, seen=None, changes=None):
         if not self.policy['enabled']:
             return []
         fd = os.open(self.root/'execution.lock', os.O_CREAT | os.O_RDWR, 0o600)
@@ -61,10 +61,14 @@ class TaskWork:
                 grant = authority(self.tasks, task['id'])
                 if not grant or not grant['allowed_actions'] or not task['ready']:
                     continue
+                relevant = [item for item in (changes or []) if set(task['sources']) & {item.get('source_reference'), item.get('url'), item.get('message_id'), item.get('event_id')}]
+                previous = self.root/task['id']/'active.json'
+                if relevant and previous.exists() and json.loads(previous.read_text()).get('change_key') == digest(relevant):
+                    relevant = []
                 review = task.get('follow_through', {}).get('next_review_at')
-                if review and datetime.fromisoformat(review) > now:
+                if review and datetime.fromisoformat(review) > now and not relevant:
                     continue
-                result, attempted = self.run(task, grant, now, evidence)
+                result, attempted = self.run(task, grant, now, evidence, relevant)
                 attempts += attempted
                 if result and result['id'] not in seen and not any(n['id'] == result['id'] for n in results):
                     results.append(result)
@@ -74,7 +78,7 @@ class TaskWork:
         finally:
             os.close(fd)
 
-    def run(self, task, grant, now, evidence):
+    def run(self, task, grant, now, evidence, changes=None):
         directory = self.root/task['id']
         directory.mkdir(mode=0o700, exist_ok=True)
         path = directory/'active.json'
@@ -83,6 +87,8 @@ class TaskWork:
         if state and state['grant'] != grant_key:
             (directory/state['run']).mkdir(mode=0o700, exist_ok=True)
             _write(directory/state['run']/'cancelled.json', {'cancelled': True})
+            state = None
+        if state and changes and state['status'] in ('done', 'failed') and digest(changes) != state.get('change_key'):
             state = None
         if state:
             if state['status'] in ('failed', 'cancelled'):
@@ -100,7 +106,7 @@ class TaskWork:
             request = {'message': origin['text'], 'owner_updates': grant['updates'],
                        'request_thread': origin['thread'], 'request_event': 'background:'+key,
                        'timezone': task['timezone'], 'task': task, 'evidence': evidence[:100]}
-            state = {'run': key, 'grant': grant_key, 'status': 'running', 'retry_at': 0, 'request': request}
+            state = {'run': key, 'grant': grant_key, 'status': 'running', 'retry_at': 0, 'request': request, 'change_key': digest(changes or [])}
             _write(path, state)
         execution = directory/state['run']
         execution.mkdir(mode=0o700, exist_ok=True)

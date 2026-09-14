@@ -31,3 +31,17 @@ One owner execution lock prevents overlapping task workers. A deferred task resu
 Background completion requires an intended outcome and completion evidence in the task record. Unfinished work retains a next review; if the agent omits one, the host schedules a review one day later. Failed work stops until an owner follow-up changes its scope. Completed-work notices are stored privately so a missed delivery window does not discard them; the hourly alert selector combines meaningful updates and suppresses already-delivered notices.
 
 Execution records live under the owner's private task directory, alongside the existing task database. Do not copy these records, original requests, grants or source evidence into the public repository. See [recovery](recovery.md) for retry and process-reconciliation behavior.
+
+## Incremental commitment monitoring
+
+Hourly evidence includes unread Gmail messages, the next 24 hours of the primary calendar, open issues from up to ten configured repositories, and relevant existing work. Gmail unread membership is refreshed each time; immutable message headers and snippets are cached by message ID, with at most 1,000 cached entries per owner. Calendar and issue snapshots are compared by stable source reference and content version.
+
+Only changed source versions enter commitment review. Each review handles up to 100 changed items using the configured tool budget. Older unfinished reviews resume their frozen batch; acknowledging an older version never consumes a newer update. Missing items in these bounded windows are not evidence of completion or cancellation.
+
+The monitoring registry exposes read capabilities and `commitments.observe`. Every update must cite source references supplied by the host. It can track explicit commitments or retain uncertain candidates, but cannot delegate work, perform external writes, or reopen paused, dismissed, cancelled or completed items. Owner corrections and existing task identity should be preserved when linking evidence across integrations.
+
+Relevant source changes can wake delegated work before its next review. The same version does not repeatedly wake it. Monitoring state, source versions and cached content remain in the owner's private task storage. A failed unchanged review stays stopped rather than spending a new retry budget every hour.
+
+Quiet alert assessments are cached for the local day and source version. Timed items are reconsidered as they move into four-hour, one-hour or overdue windows. Selected alerts are not marked quiet before delivery, so a missed send remains eligible for a later check.
+
+Historical source aliases are retained separately from editable task fields. Removing a source from the current view or correcting a title does not let the same source recreate a dismissed task. Existing task history is indexed once when upgrading.

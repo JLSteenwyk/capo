@@ -42,7 +42,13 @@ def evidence(config,objectives,now,home=None):
         items.append(dict(id=key,kind=kind,**data))
     if config.get('gmail',{}).get('enabled'):
         try:
-            mail=Gmail().inbox()
+            if home is not None:
+                from .monitoring import inbox
+                from .observations import Observations
+                from .capabilities import owner_key
+                mail=inbox(Gmail(), Observations(home, owner_key(config)))
+            else:
+                mail=Gmail().inbox()
             for item in mail['messages']:
                 if item['unread']:
                     add('email',{'title':item['subject'],'sender':item['from'],'snippet':item['snippet'],
@@ -56,6 +62,17 @@ def evidence(config,objectives,now,home=None):
                                 'start':event.get('start',{}),'end':event.get('end',{}),
                                 'event_id':event.get('id','')})
         except Exception:add('connection',{'title':'Calendar check unavailable'})
+    for alias, repository in list(config.get('repositories', {}).items())[:10]:
+        try:
+            from .github import GitHub, remote_repository
+            from .repository import git
+            name = remote_repository(git(repository['path'], 'remote', 'get-url', 'origin'))
+            for issue in GitHub(repository.get('github_auth','default')).issues(name):
+                add('github', {'title':issue['title'], 'url':issue['url'], 'repository':alias,
+                               'updated_at':issue.get('updatedAt',''), 'number':issue['number'],
+                               'labels':issue.get('labels',[])})
+        except Exception:
+            add('connection', {'title':'GitHub check unavailable for '+alias})
     superseded={o.get('continuation_of') for o in objectives}
     for objective in objectives:
         if objective['id'] in superseded:continue
@@ -69,9 +86,10 @@ def evidence(config,objectives,now,home=None):
     return items
 
 
-def select(items,seen,now,directory,provider=None):
+def select(items,seen,now,directory,provider=None,assessments=None):
     day=now.date().isoformat()
-    candidates=[item for item in items if seen.get(item['id'],{}).get('day')!=day]
+    candidates=[item for item in items if seen.get(item['id'],{}).get('day')!=day
+                and (assessments is None or not assessments.was_quiet(item, now))]
     if not candidates:return {'text':'','news':[]}
     schema=object_schema({'alerts':{'type':'array','maxItems':3,'items':object_schema({'id':TEXT,'reason':TEXT})}})
     result=(provider or Providers(timeout=90)).call('claude',
@@ -93,6 +111,9 @@ def select(items,seen,now,directory,provider=None):
         item=allowed[key];chosen.append(dict(id=key,day=day))
         lines.append('• '+item['title'][:120]+': '+' '.join(alert['reason'].split())[:160])
         if item.get('kind')=='personal_task':task_notices.append({'id':key,'day':item['notice_day'],'task_id':item['task_id'],'line':lines[-1]})
+    if assessments is not None:
+        selected_ids = {item['id'] for item in chosen}
+        assessments.mark_quiet([item for item in candidates if item['id'] not in selected_ids], now)
     return {'text':'Needs your attention:\n'+'\n'.join(lines) if lines else '', 'news':chosen,'task_notices':task_notices}
 
 
@@ -146,9 +167,12 @@ class HeartbeatManager(DigestManager):
                 attempt=directory/str(run['attempts']);(attempt/'cwd').mkdir(parents=True,mode=0o700,exist_ok=True)
                 items=evidence(config,objectives,now,self.service.store.home)
                 from .task_work import TaskWork
-                items.extend(TaskWork(self.service.store.home, config).tick(now, items, seen))
+                from .monitoring import Monitor
+                monitor = Monitor(self.service.store.home, config)
+                changes = monitor.tick(now, items)
+                items.extend(TaskWork(self.service.store.home, config).tick(now, items, seen, changes))
                 _write(attempt/'evidence.json',items)
-                payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt)
+                payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt,assessments=monitor.observations)
                 run.update(status='ready' if payload['text'] else 'quiet',payload=payload)
             except Exception:run.update(status='queued',retry_at=datetime.now(timezone.utc).timestamp()+60)
             finally:

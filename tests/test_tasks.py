@@ -90,3 +90,14 @@ class TaskTests(unittest.TestCase):
         self.assertTrue(next_event['already_exists'])
         self.assertFalse(next_event['saved'])
         self.assertEqual(len(self.tasks.search()['tasks']),1)
+
+    def test_source_alias_migration_retains_dismissals_after_source_correction(self):
+        task = self.tasks.save('', '', fields(sources=['mail:original']), 'original')['task']
+        self.tasks.save(task['id'], '1', fields(title='Corrected title', sources=[], status='dismissed'), 'dismiss')
+        with self.tasks.connection() as db:
+            db.execute('DROP TABLE task_links')
+        migrated = Tasks(self.home, 'owner')
+        duplicate = migrated.save('', '', fields(sources=['mail:original']), 'rediscovery')['task']
+        self.assertEqual(duplicate['id'], task['id'])
+        self.assertEqual(duplicate['status'], 'dismissed')
+        self.assertEqual(duplicate['title'], 'Corrected title')

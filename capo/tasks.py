@@ -74,6 +74,15 @@ class Tasks:
                 CREATE TABLE IF NOT EXISTS history(task_id TEXT, revision INTEGER, data TEXT NOT NULL,
                     PRIMARY KEY(task_id, revision));
             ''')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            indexed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_links'").fetchone()
+            if not indexed:
+                db.execute('CREATE TABLE task_links(source TEXT, title TEXT, task_id TEXT, PRIMARY KEY(source,title,task_id))')
+                for (data,) in db.execute('SELECT data FROM tasks UNION ALL SELECT data FROM history'):
+                    prior = json.loads(data)
+                    db.executemany('INSERT OR IGNORE INTO task_links VALUES (?,?,?)',
+                        [(source, prior['title'].strip().casefold(), prior['id']) for source in prior.get('sources', [])])
         self.path.chmod(0o600)
 
     @contextmanager
@@ -178,6 +187,15 @@ class Tasks:
                 previous = None
             self._validate(db, fields, id)
             if previous is None and fields['status'] in ('open','waiting','candidate'):
+                if fields['sources']:
+                    placeholders = ','.join('?' for _ in fields['sources'])
+                    linked = db.execute('SELECT task_id FROM task_links WHERE title=? AND source IN ('+placeholders+') ORDER BY rowid LIMIT 1',
+                                        [fields['title'].strip().casefold(), *fields['sources']]).fetchone()
+                    if linked:
+                        existing = self._get(db, linked[0])
+                        result = {'task':existing, 'saved':False, 'already_exists':True}
+                        db.execute('INSERT INTO receipts VALUES (?,?,?)', (operation_id, request, json.dumps(result)))
+                        return result
                 for row in db.execute('SELECT data FROM tasks'):
                     existing=json.loads(row[0])
                     if (all(existing.get(key)==value for key,value in fields.items())
@@ -204,6 +222,8 @@ class Tasks:
             result = {'task': task, 'saved': True}
             db.execute('INSERT INTO history VALUES (?,?,?)', (id, task['revision'], json.dumps(task)))
             db.execute('INSERT OR REPLACE INTO tasks VALUES (?,?)', (id, json.dumps(task)))
+            db.executemany('INSERT OR IGNORE INTO task_links VALUES (?,?,?)',
+                           [(source, task['title'].strip().casefold(), id) for source in task['sources']])
             db.execute('INSERT INTO receipts VALUES (?,?,?)', (operation_id, request, json.dumps(result)))
             return result
 
