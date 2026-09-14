@@ -48,6 +48,21 @@ class DigestTests(unittest.TestCase):
         self.assertFalse(known_thread(self.home,dict(self.config,owner_user_id='UOTHER'),'123.4'))
         self.assertIn('news1',self.db.history(self.owner))
 
+    def test_stale_second_manager_cannot_repeat_a_delivered_run(self):
+        run=self.run_record()
+        other=DigestManager(self.service)
+        try:
+            self.manager.deliver(run,self.now)
+            other.deliver(run,self.now)
+        finally:other.db.close()
+        self.service.client.chat_postMessage.assert_called_once()
+
+    def test_expired_daily_run_is_marked_without_posting(self):
+        run=self.run_record()
+        self.manager.tick(self.now+timedelta(hours=3))
+        self.assertEqual(self.db.get(run['key'])['status'],'expired')
+        self.service.client.chat_postMessage.assert_not_called()
+
     def test_uncertain_post_reconciles_without_duplicate(self):
         run=self.run_record();self.service.client.chat_postMessage.side_effect=TimeoutError()
         self.manager.tick(self.now)
@@ -151,8 +166,29 @@ class DigestTests(unittest.TestCase):
         self.assertEqual((len(today),len(upcoming),len(conflicts)),(2,1,1))
         self.assertEqual(gaps,['9:00 AM–10:00 AM','12:00 PM–5:00 PM'])
 
+    def test_all_day_busy_blocks_gaps_but_transparent_events_do_not(self):
+        event=dict(id='day',summary='Out',start={'date':'2026-09-14'},end={'date':'2026-09-15'})
+        self.assertEqual(calendar_outlook([event],self.now,self.p)[3],[])
+        event['transparency']='transparent'
+        self.assertEqual(calendar_outlook([event],self.now,self.p)[3],['9:00 AM–5:00 PM'])
+
+    def test_preparation_cannot_reference_an_upcoming_event(self):
+        event=dict(id='future',summary='Future meeting',start={'dateTime':'2026-09-15T10:00:00-07:00'},end={'dateTime':'2026-09-15T11:00:00-07:00'})
+        provider=Mock();provider.call.return_value=dict(news=[],attention=[],preparation='Prepare this today',preparation_event='future',upcoming=['future'])
+        evidence=dict(news=[],attention=[],events=[event],now=self.now.isoformat(),coverage=[dict(source='Primary Google Calendar',status='ok')])
+        result=compose(evidence,self.p,{},self.home,provider)
+        self.assertNotIn('Suggested prep:',result['text'])
+        self.assertIn('Future meeting',result['text'])
+
+    def test_model_failure_still_delivers_verified_sections(self):
+        provider=Mock();provider.call.side_effect=TimeoutError()
+        evidence=dict(news=[],attention=[],events=[],now=self.now.isoformat(),coverage=[dict(source='Primary Google Calendar',status='ok')])
+        payload=compose(evidence,self.p,{},self.home,provider)
+        self.assertIn('No scheduled events.',payload['text'])
+        self.assertIn('News selection',payload['text'])
+
     def test_composition_limits_categories_and_uses_real_links(self):
-        provider=Mock();provider.call.return_value=dict(news=[dict(id='news1',why='Relevant tool.'),dict(id='invented',why='bad')],attention=[],preparation='')
+        provider=Mock();provider.call.return_value=dict(news=[dict(id='news1',why='Relevant tool.'),dict(id='invented',why='bad')],attention=[],preparation='',preparation_event='',upcoming=[])
         evidence=dict(news=[self.item],attention=[],events=[],now=self.now.isoformat(),coverage=[
             dict(source='Primary Google Calendar',status='ok'),dict(source='BBC World',status='unavailable')])
         result=compose(evidence,self.p,{},self.home,provider)

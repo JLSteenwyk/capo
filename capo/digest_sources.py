@@ -3,12 +3,13 @@ import hashlib
 import html
 import json
 import re
-import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 import xml.etree.ElementTree as ET
 
 from .calendar import GoogleCalendar
@@ -18,6 +19,8 @@ from .repository import git
 FEEDS = [
     ('BBC World', 'world', 'world news', 'https://feeds.bbci.co.uk/news/world/rss.xml'),
     ('OpenAI', 'tech', 'AI', 'https://openai.com/news/rss.xml'),
+    ('Google AI', 'tech', 'AI', 'https://blog.google/technology/ai/rss/'),
+    ('Hugging Face releases', 'tech', 'AI', 'https://github.com/huggingface/transformers/releases.atom'),
     ('Nature Biotechnology', 'tech', 'biotech', 'https://www.nature.com/nbt.rss'),
     ('SciPy releases', 'tech', 'scientific software', 'https://github.com/scipy/scipy/releases.atom'),
     ('Biopython releases', 'tech', 'scientific software', 'https://github.com/biopython/biopython/releases.atom'),
@@ -47,8 +50,17 @@ def canonical(url):
 
 def fetch(url):
     req = Request(url, headers={'User-Agent': 'Capo/0.1 (+https://github.com/JLSteenwyk/capo)'})
-    with urlopen(req, timeout=15) as response:
-        raw = response.read(2_000_001)
+    for attempt in range(2):
+        try:
+            with urlopen(req, timeout=15) as response:
+                raw = response.read(2_000_001)
+            break
+        except HTTPError as exc:
+            if attempt or (exc.code != 429 and exc.code < 500):raise
+            time.sleep(1)
+        except (URLError,TimeoutError):
+            if attempt:raise
+            time.sleep(1)
     if len(raw) > 2_000_000:
         raise ValueError('Source response too large')
     return raw
@@ -107,7 +119,7 @@ def music_items(artist, now):
 
 def news(preferences, now):
     jobs = [(name, lambda f=f: feed_items(f, now)) for f in FEEDS for name in [f[0]]]
-    artists=preferences.get('artists', [])
+    artists=sorted(preferences.get('artists', []),key=lambda a: preferences.get('weights', {}).get(a,0),reverse=True)
     # Always check the top five; rotate other favorites so broad profiles stay bounded.
     rest=artists[5:]
     offset=(now.date().toordinal()*5) % max(1,len(rest))
@@ -157,13 +169,17 @@ def collect(config, preferences, objectives, now):
     start = local.replace(hour=0, minute=0, second=0, microsecond=0)
     result = dict(events=[], attention=[], news=[], coverage=[], now=now.isoformat(),
                   calendar='primary Google Calendar', timezone=preferences['timezone'])
+    superseded={o.get('continuation_of') for o in objectives if o.get('continuation_of')}
     for objective in objectives:
+        if objective['id'] in superseded:continue
         identity = objective.get('slack', {})
         if not all(identity.get(k) == config[k] for k in ('team_id','channel_id','owner_user_id')):
             continue
-        if objective['status'] in ('blocked', 'awaiting_input', 'queued', 'running'):
+        waiting_review=(objective.get('routine_delivery',{}).get('status')=='review'
+                        and objective.get('publication',{}).get('status')!='published')
+        if objective['status'] in ('blocked', 'awaiting_input', 'queued', 'running') or waiting_review:
             result['attention'].append(dict(id=objective['id'], title=clean(objective['request'], 180),
-                                            status=objective['status'], url=''))
+                                            status='Review needed' if waiting_review else objective['status'], url=''))
     def calendar_read():
         if not config.get('calendar', {}).get('enabled'):
             raise ValueError('Calendar disabled')
@@ -174,7 +190,7 @@ def collect(config, preferences, objectives, now):
         news_future = pool.submit(news, preferences, now)
         try:
             events = calendar_future.result()
-            result['events'] = [{k: e[k] for k in ('id','summary','start','end','location') if k in e} for e in events]
+            result['events'] = [{k: e[k] for k in ('id','summary','start','end','location','transparency') if k in e} for e in events]
             result['coverage'].append(dict(source='Primary Google Calendar',status='ok',checked_at=now.isoformat()))
         except Exception:
             result['coverage'].append(dict(source='Primary Google Calendar',status='unavailable',checked_at=now.isoformat()))

@@ -4,7 +4,7 @@ Capo can send one morning digest to the configured Slack channel. The default is
 
 The digest includes work needing attention, today's primary Google Calendar, conflicts and free gaps in a configurable 9–5 window, and events over the following seven days. Open gaps refer only to the calendar checked; they do not imply you are free across other calendars. Preparation is labeled as a suggestion. GitHub coverage is limited to configured repositories, assigned issues, requested reviews, and your open PRs.
 
-The current news mix is one world story, one music release, and two stories across AI, scientific software, and biotech. Feeds currently include BBC World, OpenAI, Nature Biotechnology, SciPy and Biopython releases. Music uses Apple's public catalog for your configured artists. World news must be at most three days old; other items at most fourteen days old. Empty or failed sources are reported without fabricated replacement stories.
+The current news mix is one world story, one music release, and two stories across AI, scientific software, and biotech. Feeds currently include BBC World, OpenAI, Google AI, Nature Biotechnology, and releases from Hugging Face, SciPy, and Biopython. Music uses Apple's public catalog for your configured artists. World news must be at most three days old; other items at most fourteen days old. Empty or failed sources are reported without fabricated replacement stories.
 
 ## Private setup
 

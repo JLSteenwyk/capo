@@ -30,6 +30,10 @@ class DigestManager:
     def tick(self, now=None):
         now=now or datetime.now(timezone.utc)
         p=self.db.preferences(self.owner)
+        for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('queued','building','ready')",(self.owner,)).fetchall():
+            old=json.loads(row[0])
+            if now.timestamp()>=old['deadline']:
+                old['status']='expired';self.db.save(old,now)
         if not p['enabled']:return
         day,due,deadline=slot(now,p)
         # Finish uncertain delivery receipts even after their morning window.
@@ -146,8 +150,15 @@ class DigestManager:
                 mrkdwn=False,parse='none',link_names=False,unfurl_links=False,unfurl_media=False)
             if not result.get('ok',True) or not result.get('ts'):return
             self.db.delivered(run,result['ts'],now)
-        except Exception:
-            # The post may have succeeded. Reconcile before another attempt.
+        except Exception as exc:
+            # Log only a bounded known error code, never a response body or token.
+            response=getattr(exc,'response',None)
+            code=response.get('error') if response is not None else None
+            fatal={'invalid_auth','missing_scope','channel_not_found','not_in_channel','invalid_metadata','invalid_arguments','account_inactive'}
+            run['delivery_error']=code if code in fatal|{'ratelimited'} else 'unconfirmed'
+            if code in fatal:run['status']='failed'
+            self.db.save(run,now)
+            # An unconfirmed post may have succeeded; reconcile before retrying.
             return
 
 

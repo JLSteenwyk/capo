@@ -366,6 +366,9 @@ class SlackService:
         action, alias, identifier = route["action"], route["repository"], route["objective_id"]
         if action == "reply":
             return route["reply"] or "What would you like me to do, and for which repository?"
+        if action == "digest":
+            from .digest_feedback import dispatch as digest_dispatch
+            return digest_dispatch(self, event_id, event, "digest " + text)
         if action == "calendar":
             from .calendar import CalendarConversation
             if not self.config.get("calendar", {}).get("enabled", False):

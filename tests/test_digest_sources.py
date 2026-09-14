@@ -35,3 +35,12 @@ class SourceTests(unittest.TestCase):
         self.assertIn(dict(source='GitHub',status='unavailable'),result['coverage'])
         self.assertTrue(any(v['source']=='Primary Google Calendar' and v['status']=='unavailable' for v in result['coverage']))
         calendar.return_value.request.assert_not_called()
+
+    def test_superseded_objectives_are_not_reported_as_blocked(self):
+        identity=dict(team_id='TTEST',channel_id='CTEST',owner_user_id='UTEST')
+        old=dict(id='old',status='blocked',request='Old request',slack=identity)
+        new=dict(id='new',status='completed',request='Done',slack=identity,continuation_of='old')
+        with patch('capo.digest_sources.GoogleCalendar') as calendar,patch('capo.digest_sources.github_attention',return_value=([],[])),patch('capo.digest_sources.news',return_value=([],[])):
+            calendar.return_value.events.return_value=[]
+            result=collect(dict(identity,calendar={'enabled':True},repositories={}),{'timezone':'America/Los_Angeles'},[old,new],self.now)
+        self.assertEqual(result['attention'],[])
