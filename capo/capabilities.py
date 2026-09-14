@@ -80,7 +80,15 @@ def shared_tools(home,config,documents,request=None):
             first,last=instant(start),instant(end)
             if not 0<(last-first).total_seconds()<=31*86400:raise ValueError('Calendar range must be at most 31 days')
             rows=GoogleCalendar().events(start,end)
-            return {'events':[{k:e[k] for k in ('id','summary','start','end','location','transparency','status') if k in e} for e in rows],
+            normalized=[]
+            for e in rows:
+                value={k:e[k] for k in ('id','summary','start','end','location','transparency','status') if k in e}
+                for key in ('start','end'):
+                    if value.get(key,{}).get('dateTime'):
+                        local=instant(value[key]['dateTime']).astimezone(ZoneInfo(zone))
+                        value[key]={'dateTime':local.isoformat(),'timeZone':zone}
+                normalized.append(value)
+            return {'events':normalized,
                     'coverage':'Primary calendar only.'}
         tools.append(ReadTool('calendar.events','Read primary calendar events in an explicit RFC3339 start/end window, maximum 31 days.',
                               object_schema({'start':TEXT,'end':TEXT}),events))

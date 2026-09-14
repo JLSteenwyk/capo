@@ -27,6 +27,18 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(result['conflicts'][0]['event_ids'],['a','b'])
         self.assertIn('No time was booked',result['coverage'])
 
+    def test_calendar_tool_normalizes_original_timezone_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home=Path(tmp);config={'calendar':{'enabled':True,'timezone':'America/Los_Angeles'}}
+            tools=shared_tools(home,config,Documents(home,'owner'))
+            source={'id':'event','start':{'dateTime':'2026-09-18T10:00:00-07:00','timeZone':'Europe/Amsterdam'},
+                    'end':{'dateTime':'2026-09-18T11:00:00-07:00','timeZone':'Europe/Amsterdam'}}
+            with patch('capo.calendar.GoogleCalendar') as calendar:
+                calendar.return_value.events.return_value=[source]
+                result=tools.call('calendar.events',{'start':'2026-09-18T00:00:00-07:00','end':'2026-09-19T00:00:00-07:00'})
+            self.assertEqual(result['events'][0]['start'],{'dateTime':'2026-09-18T10:00:00-07:00','timeZone':'America/Los_Angeles'})
+            self.assertEqual(source['start']['timeZone'],'Europe/Amsterdam')
+
     def test_all_day_and_dst_windows(self):
         result=availability([{'id':'away','start':{'date':'2026-03-09'},'end':{'date':'2026-03-10'}}],
             '2026-03-08T00:00:00-08:00','2026-03-10T00:00:00-07:00','America/Los_Angeles','09:00','17:00',['0','6'],'30')
