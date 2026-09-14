@@ -51,6 +51,8 @@ def shared_tools(home,config,documents,request=None):
                    lambda:{'now':datetime.now(ZoneInfo(zone)).isoformat(),'timezone':zone}),
            ReadTool('documents.list','List reusable private documents saved for this owner.',object_schema({}),documents.list),
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
+    from .date_tools import tools as date_tools
+    tools.extend(date_tools())
     from .tasks import Tasks
     tools.extend(Tasks(home, owner_key(config)).tools())
     from .schedules import Schedules
