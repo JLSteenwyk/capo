@@ -23,7 +23,9 @@ New reusable documents are saved under CAPO_HOME/documents with an owner-specifi
 
 The draft integration uses `gmail.compose` in addition to existing `gmail.readonly` access. Google bundles draft management and sending in that scope; Capo's host adapter exposes only create, replace, and delete draft operations. It does not expose a send endpoint. Reconnecting with `capo gmail-auth --client-secrets /path/to/client.json --drafts` requests that additional permission. Existing read-only connections continue working unchanged.
 
-The transport and authorization support are implemented; shared natural-language draft tools and live verification are still in progress. Do not treat successful authorization alone as a completed draft integration.
+Enable `gmail.drafts: true` in the private Slack configuration after authorization. The shared registry exposes `mail.drafts.search`, `mail.drafts.read`, `mail.drafts.save`, and `mail.drafts.delete`. `mail.thread` reads correspondence context; `mail.attachments` returns verified references for attachments already in a searched message. These tools are available to Capo and specialists. Live verification is still pending.
+
+Draft edits require the current content revision. Recipients must occur in owner text, an existing draft, or source correspondence; names alone are insufficient. Reply drafts preserve the original subject, thread ID, Message-ID references, and In-Reply-To header. Existing attachments must be explicitly preserved using their read references. Source MIME messages and drafts are capped at 5 MiB. Capo cannot attach arbitrary local paths. Concurrent edits made in Gmail after the revision check remain a limitation: the Gmail draft API does not expose a transactional compare-and-swap contract here.
 
 External changes use private durable action receipts. An unconfirmed operation is not automatically repeated, even after restart or an identical new request. Read-only reconciliation must establish the result before that action can proceed.
 

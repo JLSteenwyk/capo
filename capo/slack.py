@@ -141,6 +141,8 @@ def validate_config(config):
     gmail_settings = config.get("gmail", {})
     if not isinstance(gmail_settings, dict) or type(gmail_settings.get("enabled", False)) is not bool:
         raise ValueError("gmail.enabled must be true or false")
+    if type(gmail_settings.get('drafts', False)) is not bool:
+        raise ValueError('gmail.drafts must be true or false')
     calendar_settings = config.get("calendar", {})
     if not isinstance(calendar_settings, dict) or type(calendar_settings.get("enabled", False)) is not bool:
         raise ValueError("calendar.enabled must be true or false")
@@ -203,6 +205,8 @@ def owner_message(config, body):
 
 
 def known_thread(store, config, thread):
+    from .reminders import known_thread as reminder_thread
+    if reminder_thread(store.home, config, thread):return True
     from .heartbeat import known_thread as heartbeat_thread
     if heartbeat_thread(store.home, config, thread):return True
     from .digest_service import known_thread as digest_thread
@@ -368,6 +372,10 @@ class SlackService:
                 break
         if self.conversation is None:
             self.conversation = ConversationRouter(self.store.home)
+        from .reminders import thread_context as reminder_context
+        reminder = reminder_context(self.store.home, self.config, thread)
+        if reminder:
+            recent.append({'user': '', 'capo': 'Personal task reminder context: '+json.dumps(reminder)})
         from .team import roster
         route = self.conversation.poll(event_id, {
             "team": roster(self.config),
@@ -821,6 +829,8 @@ class SlackService:
         digest_tick(self)
         from .heartbeat import tick as heartbeat_tick
         heartbeat_tick(self)
+        from .reminders import tick as reminder_tick
+        reminder_tick(self)
         browser_slack.tick(self)
         self.process_plan_notifications()
         if self.active:

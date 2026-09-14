@@ -24,6 +24,14 @@ class Effects:
     def connect(self):
         return sqlite3.connect(self.path,timeout=10)
 
+    def completed(self, operation_id, request):
+        db=self.connect()
+        try:
+            row=db.execute('SELECT request,status,result FROM effects WHERE id=?',(operation_id,)).fetchone()
+            if row and row[0]!=json.dumps(request,sort_keys=True):raise ValueError('Action receipt changed')
+            return json.loads(row[2]) if row and row[1]=='done' else None
+        finally:db.close()
+
     def run(self, operation_id, request, execute, reconcile=None):
         if not operation_id:raise ValueError('Host receipt required')
         encoded=json.dumps(request,sort_keys=True)

@@ -126,6 +126,7 @@ class GmailReadTools(ReadTools):
         self.client = client
         self.known_ids = set()
         self.cursors = {}
+        self.known_threads = set()
         self.read_attempts = 0
         self.characters = 0
         super().__init__([
@@ -142,7 +143,19 @@ class GmailReadTools(ReadTools):
                 'per request. strip_quotes removes recognizable quoted replies; choose false '
                 'when correspondence context matters. Retains truncation and source metadata.',
                 object_schema({'ids': TEXTS, 'strip_quotes': {'type': 'boolean'}}), self.read),
+            ReadTool('mail.thread', 'Read a thread ID returned by mail.search, including correspondence context. Bounded by the shared 50-message budget.',
+                     object_schema({'id': TEXT}), self.thread),
         ])
+
+    def thread(self,id):
+        if id not in self.known_threads:raise ValueError('Search the thread first')
+        data=self.client.get('threads/'+quote(id,safe=''),{'format':'minimal'})
+        ids=[m['id'] for m in data.get('messages',[])][:50]
+        self.known_ids.update(ids)
+        rows=[]
+        for start in range(0,len(ids),25):
+            rows.append(self.read(ids[start:start+25],strip_quotes=False))
+        return {'thread_id':id,'pages':rows,'more_available':len(data.get('messages',[]))>50}
 
     def search(self, query, page_size, page_token):
         if not query.strip() or len(query) > 500 or len(page_token) > 2000:
@@ -156,6 +169,7 @@ class GmailReadTools(ReadTools):
         rows = [{'id': row['id'], 'thread_id': row.get('threadId', '')}
                 for row in page.get('messages', [])[:int(page_size)]]
         self.known_ids.update(row['id'] for row in rows)
+        self.known_threads.update(row['thread_id'] for row in rows if row['thread_id'])
         cursor = page.get('nextPageToken', '')
         if cursor:
             self.cursors[cursor] = query

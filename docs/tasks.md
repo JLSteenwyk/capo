@@ -8,4 +8,6 @@ Dates require an explicit offset consistent with the named timezone. Ambiguous r
 
 Tasks live in an owner-scoped private SQLite database under `CAPO_HOME/tasks`. Changes and host-generated action receipts commit together. Replaying the same action returns its existing result; reusing a receipt for a different change is refused. Dependencies must exist under the same owner and cannot form cycles. Incomplete dependencies prevent completion.
 
-This first implementation provides task storage and shared tools. Reminder delivery and digest/weekly-plan integration are being implemented separately; a stored reminder does not yet imply a scheduled notification.
+A private reminder ledger uses the existing Slack delivery gateway. Due reminders send once per task/reminder time, including one clearly labeled catch-up after a missed schedule. Cancellation or rescheduling suppresses pending reminders; uncertain posts are reconciled before retries. Reminder threads retain their task identity for follow-ups. The Mac must be awake with Capo running. Hourly checks retain their separate 10 a.m.–4 p.m. schedule; explicitly requested reminders can occur outside those hours.
+
+Digest and weekly-plan integration, broader composition tests, and live deployment are still in progress.

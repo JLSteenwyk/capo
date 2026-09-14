@@ -89,7 +89,7 @@ def parser():
     preview.add_argument("--config", type=Path, required=True)
     preview.add_argument("--env-file", type=Path, required=True)
     preview.add_argument("--id", required=True, help="Stable preview ID; reuse it to resume without duplication")
-    gmail_auth = commands.add_parser("gmail-auth", help="Connect read-only Gmail inbox access")
+    gmail_auth = commands.add_parser("gmail-auth", help="Connect Gmail reading and optional draft management")
     gmail_auth.add_argument("--client-secrets", type=Path, required=True)
     gmail_auth.add_argument("--drafts", action="store_true", help="Also authorize Gmail draft management (Capo does not expose sending)")
     calendar_auth = commands.add_parser("calendar-auth", help="Connect a private Google Calendar account")

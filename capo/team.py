@@ -52,7 +52,7 @@ class Specialist(ConversationRouter):
             from .capabilities import Documents, shared_tools
             from .research_tools import ReadTool, ReadTools, research
             documents=Documents(self.home, self.owner)
-            tools=shared_tools(self.home, self.config, documents)
+            tools=shared_tools(self.home, self.config, documents, context)
             def remember(note):
                 import re
                 if not note.strip() or len(note)>400 or re.search(r'xox[baprs]-|xapp-|sk-ant-|gh[pousr]_|PRIVATE KEY',note):

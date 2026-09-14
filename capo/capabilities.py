@@ -44,7 +44,7 @@ def owner_key(config):
     return ':'.join(config.get(k,'local') for k in ('team_id','channel_id','owner_user_id'))
 
 
-def shared_tools(home,config,documents):
+def shared_tools(home,config,documents,request=None):
     """Build a fresh request-scoped registry; do not initialize clients until called."""
     zone=config.get('calendar',{}).get('timezone','America/Los_Angeles')
     tools=[ReadTool('clock.now','Current local date, time and timezone.',object_schema({}),
@@ -62,6 +62,16 @@ def shared_tools(home,config,documents):
                 return self.client.get(*args,**kwargs)
         mail=GmailReadTools(LazyMail())
         tools.extend(mail.tools.values())
+        if config.get('gmail',{}).get('drafts',False):
+            from .drafts import DraftTools
+            class LazyDraftMail:
+                client=None
+                def ready(self):
+                    if self.client is None:self.client=Gmail(drafts=True)
+                    return self.client
+                def get(self,*args,**kwargs):return self.ready().get(*args,**kwargs)
+                def draft_write(self,*args,**kwargs):return self.ready().draft_write(*args,**kwargs)
+            tools.extend(DraftTools(LazyDraftMail(),mail,home,owner_key(config),request).tools())
     if config.get('calendar',{}).get('enabled'):
         def events(start,end):
             from .calendar import GoogleCalendar,instant
@@ -94,7 +104,7 @@ class CapabilityConversation(ConversationRouter):
 
     def _run(self,directory,context,schema,fd):
         try:
-            result=research(Providers(timeout=90),shared_tools(self.home,self.config,self.documents),context,directory,
+            result=research(Providers(timeout=90),shared_tools(self.home,self.config,self.documents,context),context,directory,
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
                 'For writing from owner examples, use their own sent prose, not received messages. '
                 'Do not substitute an unrelated inbox summary. Discover useful saved documents when relevant. '
