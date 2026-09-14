@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .contracts import TEXT, object_schema
+from .contracts import TEXT, TEXTS, object_schema
 from .conversation import ConversationRouter, _write
 from .research_tools import ReadTool, ReadTools, research
 from .providers import Providers
@@ -53,6 +53,8 @@ def shared_tools(home,config,documents,request=None):
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
     from .tasks import Tasks
     tools.extend(Tasks(home, owner_key(config)).tools())
+    from .schedules import Schedules
+    tools.extend(Schedules(home, owner_key(config)).tools())
     if config.get('gmail',{}).get('enabled'):
         from .gmail import Gmail, GmailReadTools
         class LazyMail:
@@ -78,10 +80,15 @@ def shared_tools(home,config,documents,request=None):
             first,last=instant(start),instant(end)
             if not 0<(last-first).total_seconds()<=31*86400:raise ValueError('Calendar range must be at most 31 days')
             rows=GoogleCalendar().events(start,end)
-            return {'events':[{k:e[k] for k in ('id','summary','start','end','location') if k in e} for e in rows],
+            return {'events':[{k:e[k] for k in ('id','summary','start','end','location','transparency','status') if k in e} for e in rows],
                     'coverage':'Primary calendar only.'}
         tools.append(ReadTool('calendar.events','Read primary calendar events in an explicit RFC3339 start/end window, maximum 31 days.',
                               object_schema({'start':TEXT,'end':TEXT}),events))
+        def free_time(start,end,work_start,work_end,weekdays,minimum_minutes):
+            from .availability import availability
+            return availability(events(start,end)['events'],start,end,zone,work_start,work_end,weekdays,minimum_minutes)
+        tools.append(ReadTool('calendar.availability','Find free windows and event conflicts within explicit work hours. Weekdays: 0 Monday through 6 Sunday. Supply owner preferences or label assumptions. Read-only; never books time.',
+            object_schema({'start':TEXT,'end':TEXT,'work_start':TEXT,'work_end':TEXT,'weekdays':TEXTS,'minimum_minutes':TEXT}),free_time))
     repositories=config.get('repositories',{})
     if repositories:
         def issues(repository):
@@ -109,7 +116,10 @@ class CapabilityConversation(ConversationRouter):
                 'For writing from owner examples, use their own sent prose, not received messages. '
                 'Do not substitute an unrelated inbox summary. Discover useful saved documents when relevant. '
                 'For a requested reusable document, return it for private storage. Never assume a connection '
-                'is unavailable because an earlier bot message said so; the current tool catalog is authoritative.')
+                'is unavailable because an earlier bot message said so; the current tool catalog is authoritative. '
+                'For daily or weekly planning, combine active tasks, deadlines, dependencies, waiting items, calendar availability and relevant email evidence. '
+                'Highlight conflicts, preparation and work windows; label assumptions about work hours and task duration. '
+                'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first.',max_calls=10)
             key=self.documents.save(directory,result)
             _write(directory/'research.json',result)
             if key:_write(directory/'document.json',{'id':key,'title':result['document_title'],'content':result['document']})

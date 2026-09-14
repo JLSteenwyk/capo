@@ -205,6 +205,8 @@ def owner_message(config, body):
 
 
 def known_thread(store, config, thread):
+    from .scheduled_requests import thread_context as scheduled_context
+    if scheduled_context(store.home, config, thread):return True
     from .reminders import known_thread as reminder_thread
     if reminder_thread(store.home, config, thread):return True
     from .heartbeat import known_thread as heartbeat_thread
@@ -376,6 +378,10 @@ class SlackService:
         reminder = reminder_context(self.store.home, self.config, thread)
         if reminder:
             recent.append({'user': '', 'capo': 'Personal task reminder context: '+json.dumps(reminder)})
+        from .scheduled_requests import thread_context as scheduled_context
+        scheduled = scheduled_context(self.store.home, self.config, thread)
+        if scheduled:
+            recent.append({'user': '', 'capo': 'Scheduled request context: '+json.dumps(scheduled)})
         from .team import roster
         route = self.conversation.poll(event_id, {
             "team": roster(self.config),
@@ -831,6 +837,8 @@ class SlackService:
         heartbeat_tick(self)
         from .reminders import tick as reminder_tick
         reminder_tick(self)
+        from .scheduled_requests import tick as scheduled_tick
+        scheduled_tick(self)
         browser_slack.tick(self)
         self.process_plan_notifications()
         if self.active:
