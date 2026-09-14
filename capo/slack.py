@@ -365,6 +365,8 @@ class SlackService:
             for saved in self.store.db.execute("SELECT id,data FROM slack_inbox ORDER BY rowid"):
                 prior = json.loads(saved['data'])
                 if authorized(self.config, prior, self.store) and prior['event'].get('ts') == thread:
+                    if saved['id'] == event_id:
+                        break  # Preserve this event's image-enriched text below.
                     memory.record(saved['id'], 'owner', {'message': prior['event'].get('text', '')})
                     break
         memory.record(event_id, 'owner', {'message': text})

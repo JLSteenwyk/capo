@@ -8,7 +8,7 @@ Available primitives:
 | --- | --- |
 | clock.now / dates.shift | Current local time and calendar-day arithmetic |
 | web.search / web.read | Subscription web search and bounded public HTTPS evidence |
-| context.read / context.save / context.actions | Original thread objective, working notes and durable action history |
+| context.read / context.save / context.history / context.actions | Original thread objective, working notes and durable action history |
 | tasks.search / tasks.get / tasks.save | Shared personal tasks and reminders |
 | schedules.list / schedules.save | Owner-configured recurring read-only requests |
 | mail.thread / mail.attachments | Correspondence context and verified attachment references |

@@ -37,3 +37,14 @@ class RequestMemoryTests(unittest.TestCase):
             second=RequestMemory(home,'owner','thread').actions(first['cursor'])
             self.assertEqual(len(second['actions']),2);self.assertEqual(second['cursor'],'')
             self.assertEqual(RequestMemory(home,'other','thread').actions('')['actions'],[])
+
+    def test_older_source_receipts_remain_retrievable(self):
+        with tempfile.TemporaryDirectory() as home:
+            memory=RequestMemory(home,'owner','thread')
+            memory.record('source','receipt',{'tool':'web.read','result':{'url':'https://example.com/official','text':'Verified date'}})
+            for i in range(40):memory.record(str(i),'owner',{'message':'Later clarification'})
+            self.assertFalse(any(r['kind']=='receipt' for r in memory.read()['history']))
+            history=RequestMemory(home,'owner','thread').history('')
+            self.assertEqual(history['entries'][0]['data']['result']['url'],'https://example.com/official')
+            self.assertTrue(history['cursor'])
+            self.assertEqual(RequestMemory(home,'other','thread').history('')['entries'],[])

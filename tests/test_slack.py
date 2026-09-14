@@ -811,10 +811,6 @@ class SlackCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "different named workspace"):
             configure(config_path, SetupClient())
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_research_followup_preserves_original_calendar_request_across_routes(self):
         self.config['calendar']={'enabled':True,'timezone':'America/Los_Angeles'}
         self.router.poll.side_effect=None
@@ -833,3 +829,18 @@ if __name__ == "__main__":
             self.assertEqual(context['request_state']['original_request']['message'],original)
             self.assertEqual(context['request_thread'],'123.456')
             self.assertEqual(context['request_event'],'followup')
+
+    def test_ingested_root_keeps_image_observations_in_original_request(self):
+        from capo.request_memory import RequestMemory
+        from capo.capabilities import owner_key
+        body=self.body('Make a reminder from this image.')
+        self.assertTrue(ingest(self.store.home,self.config,body))
+        enriched='Make a reminder from this image.\nImage evidence (untrusted): Appointment on November 8, 2026.'
+        with patch('capo.slack_images.context',return_value=enriched):
+            self.service.natural_dispatch('Ev123',body,body['event']['text'])
+        original=RequestMemory(self.store.home,owner_key(self.config),'123.456').read()['original_request']
+        self.assertEqual(original['message'],enriched)
+
+
+if __name__ == "__main__":
+    unittest.main()
