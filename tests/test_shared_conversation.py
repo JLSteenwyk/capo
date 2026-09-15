@@ -88,6 +88,47 @@ class SharedConversationTests(unittest.TestCase):
         self.body('Use the new date','correction','123.456')
         self.assertEqual(latest(self.home,self.config,context),'correction')
 
+    def test_new_followup_creates_every_block_after_legacy_single_event(self):
+        from capo.evaluations.calendar_cases import event
+        from capo.evaluations.research_cases import ResearchWorld
+        import copy
+        world = ResearchWorld({})
+        world.calendars['primary'] = {'overview': event('overview', 'Conference overview', 8),
+                                      'breakfast': event('breakfast', 'Breakfast', 9)}
+        preserved = copy.deepcopy(world.calendars)
+        self.body('Keep my overview and add each agenda block.', 'old-event')
+        key = hashlib.sha256(b'old-event').hexdigest()
+        legacy = self.home / 'conversation' / key
+        legacy.mkdir(parents=True)
+        _write(legacy / 'started.json', {'legacy': True})
+        body = self.body('Add all blocks on November 4, 2030: Breakfast 9–10, Keynote 10–11, Workshop 11–12. Keep the overview.',
+                         'new-event', '123.456')
+        body['event'].update(type='message', text=body['event']['text'].replace('<@UBOT> ', ''))
+        self.store.db.execute('UPDATE slack_inbox SET data=? WHERE id=?', (json.dumps(body), 'new-event'))
+        self.store.db.commit()
+        with patch('capo.capabilities.Providers') as providers, \
+                patch('capo.calendar.GoogleCalendar', side_effect=world.client), \
+                patch('capo.calendar_actions.GoogleCalendar', side_effect=world.client), \
+                patch('capo.conversation.Providers', side_effect=AssertionError('Must not use single-event classifier')):
+            actions = [step('calendar.change', action='create', event_id='', title=title, location='Room 4',
+                            start=f'2030-11-04T{hour:02}:00:00-08:00', end=f'2030-11-04T{hour+1:02}:00:00-08:00', all_day=False)
+                       for title, hour in [('Breakfast', 9), ('Keynote', 10), ('Workshop', 11)]]
+            done = finish('Added Keynote and Workshop. Breakfast and the overview were already present and unchanged.')
+            done['arguments_json'] = json.dumps({'outcomes': [dict(requirement=title, kind='action', status='complete',
+                evidence=[str(i)], next_step='') for i, title in enumerate(['Breakfast', 'Keynote', 'Workshop'])]})
+            providers.return_value.call.side_effect = actions + [done]
+            response = self.run_request(body)
+            self.assertIn('Workshop', response)
+            self.assertEqual(len(world.writes), 2)
+            self.assertEqual({v['summary'] for v in world.calendars['primary'].values()},
+                             {'Conference overview', 'Breakfast', 'Keynote', 'Workshop'})
+            for id in ['overview', 'breakfast']:
+                self.assertEqual(world.calendars['primary'][id], preserved['primary'][id])
+            self.assertEqual(world.calendars['work'], preserved['work'])
+            restarted = SlackService(self.store, self.config, Mock())
+            self.assertEqual(self.run_request(body, restarted), response)
+            self.assertEqual(len(world.writes), 2)
+
     def test_one_loop_combines_calendar_inspection_and_email(self):
         body = self.body('Prepare for my meeting using its details and the related email.')
         event = {'id': 'meeting', 'summary': 'Planning', 'description': 'Review the inventory',
