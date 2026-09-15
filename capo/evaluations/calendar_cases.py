@@ -18,6 +18,8 @@ CASES={
                                'calendar':'primary','target':'planning','title':'Planning','write':False,'guests':True},
 }
 
+CASES['calendar_stale']={**CASES['calendar_move'],'stale_read':True}
+
 
 class CalendarWorld:
     def __init__(self,case):
@@ -25,7 +27,7 @@ class CalendarWorld:
         self.calendars={'primary':{'planning':event('planning','Planning',9)},
                         'work':{'planning':event('planning','Planning',10,'Preserve the work agenda.')}}
         if case.get('guests'):self.calendars['primary']['planning']['attendees']=[{'email':'guest@example.invalid'}]
-        self.original=copy.deepcopy(self.calendars);self.calls=[];self.writes=[]
+        self.original=copy.deepcopy(self.calendars);self.calls=[];self.writes=[];self.stale_changes=0
 
     def client(self,calendar_id='primary'):
         world=self
@@ -51,7 +53,12 @@ class CalendarWorld:
                 world.calls.append('lookup')
                 return copy.deepcopy(world.calendars[calendar_id].get(id))
             def request(self,method,event_id='',**kwargs):
-                if method=='GET':return self.lookup(event_id)
+                if method=='GET':
+                    if world.case.get('stale_read') and not world.stale_changes:
+                        row=world.calendars[calendar_id][event_id]
+                        row.update(etag='"external-edit"',description='Updated preparation notes from another editor.')
+                        world.stale_changes+=1
+                    return self.lookup(event_id)
                 if method!='PATCH':raise ValueError('This fixture permits only event updates')
                 existing=world.calendars[calendar_id][event_id]
                 if kwargs.get('headers',{}).get('If-Match')!=existing['etag']:raise ValueError('Stale synthetic event')
@@ -72,6 +79,8 @@ class CalendarWorld:
     def grade(self,result):
         target=self.case['calendar'];id=self.case['target']
         expected=copy.deepcopy(self.original)
+        if self.case.get('stale_read'):
+            expected[target][id]['description']='Updated preparation notes from another editor.'
         if self.case['write']:
             expected[target][id]['start']={'dateTime':'2030-11-04T14:00:00-08:00','timeZone':'America/Los_Angeles'}
             expected[target][id]['end']={'dateTime':'2030-11-04T15:00:00-08:00','timeZone':'America/Los_Angeles'}
@@ -79,6 +88,7 @@ class CalendarWorld:
         checks={'remote_state_matches':self.calendars==expected,
                 'write_count_matches':len(self.writes)==int(self.case['write']),
                 'nonempty_answer':bool(result.get('reply','').strip())}
+        if self.case.get('stale_read'):checks['stale_fault_exercised']=self.stale_changes==1
         # Restriction cases must disclose incompletion; absence of writes alone
         # is insufficient to call the whole task successful.
         if not self.case['write']:

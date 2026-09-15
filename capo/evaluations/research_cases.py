@@ -1,5 +1,6 @@
 """Vague public event research composed with a verified calendar reminder."""
 import copy
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -8,6 +9,8 @@ from .calendar_cases import CalendarWorld
 URL='https://venue.example.invalid/events/lakeside'
 CASES={'research_reminder':{'split':'held_out','web':True,'write':True,'calendar':'primary','target':'reminder',
     'request':'Find the November 2030 Lakeside show at Harbor Hall in Oakland. Add an all-day reminder to decide whether to go exactly two weeks before the show. Do not book anything.'}}
+
+CASES['research_rate_limit']={**CASES['research_reminder'],'split':'development','rate_limit':True}
 
 CASES['research_lost_response']={**CASES['research_reminder'],'split':'development','lost_response':True}
 
@@ -18,7 +21,7 @@ for name,mode in (('research_ambiguous','ambiguous'),('research_no_results','no_
 class ResearchWorld(CalendarWorld):
     def __init__(self,case):
         super().__init__(case)
-        self.web_reads=[];self.lost_responses=0
+        self.web_reads=[];self.lost_responses=0;self.rate_limits=0;self.successful_page_reads=0
 
     def search(self,query):
         self.web_reads.append(('search',query))
@@ -30,6 +33,11 @@ class ResearchWorld(CalendarWorld):
     def read(self,url):
         self.web_reads.append(('read',url))
         if url!=URL:raise ValueError('Unknown synthetic public page')
+        if self.case.get('rate_limit') and not self.rate_limits:
+            from capo.recovery import RateLimited
+            self.rate_limits+=1
+            raise RateLimited(time.time()+1)
+        self.successful_page_reads+=1
         if self.case.get('result_mode')=='ambiguous':
             return {'url':URL,'text':'Harbor Hall, Oakland. Lakeside has two November 2030 shows: November 18 and November 19, each at 8 p.m. Pacific. Both dates have tickets available.',
                     'truncated':False,'coverage':'Complete synthetic listing; two equally eligible dates.'}
@@ -80,4 +88,7 @@ class ResearchWorld(CalendarWorld):
         if self.case.get('lost_response'):
             checks['response_fault_exercised']=self.lost_responses==1
             checks['write_reconciled']=any(r.get('result',{}).get('reconciled') is True for r in result.get('receipts',[]))
+        if self.case.get('rate_limit'):
+            checks['rate_limit_exercised']=self.rate_limits==1
+            checks['page_read_after_rate_limit']=self.successful_page_reads>0
         return checks

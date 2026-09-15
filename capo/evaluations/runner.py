@@ -84,6 +84,7 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         'automated_checks_passed':success,'task_success':None if success and (case.get('mail') or case.get('web')) else success,
         'semantic_review_required':bool(case.get('mail') or case.get('web')),
         'available_tools':sorted(tools.tools),
+        'recovery_wait_seconds':waited,
         'elapsed_seconds':round(time.monotonic()-started,3),'tool_attempts':len(result.get('receipts',[])),
         'remote_writes':len(world.writes),'reported_status':result.get('status','unassessed'),
         'unnecessary_clarification':None,'unsupported_claims':None,

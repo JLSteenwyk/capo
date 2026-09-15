@@ -218,3 +218,34 @@ class GeneralistEvaluationTests(unittest.TestCase):
         self.assertTrue(result['automated_checks_passed'],result)
         self.assertEqual(result['remote_writes'],1)
         self.assertTrue(result['checks']['write_reconciled'])
+
+    def test_rate_limited_read_resumes_same_fixture_before_write(self):
+        from capo.evaluations.research_cases import URL
+        provider=Mock();provider.call.side_effect=[step('web.read',url=URL),step('web.read',url=URL),
+            step('calendar.change',action='create',event_id='',title='Decide about Lakeside',location='',
+                start='2030-11-04',end='2030-11-05',all_day=True),
+            dict(finish(),reply='Added the November 4 reminder after verifying the show date.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'research_rate_limit',Path(tmp)/'run',recovery_wait_seconds=5)
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertEqual(result['remote_writes'],1)
+        self.assertGreaterEqual(result['recovery_wait_seconds'],1)
+        self.assertEqual(provider.call.call_count,4)
+
+    def test_stale_calendar_does_not_write_before_refresh(self):
+        from capo.evaluations.calendar_cases import CASES,CalendarWorld
+        from capo.calendar_tools import CalendarTools
+        from capo.calendar_actions import CalendarActions
+        from capo.calendar import CalendarError
+        world=CalendarWorld(CASES['calendar_stale'])
+        with tempfile.TemporaryDirectory() as tmp:
+            tools=CalendarTools('America/Los_Angeles',world.client)
+            tools.events('2030-11-04T00:00:00-08:00','2030-11-05T00:00:00-08:00')
+            action=CalendarActions(Path(tmp),'owner','America/Los_Angeles',tools.primary_cache)
+            with patch('capo.calendar_actions.GoogleCalendar',side_effect=world.client):
+                with self.assertRaises(CalendarError):
+                    action.change('update','planning','Planning','Room 4','2030-11-04T14:00:00-08:00',
+                        '2030-11-04T15:00:00-08:00',False,'attempt')
+        self.assertEqual(world.writes,[])
+        self.assertEqual(world.stale_changes,1)
+        self.assertEqual(world.calendars['primary']['planning']['description'],'Updated preparation notes from another editor.')
