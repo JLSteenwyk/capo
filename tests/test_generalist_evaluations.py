@@ -53,7 +53,8 @@ class GeneralistEvaluationTests(unittest.TestCase):
             dict(finish(),reply='Planning is in Room 4. Review the 17 samples and $2,400 equipment budget.')]
         with tempfile.TemporaryDirectory() as tmp:
             result=run_case(provider,'meeting_brief',Path(tmp)/'run')
-        self.assertTrue(result['task_success'],result)
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertIsNone(result['task_success'])
         self.assertEqual(result['remote_writes'],0)
 
     def test_scripted_reply_draft_checks_recipient_thread_and_facts(self):
@@ -66,7 +67,8 @@ class GeneralistEvaluationTests(unittest.TestCase):
             dict(finish(),reply='The reply draft is ready; it has not been sent.')]
         with tempfile.TemporaryDirectory() as tmp:
             result=run_case(provider,'reply_draft',Path(tmp)/'run')
-        self.assertTrue(result['task_success'],result)
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertIsNone(result['task_success'])
         self.assertEqual(result['remote_writes'],1)
 
     def test_unread_meeting_facts_cannot_pass_from_reply_wording_alone(self):
@@ -76,3 +78,23 @@ class GeneralistEvaluationTests(unittest.TestCase):
         self.assertTrue(result['checks']['facts_present'])
         self.assertFalse(result['task_success'])
         self.assertFalse(result['checks']['source_inspected'])
+
+    def test_notification_is_checked_against_current_pr_and_ci(self):
+        provider=Mock();provider.call.side_effect=[
+            step('mail.search',query='CI failed PR',page_size='10',page_token=''),
+            step('mail.read',ids=['mail1'],strip_quotes=False),
+            step('github.pull_request',repository='project',number='7'),
+            step('github.checks',repository='project',commit='b'*40,page='1'),
+            dict(finish(),reply='The email concerns an older commit. CI passed on the current PR head.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'github_notification',Path(tmp)/'run')
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertIsNone(result['task_success'])
+        self.assertEqual(result['remote_writes'],0)
+
+    def test_github_claim_without_authoritative_read_fails(self):
+        provider=Mock();provider.call.return_value=dict(finish(),reply='The current checks passed.')
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'github_notification',Path(tmp)/'run')
+        self.assertFalse(result['task_success'])
+        self.assertFalse(result['checks']['current_pr_inspected'])
