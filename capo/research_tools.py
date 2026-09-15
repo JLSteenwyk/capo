@@ -17,6 +17,7 @@ class ReadTool:
     arguments: dict
     execute: object
     mutates: bool = False
+    verifies: bool = False
 
 
 class ReadTools:
@@ -168,7 +169,13 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'Never return only an introduction promising a list or answer that is absent. '
             'Use document for answers too long for reply; concision must not remove requested content. Put a concise answer '
             'under 100 words in reply unless the owner explicitly requests more detail; always under 1900 characters. When action is tool, reply/document fields must be empty. '
-            'When finishing, tool must be empty and arguments_json must be {}. '
+            'When finishing, tool must be empty. In arguments_json provide {"outcomes":[{"requirement":"requested result",'
+            '"kind":"answer|action|handoff","status":"complete|partial|needs_input","evidence":["0"],"next_step":""}]}. '
+            'Inventory every part of the original request, incorporating owner corrections. Evidence uses zero-based receipt indexes. '
+            'Answer items may have empty evidence for direct reasoning; factual source claims need relevant receipts. '
+            'A completed action requires a successful host mutation receipt; a queued handoff proves only the handoff, '
+            'not completion of the delegated work. Give each unfinished item a concrete next step or one necessary question. '
+            'Continue using available tools for unfinished authorized work while budget remains. Never silently omit an unfinished part. '
             'Do not stop after planning if available tools can complete the authorized request. '
             'Preserve the entire original objective across follow-ups. Investigate researchable missing facts before asking the owner. '
             'Use relevant context as a hypothesis to verify. Prefer official sources, check dates including the year, and retain source URLs. '
@@ -213,15 +220,32 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             _write(checkpoint,state)
             return completed
         if result['action'] == 'finish':
-            if (result['tool'] or result['arguments_json'].strip() != '{}'
+            if (result['tool']
                     or not result['reply'].strip() or len(result['reply']) > 1900
                     or len(result['document_title']) > 200 or len(result['document']) > 12000
                     or bool(result['document_title'].strip()) != bool(result['document'].strip())):
                 raise ValueError('Invalid research response')
-            result = {**result, 'reply': complete_reply(result)}
+            from .request_outcomes import assess,pending_text
+            try:
+                outcome=assess(result['arguments_json'],receipts,tools)
+                rendered=complete_reply(result)
+                unfinished=pending_text(outcome)
+                if unfinished:rendered+='\n\nStill to address:\n'+unfinished
+                if len(rendered)>16000:raise ValueError('Completion report is too long')
+            except (ValueError,KeyError,TypeError):
+                receipts.append({'tool':'','error':'Completion report is invalid or lacks supporting receipts. Account for every requested part and correct the evidence links; do not repeat completed actions.'})
+                _write(checkpoint,state)
+                _write(directory/'receipts.json',receipts)
+                if remaining:continue
+                completed={'reply':'I could not verify the completion report within the execution limit. The results are saved, but completion remains unconfirmed.',
+                           'status':'partial','stop_reason':'invalid_completion_report','document_title':'','document':'','receipts':receipts}
+                state['result']=completed
+                _write(checkpoint,state)
+                return completed
+            result = {**result, 'reply': rendered}
             if memory is not None:
                 memory.record(request.get('request_event',str(directory)), 'outcome', {'reply':result['reply']})
-            completed = {**result, 'receipts': receipts}
+            completed = {**result, 'receipts': receipts,'status':outcome['status'],'outcome_report':outcome}
             state['result'] = completed
             _write(checkpoint, state)
             return completed
