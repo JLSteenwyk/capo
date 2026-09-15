@@ -152,3 +152,31 @@ class GeneralistEvaluationTests(unittest.TestCase):
         checks=world.grade({})
         self.assertFalse(checks['workshop_status'])
         self.assertTrue(checks['budget_status'])
+
+    def test_baseline_missing_github_adapter_is_recorded_without_injection(self):
+        from capo.capabilities import shared_tools
+        def older_registry(*args,**kwargs):
+            registry=shared_tools(*args,**kwargs)
+            registry.tools={name:tool for name,tool in registry.tools.items() if not name.startswith('github.')}
+            return registry
+        provider=Mock();provider.call.return_value=dict(finish(),reply='Current GitHub inspection is unavailable.')
+        with tempfile.TemporaryDirectory() as tmp,patch('capo.evaluations.runner.importlib.util.find_spec',return_value=None),patch('capo.capabilities.shared_tools',side_effect=older_registry):
+            result=run_case(provider,'github_notification',Path(tmp)/'run')
+        self.assertFalse(result['task_success'])
+        self.assertFalse(any(name.startswith('github.') for name in result['available_tools']))
+
+    def test_research_date_composes_with_all_day_reminder(self):
+        from capo.evaluations.research_cases import URL
+        provider=Mock();provider.call.side_effect=[
+            step('web.search',query='Lakeside Harbor Hall Oakland November 2030'),
+            step('web.read',url=URL),
+            step('dates.shift',value='2030-11-18',days='-14',timezone='America/Los_Angeles'),
+            step('calendar.events',start='2030-11-04T00:00:00-08:00',end='2030-11-05T00:00:00-08:00'),
+            step('calendar.change',action='create',event_id='',title='Decide about Lakeside show',location='',
+                start='2030-11-04',end='2030-11-05',all_day=True),
+            dict(finish(),reply='Added a November 4 reminder to decide about the November 18 Lakeside show.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'research_reminder',Path(tmp)/'run')
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertIsNone(result['task_success'])
+        self.assertEqual(result['remote_writes'],1)

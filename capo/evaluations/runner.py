@@ -1,5 +1,6 @@
 """Run actual shared calendar adapters against an isolated synthetic world."""
 import hashlib
+import importlib.util
 import json
 import time
 import subprocess
@@ -11,6 +12,7 @@ from .calendar_cases import CASES,CalendarWorld
 from .mail_cases import CASES as MAIL_CASES,MailWorld
 from .github_cases import CASES as GITHUB_CASES,GitHubWorld
 from .task_cases import CASES as TASK_CASES,TaskWorld
+from .research_cases import CASES as RESEARCH_CASES,ResearchWorld
 
 
 def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
@@ -23,8 +25,8 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         raise ValueError('Evaluation artifacts must be outside the public repository')
     if output.exists() and any(output.iterdir()):raise ValueError('Use a fresh evaluation directory')
     output.mkdir(parents=True,mode=0o700,exist_ok=True)
-    case={**CASES,**MAIL_CASES,**GITHUB_CASES,**TASK_CASES}[name]
-    world=TaskWorld(case) if case.get('tasks') else GitHubWorld(case) if case.get('github') else (MailWorld(case) if case.get('mail') else CalendarWorld(case))
+    case={**CASES,**MAIL_CASES,**GITHUB_CASES,**TASK_CASES,**RESEARCH_CASES}[name]
+    world=ResearchWorld(case) if case.get('web') else TaskWorld(case) if case.get('tasks') else GitHubWorld(case) if case.get('github') else (MailWorld(case) if case.get('mail') else CalendarWorld(case))
     from capo.capabilities import shared_tools,Documents
     from capo.research_tools import ReadTools,research
     from capo.conversation import _write
@@ -43,14 +45,19 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
     with ExitStack() as stack:
         stack.enter_context(patch('capo.calendar.GoogleCalendar',side_effect=world.client))
         stack.enter_context(patch('capo.calendar_actions.GoogleCalendar',side_effect=world.client))
+        if case.get('web'):
+            stack.enter_context(patch('capo.web_tools.WebTools.search',side_effect=world.search))
+            stack.enter_context(patch('capo.web_tools.read_page',side_effect=world.read))
         if case.get('mail'):stack.enter_context(patch('capo.gmail.Gmail',side_effect=world.mail_client))
-        if case.get('github'):stack.enter_context(patch('capo.github_tools.ReadClient.get',side_effect=world.github_get))
+        if case.get('github') and importlib.util.find_spec('capo.github_tools') is not None:
+            stack.enter_context(patch('capo.github_tools.ReadClient.get',side_effect=world.github_get))
         registry=shared_tools(output/'state',config,Documents(output/'state','synthetic'),request)
         # Only these adapters are backed by this fixture. No web, GitHub, or
         # personal-service fallback is allowed during a calendar-only evaluation.
         allowed=('calendar.','dates.','clock.','mail.') if case.get('mail') else ('calendar.','dates.','clock.')
         if case.get('github'):allowed+=('github.',)
         if case.get('tasks'):allowed+=('tasks.',)
+        if case.get('web'):allowed+=('web.',)
         tools=ReadTools([tool for name,tool in registry.tools.items() if name.startswith(allowed) and name!='github.issues'])
         from capo.recovery import RetryLater
         waited=0
@@ -74,8 +81,9 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         source_hash.update(str(path.relative_to(repository)).encode()+b'\0'+path.read_bytes())
     success=False if any(v is False for v in checks.values()) else (None if any(v is None for v in checks.values()) else True)
     summary={'case':name,'split':case['split'],'mode':mode,'checks':checks,
-        'automated_checks_passed':success,'task_success':None if success and case.get('mail') else success,
-        'semantic_review_required':bool(case.get('mail')),
+        'automated_checks_passed':success,'task_success':None if success and (case.get('mail') or case.get('web')) else success,
+        'semantic_review_required':bool(case.get('mail') or case.get('web')),
+        'available_tools':sorted(tools.tools),
         'elapsed_seconds':round(time.monotonic()-started,3),'tool_attempts':len(result.get('receipts',[])),
         'remote_writes':len(world.writes),'reported_status':result.get('status','unassessed'),
         'unnecessary_clarification':None,'unsupported_claims':None,
@@ -86,5 +94,5 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
     _write(output/'summary.json',summary)
     _write(output/'world.json',{'before':world.original,'after':world.calendars,'writes':world.writes,
                               'drafts':getattr(world,'drafts',{}),'mail_reads':getattr(world,'mail_reads',[]),
-                              'github_reads':getattr(world,'github_reads',[]),'tasks':getattr(world,'task_rows',[])})
+                              'github_reads':getattr(world,'github_reads',[]),'tasks':getattr(world,'task_rows',[]),'web_reads':getattr(world,'web_reads',[])})
     return summary
