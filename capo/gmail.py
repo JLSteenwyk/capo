@@ -146,7 +146,9 @@ class GmailReadTools(ReadTools):
         self.known_threads = set()
         self.read_attempts = 0
         self.characters = 0
-        super().__init__([
+        from .mail_attachments import MailAttachments
+        self.attachments = MailAttachments(client, self.known_ids)
+        super().__init__(self.attachments.tools() + [
             ReadTool('mail.search',
                 'Search Gmail using query syntax such as in:sent, in:inbox, from:, subject:, '
                 'after: and before:. Returns message IDs, not message text. Use an empty '

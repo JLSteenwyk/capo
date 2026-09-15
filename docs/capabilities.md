@@ -11,7 +11,7 @@ Available primitives:
 | context.read / context.save / context.history / context.actions | Original thread objective, working notes and durable action history |
 | tasks.search / tasks.get / tasks.save | Shared personal tasks and reminders |
 | schedules.list / schedules.save | Owner-configured recurring read-only requests |
-| mail.thread / mail.attachments | Correspondence context and verified attachment references |
+| mail.thread / mail.attachments / mail.attachment.read | Correspondence context, verified attachment references, and bounded text-file inspection without draft permission |
 | mail.drafts.* | Find, read, save, delete and reconcile drafts with the optional grant |
 | calendar.availability / calendar.change | Work windows and authorized personal event changes |
 | calendar.pending / calendar.reconcile | Read-only verification of uncertain changes |

@@ -34,7 +34,7 @@ def addresses(values):
 class DraftTools:
     def __init__(self, client, mail, home, owner, request=None):
         self.client=client;self.mail=mail;self.effects=Effects(home,owner)
-        self.known=set();self.attachments={};self.cursors={};self.actions={};self.reconcile_cursors={}
+        self.known=set();self.attachments=mail.attachments.references;self.cursors={};self.actions={};self.reconcile_cursors={}
         request=request or {}
         owner_text=request.get('message','')+'\n'+'\n'.join(x.get('user','') for x in request.get('recent_messages',[]))
         self.explicit=set(re.findall(r'[^\s<>@,;]+@[^\s<>@,;]+\.[A-Za-z]{2,}',owner_text))
@@ -79,21 +79,7 @@ class DraftTools:
                 'truncated':len(str(text))>12000,'attachments':attachments}
 
     def source_attachments(self,message_id):
-        if message_id not in self.mail.known_ids:raise ValueError('Search the source message first')
-        value=self.client.get('messages/'+quote(message_id,safe=''),{'format':'raw'})
-        encoded=value['raw']
-        if len(encoded)>LIMIT*2:raise ValueError('Source message too large')
-        raw=base64.urlsafe_b64decode(encoded+'='*(-len(encoded)%4))
-        if len(raw)>LIMIT:raise ValueError('Source message too large')
-        message=BytesParser(policy=policy.default).parsebytes(raw)
-        rows=[]
-        for index,part in enumerate(message.walk()):
-            if not part.get_filename():continue
-            content=part.get_payload(decode=True) or b''
-            key=hashlib.sha256(message_id.encode()+str(index).encode()+content).hexdigest()
-            self.attachments[key]=(part.get_filename(),part.get_content_type(),content)
-            rows.append({'id':key,'filename':part.get_filename(),'type':part.get_content_type(),'bytes':len(content)})
-        return {'attachments':rows,'coverage':'Attachments from this source message, up to 5 MiB total MIME size; contents are not executed.'}
+        return self.mail.attachments.source(message_id)
 
     def _parent(self,id):
         if id not in self.mail.known_ids:raise ValueError('Search/read the reply message first')
@@ -216,7 +202,6 @@ class DraftTools:
         return [
             ReadTool('mail.drafts.pending','List unconfirmed draft changes after a timeout or interruption. Do this before retrying a failed draft write.',object_schema({}),self.pending),
             ReadTool('mail.drafts.reconcile','Check a pending action ID against Gmail without repeating the write. Uses a preserved action header or an explicit not-found response after deletion. Start with empty cursor; follow returned cursors for this action. Checks at most ten draft headers per call; missing evidence stays unconfirmed.',object_schema({'id':TEXT,'cursor':TEXT}),self.reconcile),
-            ReadTool('mail.attachments','Read attachment metadata and obtain verified references from a searched message; use reference IDs to attach requested files to a draft.',object_schema({'message_id':TEXT}),self.source_attachments),
             ReadTool('mail.drafts.search','Find Gmail drafts using Gmail search syntax. Empty query finds all; use returned cursor for more.',object_schema({'query':TEXT,'cursor':TEXT}),self.search),
             ReadTool('mail.drafts.read','Read a discovered draft, current revision, recipients and attachment references before editing or deleting.',object_schema({'id':TEXT}),self.read),
             ReadTool('mail.drafts.save','Create or update an owner-requested Gmail draft; never sends it. New: empty id/revision. Edit: latest revision and full replacement content. Recipients must appear in owner text or source correspondence. For replies supply a searched message ID and preserve its subject exactly. Preserve existing attachments by their read reference IDs unless owner asks to remove them. Use the approved writing guide.',object_schema({'id':TEXT,'revision':TEXT,'to':TEXTS,'cc':TEXTS,'bcc':TEXTS,'subject':TEXT,'body':TEXT,'reply_to_message':TEXT,'attachment_ids':TEXTS}),self.save,mutates=True),
