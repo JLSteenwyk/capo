@@ -15,7 +15,7 @@ Available primitives:
 | schedules.list / schedules.save | Owner-configured recurring read-only requests |
 | mail.thread / mail.attachments / mail.attachment.read | Correspondence context, verified attachment references, and bounded text-file inspection without draft permission |
 | mail.drafts.* | Find, read, save, delete and reconcile drafts with the optional grant |
-| calendar.availability / calendar.change | Work windows and authorized personal event changes |
+| calendar.preferences / calendar.availability / calendar.change | Owner calendar choices, combined work windows, and verified personal event changes |
 | calendar.pending / calendar.reconcile | Read-only verification of uncertain changes |
 | mail.search | Gmail query with pagination; returns message IDs |
 | mail.read | Read discovered messages with headers, labels and body excerpts |

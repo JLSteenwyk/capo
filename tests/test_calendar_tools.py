@@ -33,6 +33,73 @@ class CalendarToolTests(unittest.TestCase):
             {'id':'shared','accessRole':'reader','summary':'Shared'}]}
         self.tools.list('')
 
+    def test_preferred_creation_requires_discovery_and_targets_owned_calendar(self):
+        tools=CalendarTools('America/Los_Angeles',self.factory,preferences={'default_calendar_id':'work'})
+        registry=ReadTools(tools.action_tools(self.home,'owner'))
+        args={'action':'create','event_id':'','title':'Work reminder','location':'',
+              'start':'2030-01-02','end':'2030-01-03','all_day':True}
+        with self.assertRaises(ValueError):
+            registry.call('calendar.change',args,operation_id='undiscovered')
+        tools.list('')
+        self.work.events.return_value=[]
+        remote={}
+        def save(method,**kwargs):
+            row=dict(kwargs['json']);remote[row['id']]=row;return row
+        self.work.request.side_effect=save
+        self.work.lookup.side_effect=lambda id:remote.get(id)
+        with patch('capo.calendar_actions.GoogleCalendar',side_effect=self.factory):
+            result=registry.call('calendar.change',args,operation_id='preferred')
+        self.assertEqual(result['calendar_id'],'work')
+        self.assertTrue(result['verified'])
+        self.primary.request.assert_not_called()
+        self.assertEqual(tools.selection()['availability_calendar_ids'],['work'])
+
+    def test_combined_availability_keeps_equal_event_ids_distinct(self):
+        one=dict(event('Personal'),start={'dateTime':'2030-01-02T09:00:00-08:00'},
+                 end={'dateTime':'2030-01-02T10:00:00-08:00'})
+        two=dict(event('Work'),start={'dateTime':'2030-01-02T09:30:00-08:00'},
+                 end={'dateTime':'2030-01-02T10:30:00-08:00'})
+        self.primary.events.return_value=[one]
+        self.work.events_page.return_value={'items':[two]}
+        result=self.tools.availability(START,END,'09:00','12:00',['2'],'30',['primary','work'])
+        self.assertEqual(result['status'],'complete')
+        self.assertEqual(result['free_windows'][0]['start'],'2030-01-02T10:30:00-08:00')
+        self.assertEqual({r['calendar_id'] for r in result['conflicts'][0]['event_refs']},{'primary','work'})
+        self.assertEqual({r['event_id'] for r in result['conflicts'][0]['event_refs']},{'same-id'})
+
+    def test_incomplete_or_unavailable_calendar_never_implies_free_time(self):
+        self.primary.events.return_value=[]
+        self.work.events_page.return_value={'items':[],'nextPageToken':'more'}
+        result=self.tools.availability(START,END,'09:00','12:00',['2'],'30',['primary','work'])
+        self.assertEqual(result['free_windows'],[])
+        self.assertEqual(result['status'],'partial')
+        self.work.events_page.side_effect=ConnectionError('private diagnostic')
+        result=self.tools.availability(START,END,'09:00','12:00',['2'],'30',['primary','work'])
+        self.assertEqual(result['free_windows'],[])
+        self.assertNotIn('private diagnostic',str(result))
+
+    def test_selection_settings_reject_invalid_ids_and_duplicate_calendars(self):
+        from capo.calendar_tools import selection_settings
+        for settings in ({'default_calendar_id':''},{'default_calendar_id':3},
+                         {'availability_calendar_ids':['primary','primary']},
+                         {'availability_calendar_ids':[]},{'availability_calendar_ids':['bad\nvalue']}):
+            with self.subTest(settings=settings),self.assertRaises(ValueError):selection_settings(settings)
+
+    def test_all_day_availability_uses_selected_calendar_timezone(self):
+        self.work.events_page.return_value={'items':[event('Work holiday')]}
+        unknown=self.tools.availability(START,END,'20:00','23:00',['2'],'30',['work'])
+        self.assertEqual(unknown['status'],'partial')
+        self.assertEqual(unknown['free_windows'],[])
+        self.work.calendar_info.return_value={'id':'work','timeZone':'America/New_York'}
+        self.tools.inspect('work')
+        known=self.tools.availability(START,END,'20:00','23:00',['2'],'30',['work'])
+        self.assertEqual(known['free_windows'][0]['start'],'2030-01-02T21:00:00-08:00')
+        self.primary.events.return_value=[event('Personal holiday')]
+        self.primary.events_timezone='America/New_York'
+        primary=self.tools.availability(START,END,'20:00','23:00',['2'],'30',['primary'])
+        self.assertEqual(primary['free_windows'][0]['start'],'2030-01-02T21:00:00-08:00')
+        self.assertEqual(primary['calendars'][0]['timezone_source'],'calendar')
+
     def test_discovery_inspection_and_query_identity(self):
         self.primary.events_page.return_value={'items':[event('Personal')],'nextPageToken':'next'}
         self.work.events_page.return_value={'items':[event('Work')]}

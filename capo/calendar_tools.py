@@ -1,15 +1,28 @@
 """Calendar discovery and inspection with resource identity and explicit coverage."""
 import copy
+import json
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .calendar import instant, writable
-from .contracts import TEXT, object_schema
+from .contracts import TEXT, TEXTS, object_schema
 from .research_tools import ReadTool
 
 
+def selection_settings(settings):
+    preferred=settings.get('default_calendar_id','primary')
+    calendars=settings.get('availability_calendar_ids',[preferred])
+    def valid(value):
+        return isinstance(value,str) and 0<len(value)<=500 and not any(ord(c)<32 for c in value)
+    if not valid(preferred) or not isinstance(calendars,list) or not 1<=len(calendars)<=10 or not all(valid(v) for v in calendars) or len(set(calendars))!=len(calendars):
+        raise ValueError('Configure a calendar ID and one to ten unique availability calendar IDs')
+    return {'default_calendar_id':preferred,'availability_calendar_ids':list(calendars)}
+
+
 class CalendarTools:
-    def __init__(self, zone, client_factory=None):
+    def __init__(self, zone, client_factory=None, preferences=None):
         self.zone = zone
+        self.preferences = selection_settings(preferences or {})
         self.factory = client_factory
         self.calendars = {'primary':{'id':'primary','primary':True}}
         self.cursors = {}
@@ -57,6 +70,7 @@ class CalendarTools:
     def inspect(self, calendar_id):
         calendar_id = self.canonical(calendar_id)
         data = self.client(calendar_id).calendar_info()
+        if data.get('timeZone'):self.calendars[calendar_id]['timeZone']=data['timeZone']
         value={key:data[key] for key in ('id','summary','description','location','timeZone') if key in data}
         if 'description' in value:
             value['description_truncated']=len(value['description'])>12000
@@ -98,7 +112,10 @@ class CalendarTools:
     def events(self, start, end):
         """Preserve the existing primary-calendar contract for saved callers."""
         self.window(start,end)
-        rows=self.client('primary').events(start,end)
+        client=self.client('primary')
+        rows=client.events(start,end)
+        if isinstance(getattr(client,'events_timezone',None),str):
+            self.calendars['primary']['timeZone']=client.events_timezone
         for row in rows:self.remember('primary',row)
         return {'events':[self.describe('primary',row) for row in rows], 'coverage':'Primary calendar only. Use calendar.event for descriptions, attendees and edit restrictions.'}
 
@@ -109,6 +126,7 @@ class CalendarTools:
         key=(calendar_id,start,end,query)
         self.token(page_token,key)
         data=self.client(calendar_id).events_page(start,end,query,page_token)
+        if isinstance(data.get('timeZone'),str):self.calendars[calendar_id]['timeZone']=data['timeZone']
         rows=[row for row in data.get('items',[])[:50] if row.get('status')!='cancelled']
         for row in rows:self.remember(calendar_id,row)
         return {'calendar_id':calendar_id,'events':[self.describe(calendar_id,row) for row in rows],
@@ -126,12 +144,58 @@ class CalendarTools:
         self.remember(calendar_id,row)
         return {'found':True,'event':self.describe(calendar_id,row,True),'coverage':'Current event details; description and attendee truncation are reported explicitly.'}
 
+    def selection(self):
+        return {**copy.deepcopy(self.preferences), 'timezone':self.zone,
+                'coverage':'Owner-configured calendar choices. Discover and inspect calendars before using non-primary IDs. An explicit owner choice overrides the default; it grants no additional edit permission.'}
+
+    def availability(self,start,end,work_start,work_end,weekdays,minimum_minutes,calendar_ids=None):
+        from .availability import availability
+        from .digest import wall
+        from .recovery import failure_summary
+        selected=self.preferences['availability_calendar_ids'] if calendar_ids is None else calendar_ids
+        selection_settings({'availability_calendar_ids':selected})
+        selected=list(dict.fromkeys(self.canonical(id) for id in selected))
+        # Validate window and work-hour arguments before any external reads.
+        availability([],start,end,self.zone,work_start,work_end,weekdays,minimum_minutes)
+        events=[];coverage=[];references={}
+        for calendar_id in selected:
+            try:
+                page=self.events(start,end) if calendar_id=='primary' else self.search(calendar_id,start,end,'','')
+                batch=[]
+                for original in page['events']:
+                    row=copy.deepcopy(original)
+                    for boundary in ('start','end'):
+                        if row.get(boundary,{}).get('date'):
+                            zone=self.calendars[calendar_id].get('timeZone',self.zone if calendar_id=='primary' else None)
+                            if zone is None:raise ValueError('Inspect the calendar timezone before calculating all-day availability')
+                            local=wall(datetime.fromisoformat(row[boundary]['date']).date(),'00:00',zone)
+                            row[boundary]={'dateTime':local.isoformat()}
+                    key=row['id'] if selected==['primary'] else json.dumps([calendar_id,row['id']])
+                    references[key]={'calendar_id':calendar_id,'event_id':row['id']}
+                    row['id']=key;batch.append(row)
+                events.extend(batch)
+                coverage.append({'calendar_id':calendar_id,'complete':not page.get('more_available',False),
+                                 'next_page_token':page.get('next_page_token',''),
+                                 'timezone_source':'calendar' if self.calendars[calendar_id].get('timeZone') else
+                                     'configured_primary_default' if calendar_id=='primary' else 'not_reported'})
+            except Exception as exc:
+                coverage.append({'calendar_id':calendar_id,'complete':False,'error':failure_summary(exc)})
+        result=availability(events,start,end,self.zone,work_start,work_end,weekdays,minimum_minutes)
+        complete=all(row['complete'] for row in coverage) and not result['unreadable_event_ids']
+        if not complete:result['free_windows']=[]
+        for conflict in result['conflicts']:
+            conflict['event_refs']=[references[id] for id in conflict['event_ids']]
+        return {**result,'status':'complete' if complete else 'partial','calendars':coverage,
+                'coverage':'Selected calendars only; work hours are supplied assumptions. No free windows are reported if any selected calendar is incomplete or unavailable. Travel and unrecorded commitments are not included; no time was booked.'}
+
     def action_tools(self, home, owner):
         from dataclasses import replace
         from .calendar_actions import CalendarActions
         actions = CalendarActions(home, owner, self.zone, self.primary_cache)
         tools = actions.tools()
-        def change(calendar_id='primary', **arguments):
+        def change(calendar_id=None, **arguments):
+            if calendar_id is None:
+                calendar_id=self.preferences['default_calendar_id'] if arguments.get('action')=='create' else 'primary'
             calendar_id = self.canonical(calendar_id)
             if calendar_id != 'primary' and self.calendars[calendar_id].get('accessRole') != 'owner':
                 raise PermissionError('Capo changes events only on calendars owned by this account')
@@ -142,11 +206,12 @@ class CalendarTools:
         # Optional for persisted callers; new requests can name a discovered calendar.
         schema['properties']['calendar_id'] = TEXT
         tools[0] = replace(tools[0], arguments=schema, execute=change,
-            description=tools[0].description+' Optional calendar_id selects primary or a discovered owned calendar. Carry the calendar ID from inspection; never infer identity from event ID alone.')
+            description=tools[0].description+' Optional calendar_id selects a discovered owned calendar. Creation defaults to the owner preference from calendar.preferences; legacy update/delete default to primary. Carry the calendar ID from inspection; never infer identity from event ID alone.')
         return tools
 
     def tools(self):
         return [
+            ReadTool('calendar.preferences','Read owner-configured creation and availability calendar choices before selecting a calendar. Preferences do not grant access.',object_schema({}),self.selection),
             ReadTool('calendar.calendars','Discover calendars, names, timezones and access roles. Start with empty page_token. Requires Google calendar read permission.',object_schema({'page_token':TEXT}),self.list),
             ReadTool('calendar.inspect','Inspect metadata for primary or a discovered calendar ID.',object_schema({'calendar_id':TEXT}),self.inspect),
             ReadTool('calendar.events','Read primary-calendar events in a maximum 31-day explicit RFC3339 window. Use calendar.search for a selected calendar and calendar.event for details.',object_schema({'start':TEXT,'end':TEXT}),self.events),

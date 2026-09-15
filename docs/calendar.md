@@ -64,3 +64,20 @@ The shared tools can list accessible calendars (`calendar.calendars`), inspect m
 New authorizations request `calendar.readonly` alongside the existing `calendar.events.owned` scope. The added scope enables calendar discovery, metadata and shared-calendar reads; it does not broaden write permission. Existing credentials retain their original grant until the owner reconnects with `capo calendar-auth` and the private OAuth client file. Primary-calendar event access continues working with the old grant. Google may require this one-time consent before discovery works.
 
 Shared calendar changes are verified with a fresh lookup of the intended event on the selected calendar before returning success. Create/update verification checks its ID, title, location, dates/times, and the correct all-day or timed representation. Updates also preserve previously inspected notes, reminders, attachments, visibility and other supported metadata in a private verification snapshot. Delete verification requires explicit absence. Missing, conflicting or unavailable evidence leaves the action unconfirmed; read-only reconciliation uses the saved snapshot after restart, without replaying the write. Older completed receipts retain their original evidence level and are not retroactively labeled verified.
+
+Calendar selection can be configured privately under `calendar`:
+
+```json
+{
+  "enabled": true,
+  "timezone": "America/Los_Angeles",
+  "default_calendar_id": "primary",
+  "availability_calendar_ids": ["primary", "work@example.invalid"]
+}
+```
+
+Use actual calendar IDs obtained through discovery. Defaults remain `primary`; availability defaults to the creation preference when its own list is omitted. `calendar.preferences` exposes these choices to Capo. Non-primary calendars must still be discovered, and writes still require ownership. An explicitly supplied `calendar_id` overrides the creation default. Existing update/delete callers that omit it continue targeting primary for compatibility; new requests should carry the ID from inspection.
+
+`calendar.availability` accepts an optional list of up to ten `calendar_ids`. It merges busy intervals while retaining calendar/event identity in conflicts. Secondary calendars currently contribute one page of up to 50 events; primary retains its bounded event-read contract. Any additional page, service failure, unreadable event or unknown secondary all-day timezone yields partial coverage and no free-window claims. Inspect metadata to resolve a missing timezone. All-day blocks use their source calendar’s timezone, while free windows use the configured local timezone. No event is created by an availability check.
+
+Availability uses timezones returned by event listings or calendar metadata. Legacy primary-calendar reads fall back to the configured local timezone when neither supplies one; the coverage record labels that assumption. Unknown secondary all-day timezones remain incomplete rather than assuming the primary timezone.

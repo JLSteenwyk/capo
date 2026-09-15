@@ -99,14 +99,11 @@ def shared_tools(home,config,documents,request=None):
             tools.extend(DraftTools(LazyDraftMail(),mail,home,owner_key(config),request).tools())
     if config.get('calendar',{}).get('enabled'):
         from .calendar_tools import CalendarTools
-        calendar_tools=CalendarTools(zone)
+        calendar_tools=CalendarTools(zone, preferences=config.get('calendar',{}))
         tools.extend(calendar_tools.tools())
-        events=calendar_tools.events
-        def free_time(start,end,work_start,work_end,weekdays,minimum_minutes):
-            from .availability import availability
-            return availability(events(start,end)['events'],start,end,zone,work_start,work_end,weekdays,minimum_minutes)
-        tools.append(ReadTool('calendar.availability','Find free windows and event conflicts within explicit work hours. Weekdays: 0 Monday through 6 Sunday. Supply owner preferences or label assumptions. Read-only; never books time.',
-            object_schema({'start':TEXT,'end':TEXT,'work_start':TEXT,'work_end':TEXT,'weekdays':TEXTS,'minimum_minutes':TEXT}),free_time))
+        schema=object_schema({'start':TEXT,'end':TEXT,'work_start':TEXT,'work_end':TEXT,'weekdays':TEXTS,'minimum_minutes':TEXT})
+        schema['properties']['calendar_ids']=TEXTS
+        tools.append(ReadTool('calendar.availability','Find free windows and conflicts across selected calendars. Optional calendar_ids overrides owner availability preferences; discover non-primary calendars first. Weekdays: 0 Monday through 6 Sunday. Supply owner preferences or label work-hour assumptions. Incomplete coverage yields no free windows. Read-only; never books time.',schema,calendar_tools.availability))
         tools.extend(calendar_tools.action_tools(home,owner_key(config)))
     repositories=config.get('repositories',{})
     if repositories:

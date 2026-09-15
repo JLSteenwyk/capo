@@ -156,6 +156,8 @@ def validate_config(config):
     calendar_settings = config.get("calendar", {})
     if not isinstance(calendar_settings, dict) or type(calendar_settings.get("enabled", False)) is not bool:
         raise ValueError("calendar.enabled must be true or false")
+    from .calendar_tools import selection_settings
+    selection_settings(calendar_settings)
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
     try:
         ZoneInfo(calendar_settings.get("timezone", "America/Los_Angeles"))

@@ -118,6 +118,7 @@ class GoogleCalendar:
                               'singleEvents': 'true', 'orderBy': 'startTime', 'maxResults': 100})
         if result.get('nextPageToken'):
             raise CalendarError('There are too many events to check at once. Please choose a shorter date range.')
+        self.events_timezone = result.get('timeZone')
         return [e for e in result.get('items', []) if e.get('status') != 'cancelled']
 
 
