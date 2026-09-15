@@ -18,6 +18,8 @@ CASES={
                                'calendar':'primary','target':'planning','title':'Planning','write':False,'guests':True},
 }
 
+CASES['calendar_correction']={**CASES['calendar_move'],'correction':'Actually, move it to 3–4 p.m. Pacific on the same date. Keep its other details.','target_hour':15}
+
 CASES['calendar_stale']={**CASES['calendar_move'],'stale_read':True}
 
 
@@ -82,8 +84,8 @@ class CalendarWorld:
         if self.case.get('stale_read'):
             expected[target][id]['description']='Updated preparation notes from another editor.'
         if self.case['write']:
-            expected[target][id]['start']={'dateTime':'2030-11-04T14:00:00-08:00','timeZone':'America/Los_Angeles'}
-            expected[target][id]['end']={'dateTime':'2030-11-04T15:00:00-08:00','timeZone':'America/Los_Angeles'}
+            expected[target][id]['start']={'dateTime':f"2030-11-04T{self.case.get('target_hour',14):02}:00:00-08:00",'timeZone':'America/Los_Angeles'}
+            expected[target][id]['end']={'dateTime':f"2030-11-04T{self.case.get('target_hour',14)+1:02}:00:00-08:00",'timeZone':'America/Los_Angeles'}
             expected[target][id]['etag']='"updated"'
         checks={'remote_state_matches':self.calendars==expected,
                 'write_count_matches':len(self.writes)==int(self.case['write']),

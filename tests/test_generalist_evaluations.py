@@ -274,3 +274,26 @@ class GeneralistEvaluationTests(unittest.TestCase):
             finally:db.close()
         self.assertEqual(len(world.writes),1)
         self.assertTrue(world.grade({'reply':'Moved.'})['remote_state_matches'])
+
+    def test_partial_page_requires_following_full_source(self):
+        from capo.evaluations.research_cases import URL
+        provider=Mock();provider.call.side_effect=[step('web.read',url=URL),step('web.read',url=URL+'/details'),
+            step('calendar.change',action='create',event_id='',title='Decide about Lakeside',location='',
+                start='2030-11-04',end='2030-11-05',all_day=True),dict(finish(),reply='Reminder added after reading the full listing.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'research_partial',Path(tmp)/'run')
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertTrue(result['checks']['partial_result_encountered'])
+
+    def test_correction_at_proposed_write_prevents_old_time_and_finishes_new_time(self):
+        read=step('calendar.events',start='2030-11-04T00:00:00-08:00',end='2030-11-05T00:00:00-08:00')
+        change=step('calendar.change',action='update',event_id='planning',title='Planning',location='Room 4',
+            start='2030-11-04T14:00:00-08:00',end='2030-11-04T15:00:00-08:00',all_day=False)
+        revised=step('calendar.change',action='update',event_id='planning',title='Planning',location='Room 4',
+            start='2030-11-04T15:00:00-08:00',end='2030-11-04T16:00:00-08:00',all_day=False)
+        provider=Mock();provider.call.side_effect=[read,change,read,revised,dict(finish(),reply='Moved to 3–4 p.m.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'calendar_correction',Path(tmp)/'run')
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertEqual(result['correction']['first_status'],'superseded')
+        self.assertEqual(result['remote_writes'],1)

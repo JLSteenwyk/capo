@@ -1,6 +1,7 @@
 """Run actual shared calendar adapters against an isolated synthetic world."""
 import hashlib
 import importlib.util
+import inspect
 import json
 import time
 import subprocess
@@ -38,6 +39,13 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         git(repo,'init','-b','main');git(repo,'remote','add','origin','https://github.com/example/project.git')
         config['repositories']={'project':{'path':str(repo)}}
     request={'message':case['request'],'timezone':'America/Los_Angeles'}
+    correction={}
+    correction_args={}
+    if case.get('correction'):
+        from .corrections import CorrectionProvider
+        provider=CorrectionProvider(provider)
+        if 'owner_update' in inspect.signature(research).parameters:
+            correction_args={'owner_update':provider.update}
     started=time.monotonic()
     # Patch both the lazy lookup and the action module's imported class; neither
     # may retain a real client or a different scenario's mock between cases.
@@ -63,7 +71,7 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         waited=0
         while True:
             try:
-                result=research(provider,tools,request,output/'request',max_calls=10)
+                result=research(provider,tools,request,output/'request',max_calls=10,**correction_args)
                 break
             except RetryLater as exc:
                 delay=max(1,exc.retry_at-time.time())
@@ -71,9 +79,29 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
                 # Keep the same simulated world and adapter discovery caches.
                 # Never recreate a world after a tool might have changed it.
                 time.sleep(delay);waited+=delay
+        if case.get('correction'):
+            _write(output/'first-stage.json',result)
+            correction={'triggered':provider.triggered,'monitor_supported':bool(correction_args),
+                        'first_status':result.get('status','unassessed'),'first_tool_attempts':len(result.get('receipts',[])),
+                        'writes_before_followup':len(world.writes)}
+            provider.armed=False
+            request={**request,'message':case['request']+'\nOwner correction: '+case['correction'],
+                     'original_objective':case['request'],'owner_correction':case['correction'],
+                     'previous_receipts':result.get('receipts',[])}
+            while True:
+                try:
+                    result=research(provider,tools,request,output/'followup',max_calls=10)
+                    break
+                except RetryLater as exc:
+                    delay=max(1,exc.retry_at-time.time())
+                    if waited+delay>recovery_wait_seconds:raise
+                    time.sleep(delay);waited+=delay
     if case.get('tasks'):
         world.task_rows=registry.call('tasks.search',{'query':'','status':'all','cursor':''})['tasks']
     checks=world.grade(result)
+    if correction:
+        checks['correction_delivered']=correction['triggered']
+        checks['superseded_write_prevented']=correction['writes_before_followup']==0
     revision=subprocess.run(['git','rev-parse','HEAD'],cwd=repository,capture_output=True,text=True,check=True).stdout.strip()
     source_hash=hashlib.sha256()
     for path in sorted((repository/'capo').rglob('*.py')):
@@ -83,9 +111,9 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
     summary={'case':name,'split':case['split'],'mode':mode,'checks':checks,
         'automated_checks_passed':success,'task_success':None if success and (case.get('mail') or case.get('web')) else success,
         'semantic_review_required':bool(case.get('mail') or case.get('web')),
-        'available_tools':sorted(tools.tools),
+        'available_tools':sorted(tools.tools),'correction':correction,
         'recovery_wait_seconds':waited,
-        'elapsed_seconds':round(time.monotonic()-started,3),'tool_attempts':len(result.get('receipts',[])),
+        'elapsed_seconds':round(time.monotonic()-started,3),'tool_attempts':len(result.get('receipts',[]))+correction.get('first_tool_attempts',0),
         'remote_writes':len(world.writes),'reported_status':result.get('status','unassessed'),
         'unnecessary_clarification':None,'unsupported_claims':None,
         'fixture_sha256':hashlib.sha256(json.dumps(case,sort_keys=True).encode()).hexdigest(),
