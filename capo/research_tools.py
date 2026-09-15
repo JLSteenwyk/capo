@@ -229,10 +229,11 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 if state.get('stopped'):
                     raise
                 raise RetryLater(state['retry_at'], 'Connected service needs time to recover') from None
+            from .github_tools import GitHubReadError
             from .web_tools import WebError
             from .effects import UncertainEffect
             from .calendar import CalendarError
-            safe_error = str(exc) if isinstance(exc, (WebError, UncertainEffect, CalendarError)) else 'Tool failed or arguments exceeded its limits. No result available.'
+            safe_error = str(exc) if isinstance(exc, (WebError, UncertainEffect, CalendarError, GitHubReadError)) else 'Tool failed or arguments exceeded its limits. No result available.'
             # Keep provider bodies, credentials, and arbitrary exception messages private.
             receipts.append({'tool': result['tool'], 'error':
                              safe_error})

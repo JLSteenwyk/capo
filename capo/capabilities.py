@@ -118,6 +118,8 @@ def shared_tools(home,config,documents,request=None):
         tools.extend(CalendarActions(home,owner_key(config),zone,calendar_cache).tools())
     repositories=config.get('repositories',{})
     if repositories:
+        from .github_tools import GitHubTools
+        tools.extend(GitHubTools(repositories).tools())
         def issues(repository):
             from .github import GitHub,remote_repository
             from .repository import git

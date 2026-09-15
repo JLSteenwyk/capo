@@ -19,6 +19,8 @@ Available primitives:
 | mail.read | Read discovered messages with headers, labels and body excerpts |
 | calendar.events | Read primary-calendar events in a bounded date range |
 | github.issues | Read open issues for a configured repository |
+| github.pull_requests / github.pull_request / github.reviews | Discover and inspect current PRs and review history |
+| github.workflow_runs / github.workflow_run / github.checks / github.job_log | Inspect workflow attempts, jobs, commit checks and bounded logs |
 | documents.list / documents.read | Discover and reuse private documents for this owner |
 | preferences.remember | Specialists save explicit preferences to their own notes |
 
@@ -31,3 +33,5 @@ The loop defaults to six tool attempts and one final synthesis turn; the chief a
 Requested documents are saved privately under CAPO_HOME/documents, scoped to the configured owner/channel. Their full content is also included in the reply, so an introductory sentence cannot hide the generated answer. Longer replies use Slack’s durable chunk delivery and resume after interruptions. Short status-update limits do not apply to requested lists or documents. The chief and specialists can reuse these documents. Specialist preference notes remain role-specific. Raw evidence and tool receipts stay in private run directories; they never belong in the public repository.
 
 The shared calendar tools reuse existing personal-event permissions and revision checks, with duplicate prevention and read-only reconciliation. GitHub publication and browser actions retain their controlled execution paths. Authenticated web browsing, email sending, purchases and a universal self-extending tool installer are not supplied by this registry. See [request resolution](request-resolution.md), [tasks](tasks.md), [Gmail drafts](gmail.md) and [planning](planning.md) for details. Scheduled heartbeats and the morning digest keep their explicit schedules and existing collectors.
+
+GitHub inspection uses fixed read-only REST endpoints through the existing CLI authentication. Repository aliases restrict access. List tools return pages of up to 20 records, with explicit coverage and next-page hints; PR and review bodies disclose truncation. Workflow inspection links jobs to their repository before logs can be read. Log reads fetch at most 1 MB and return the last 24,000 characters fetched, explicitly indicating when later source output was not fetched. Log and review text never grants execution authority. Match checks to the current PR head SHA before treating an emailed failure as resolved.
