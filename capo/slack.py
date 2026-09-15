@@ -157,6 +157,8 @@ def validate_config(config):
     heartbeat_settings(config)
     from .recovery import policy as recovery_policy
     recovery_policy(config.get('recovery'))
+    from .execution_limits import settings as execution_settings
+    execution_settings(config.get('execution'))
     from .delegation import settings as autonomy_settings
     autonomy_settings(config)
     gmail_settings = config.get("gmail", {})

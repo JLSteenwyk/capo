@@ -64,7 +64,7 @@ def complete_reply(result):
     return reply + '\n\n' + content
 
 
-def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None):
+def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None):
     """Serialize the entire reasoning/tool loop, including external tool calls."""
     import fcntl
     import os
@@ -77,18 +77,18 @@ def research(provider, tools, request, directory, instructions='', max_calls=6, 
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RetryLater(time.time() + 5, 'This request is already running') from None
-        return _research(provider, tools, request, directory, instructions, max_calls, recovery)
+        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits)
     finally:
         os.close(fd)
 
 
-def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None):
+def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None):
     """Compose tools without a task-type enum; return evidence receipts and a document.
 
     max_calls counts tool attempts, including invalid calls. A final provider turn
     after the tool budget is reserved for a partial answer. No tool is run then.
     """
-    if type(max_calls) is not int or not 1 <= max_calls <= 10:
+    if type(max_calls) is not int or not 1 <= max_calls <= 40:
         raise ValueError('Invalid research budget')
     directory.mkdir(parents=True,exist_ok=True,mode=0o700)
     (directory/'cwd').mkdir(exist_ok=True,mode=0o700)
@@ -97,12 +97,18 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
     provider = RecoveringProvider(provider, recovery)
     checkpoint = directory/'checkpoint.json'
     from .research_checkpoint import bind, provider_prompt
-    fingerprint = hashlib.sha256(json.dumps([request, tools.catalog(), instructions, max_calls], sort_keys=True).encode()).hexdigest()
+    evidence_limit=180000
     if checkpoint.exists():
         state = json.loads(checkpoint.read_text())
     else:
-        state = {'fingerprint': fingerprint, 'now': datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat(),
+        state = {'now': datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat(),
                  'receipts': [], 'pending': None}
+    if limits is not None or 'execution_limits' in state:
+        from .execution_limits import pinned
+        budget=pinned(state,request,limits)
+        max_calls=budget['max_calls'];evidence_limit=budget['evidence_chars']
+    if 'fingerprint' not in state:
+        state['fingerprint']=hashlib.sha256(json.dumps([request, tools.catalog(), instructions, max_calls], sort_keys=True).encode()).hexdigest()
     bind(state, request, tools.catalog(), instructions, max_calls, directory, STEP)
     _write(checkpoint, state)
     if (directory/'cancelled.json').exists():
@@ -123,7 +129,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         state['pending'] = None
         _write(checkpoint, state)
         _write(directory/'receipts.json', receipts)
-    evidence_size = sum(len(json.dumps(r.get('result', {}))) for r in receipts)
+    evidence_size = max(state.get('evidence_chars_used',0),sum(len(json.dumps(r.get('result', {}))) for r in receipts))
     memory = None
     if request.get('request_thread'):
         # The caller supplies only host-authorized thread context.
@@ -169,7 +175,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 'request': request, 'tools': tools.catalog(), 'receipts': receipts,
                 'request_started_at': state['now'],
                 'remaining_tool_calls': remaining,
-                'must_finish': remaining == 0 or evidence_size >= 180000,
+                'remaining_evidence_chars':max(0,evidence_limit-evidence_size),
+                'must_finish': remaining == 0 or evidence_size >= evidence_limit,
             })
         )
         prompt = provider_prompt(directory/f'step-{step}', prompt, STEP)
@@ -204,10 +211,13 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             state['result'] = completed
             _write(checkpoint, state)
             return completed
-        if not remaining or evidence_size >= 180000:
-            return {'reply': 'The research limit was reached before the analysis finished. '
-                    'The saved evidence is partial; please narrow the request.',
-                    'document_title': '', 'document': '', 'receipts': receipts}
+        if not remaining or evidence_size >= evidence_limit:
+            completed={'reply': 'I reached the execution limit before finishing. Results are preserved, but the remaining work is incomplete.',
+                       'status':'partial','stop_reason':'tool_limit' if not remaining else 'evidence_limit',
+                       'document_title': '', 'document': '', 'receipts': receipts}
+            state['result']=completed
+            _write(checkpoint,state)
+            return completed
         if any(result[key] for key in ('reply', 'document_title', 'document')):
             raise ValueError('Unexpected output during tool selection')
         try:
@@ -227,9 +237,16 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 raise RecoveryStopped('Research was cancelled')
             evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+action_key)
             size = len(json.dumps(evidence))
-            if size > 180000 - evidence_size:
-                raise ValueError('Evidence budget exceeded')
-            evidence_size += size
+            if size > evidence_limit - evidence_size:
+                # The tool has already run: retain its actual result, especially
+                # a write receipt, rather than misreporting the action as failed.
+                artifact='evidence-'+str(step)+'.json'
+                _write(directory/artifact,evidence)
+                evidence={'coverage':'Partial: evidence limit reached. Full tool result is preserved in the private run artifact.',
+                          'artifact':artifact,'truncated':True,'tool_returned':True,
+                          'instruction':'Do not repeat this action; its full result requires inspection before further work.'}
+                evidence_size=evidence_limit
+            else:evidence_size += size
             receipts.append({'tool': result['tool'], 'arguments': arguments, 'result': evidence})
         except RecoveryStopped:
             raise
@@ -260,6 +277,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             receipts.append({'tool': result['tool'], 'error':
                              safe_error})
         state['pending'] = None
+        state['evidence_chars_used']=evidence_size
         _write(checkpoint, state)
         _write(directory/'receipts.json',receipts)
         if memory is not None:

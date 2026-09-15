@@ -147,7 +147,7 @@ class CapabilityConversation(ConversationRouter):
                 'Highlight conflicts, preparation and work windows; label assumptions about work hours and task duration. '
                 'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first. '
                 'For explicitly requested work that needs later follow-through, save its task and use tasks.delegate. '
-                'A request merely to track something or remind the owner is not permission to execute that underlying activity; do not delegate it.',max_calls=10, recovery=self.config.get('recovery'))
+                'A request merely to track something or remind the owner is not permission to execute that underlying activity; do not delegate it.',max_calls=10, recovery=self.config.get('recovery'),limits=self.config.get('execution',{}))
             key=self.documents.save(directory,result)
             _write(directory/'research.json',result)
             if key:_write(directory/'document.json',{'id':key,'title':result['document_title'],'content':result['document']})

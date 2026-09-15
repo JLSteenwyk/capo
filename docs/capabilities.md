@@ -45,3 +45,15 @@ Gmail message and thread inspection share a 50-attempt, 120,000-body-character b
 Authenticated interactive requests expose `development.list`, `development.inspect`, `development.start`, and `development.manage`, plus `browser.start` when enabled. These are handoffs to the existing isolated workflows, not direct shell or publication access. Host code reloads the stored owner event, validates thread ownership, and carries the original request into coding/browser briefs. Coding uses repository-configured checks, workers and limits. Follow-ups and cancellations require the original objective thread. Durable receipts prevent repeating the same handoff; returned queue status is not completion. Publication and browser approval commands remain outside model-selected tools. Scheduled monitoring without an authenticated interactive owner event does not gain these handoffs.
 
 Explicit commands, thread replies without mentions, working indicators, delivery receipts and cancellation retain their existing Slack paths. Only events with an already-saved legacy classifier `started.json` use the former domain routing handlers, to preserve their in-progress state. New ordinary requests use the shared loop even when they mention calendar, email, shopping, or coding.
+
+## Execution limits
+
+The private Slack configuration accepts an optional `execution` object:
+
+```json
+{"execution": {"max_calls": 10, "evidence_chars": 180000}}
+```
+
+`max_calls` accepts integers from 1 to 40; `evidence_chars` accepts integers from 1,000 to 360,000. The defaults preserve the existing ten tool attempts and 180,000 evidence characters. Failed calls and discarded stale-date decisions consume attempts. A final reasoning turn can summarize completed work after tool execution stops. Per-tool data limits, permissions, provider recovery limits, and coding/browser budgets remain separate.
+
+Limits are pinned when a request begins. Configuration changes affect new requests; they cannot reset or expand an in-progress request's budget. Existing shared checkpoints retain their original tool budget and prior evidence limit. An oversized tool result is preserved as a private run artifact and represented by an explicit partial-coverage receipt. Exhaustion survives restarts and stops further tools; a tool that already ran is not mislabeled as failed because its returned evidence was too large. Full overflow artifacts currently require local inspection. These limits govern tool attempts and retained evidence, not a precise token-cost or wall-clock allowance.
