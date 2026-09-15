@@ -64,7 +64,7 @@ def complete_reply(result):
     return reply + '\n\n' + content
 
 
-def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None):
+def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None):
     """Serialize the entire reasoning/tool loop, including external tool calls."""
     import fcntl
     import os
@@ -77,12 +77,12 @@ def research(provider, tools, request, directory, instructions='', max_calls=6, 
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RetryLater(time.time() + 5, 'This request is already running') from None
-        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits)
+        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update)
     finally:
         os.close(fd)
 
 
-def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None):
+def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None):
     """Compose tools without a task-type enum; return evidence receipts and a document.
 
     max_calls counts tool attempts, including invalid calls. A final provider turn
@@ -120,6 +120,16 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
     if time.time() < state.get('retry_at', 0):
         raise RetryLater(state['retry_at'], 'Connected service is still cooling down')
     receipts = state['receipts']
+    def superseded():
+        update=owner_update() if owner_update is not None else None
+        if not update:return None
+        completed={'reply':'I received your update. I’ll use it for the remaining work.',
+                   'status':'superseded','superseded_by':update,
+                   'document_title':'','document':'','receipts':receipts}
+        state['pending']=None  # This check runs only before an external call.
+        state['result']=completed
+        _write(checkpoint,state)
+        return completed
     if state['pending'] is not None:
         # A process may have died after a write reached the service. Retain the
         # uncertain attempt as evidence; the agent must use reconciliation tools.
@@ -139,6 +149,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
     for step in range(len(receipts), max_calls + 1):
         if (directory/'cancelled.json').exists():
             raise RecoveryStopped('Research was cancelled')
+        updated=superseded()
+        if updated is not None:return updated
         remaining = max_calls - step
         now = datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat()
         prompt = (
@@ -184,6 +196,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         validate(result, STEP)
         if (directory/'cancelled.json').exists():
             raise RecoveryStopped('Research was cancelled')
+        updated=superseded()
+        if updated is not None:return updated
         # Recover in-flight workers with their exact original prompt, then reject a
         # decision whose local date is stale before it can execute any action.
         prompted_at=datetime.fromisoformat(prompt.split('Current local time: ',1)[1].split('. Complete',1)[0])
@@ -235,6 +249,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             _write(checkpoint, state)
             if (directory/'cancelled.json').exists():
                 raise RecoveryStopped('Research was cancelled')
+            updated=superseded()
+            if updated is not None:return updated
             evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+action_key)
             size = len(json.dumps(evidence))
             if size > evidence_limit - evidence_size:

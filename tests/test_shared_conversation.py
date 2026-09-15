@@ -53,6 +53,41 @@ class SharedConversationTests(unittest.TestCase):
                 time.sleep(.005)
         self.fail('Shared request did not finish')
 
+    def test_owner_correction_during_reasoning_stops_old_tool(self):
+        from capo.slack import ingest
+        original=self.body('Check tomorrow morning and make the requested reminder.')
+        correction={'team_id':'T123','event_id':'correction','event':{'type':'message',
+            'channel':'C123','user':'U123','ts':'125.456','thread_ts':'123.456',
+            'text':'Actually, just tell me what is planned; do not create anything.'}}
+        with patch('capo.capabilities.Providers') as providers,patch('capo.calendar.GoogleCalendar') as calendar:
+            def decide(*args,**kwargs):
+                if providers.return_value.call.call_count==1:
+                    self.assertTrue(ingest(self.home,self.config,correction))
+                    return step('calendar.events',start='2026-11-02T00:00:00-08:00',end='2026-11-03T00:00:00-08:00')
+                return finish('I will only check the plan.')
+            providers.return_value.call.side_effect=decide
+            self.assertIn('received your update',self.run_request(original))
+            calendar.return_value.events.assert_not_called()
+            self.assertIn('only check',self.run_request(correction))
+            prompt=providers.return_value.call.call_args.args[1]
+            data=json.loads(prompt.splitlines()[-1])
+            self.assertIn('make the requested reminder',data['request']['request_state']['original_request']['message'])
+            self.assertIn('do not create anything',data['request']['message'])
+
+    def test_update_monitor_ignores_other_owner_threads_and_status(self):
+        from capo.request_updates import latest
+        original=self.body('Do the requested work.')
+        context={'request_event':original['event_id'],'request_thread':'123.456'}
+        status=self.body('status','status','123.456')
+        self.assertIsNone(latest(self.home,self.config,context))
+        other=self.body('Change the work','other','999.999')
+        self.assertIsNone(latest(self.home,self.config,context))
+        stranger={'team_id':'T123','event_id':'stranger','event':dict(status['event'],user='U999',text='Stop')}
+        self.store.enqueue_slack('stranger',stranger)
+        self.assertIsNone(latest(self.home,self.config,context))
+        self.body('Use the new date','correction','123.456')
+        self.assertEqual(latest(self.home,self.config,context),'correction')
+
     def test_one_loop_combines_calendar_inspection_and_email(self):
         body = self.body('Prepare for my meeting using its details and the related email.')
         event = {'id': 'meeting', 'summary': 'Planning', 'description': 'Review the inventory',

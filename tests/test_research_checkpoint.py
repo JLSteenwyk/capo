@@ -182,6 +182,25 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(len(result['receipts']),2)
         self.assertEqual(research(backend,ReadTools([self.original]),self.request,self.root,max_calls=1),result)
 
+    def test_correction_at_mutation_boundary_clears_unexecuted_intent(self):
+        backend=Mock();backend.call.return_value=CREATE
+        updates=Mock(side_effect=[None,None,'new-owner-event'])
+        result=research(backend,ReadTools([self.original]),self.request,self.root,owner_update=updates)
+        self.write.assert_not_called()
+        self.assertEqual(result['status'],'superseded')
+        state=json.loads((self.root/'checkpoint.json').read_text())
+        self.assertIsNone(state['pending'])
+        self.assertEqual(state['receipts'],[])
+        self.assertEqual(research(backend,ReadTools([self.original]),self.request,self.root),result)
+
+    def test_correction_before_finish_preserves_completed_action_receipt(self):
+        backend=Mock();backend.call.side_effect=[CREATE,FINISH]
+        result=research(backend,ReadTools([self.original]),self.request,self.root,
+            owner_update=lambda:'new-owner-event' if backend.call.call_count==2 else None)
+        self.write.assert_called_once()
+        self.assertEqual(result['status'],'superseded')
+        self.assertEqual(result['receipts'][0]['result']['id'],'item')
+
 
 if __name__ == '__main__':
     unittest.main()
