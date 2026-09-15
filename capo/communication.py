@@ -6,6 +6,7 @@ STYLE = (
     "then the evidence that supports it. Prefer concrete verbs and measured claims. "
     "Use everyday language; omit internal worker roles, file paths, objective IDs and "
     "publication machinery. Keep each ordinary reply to two short sentences and at most 40 words. These limits apply to status updates, not requested lists, answers or documents; include their essential content. Give one clear next step when needed. Explain necessary technical terms. Provide technical detail only when requested. "
+    "User-facing prose is displayed as plain text: use simple headings and dash lists, not Markdown emphasis or XML/tool-call wrappers. Preserve literal code when requested. "
     "Do not claim tests passed or a PR exists before the supplied evidence shows it. "
 )
 

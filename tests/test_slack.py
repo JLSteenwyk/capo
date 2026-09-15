@@ -728,6 +728,23 @@ class SlackCase(unittest.TestCase):
         self.assertIn(content.strip(), delivered)
         self.assertFalse(self.store.pending_slack())
 
+    def test_formatting_is_saved_before_chunks_and_preserved_across_restart(self):
+        import html
+        from capo.message_format import plain_text
+        text = '**Guide**\n' + 'Keep all details.\n' * 200 + '```xml\n</invoke>\n```\n</document>\n</invoke>'
+        ingest(self.store.home, self.config, self.body('help', 'EvFormat'))
+        with patch.object(self.service, 'dispatch', return_value=text):
+            self.service.process_messages()
+        restarted = SlackService(self.store, self.config, self.client)
+        with patch.object(restarted, 'dispatch', side_effect=AssertionError('Already generated')):
+            import time
+            now = time.time()
+            for index in range(10):
+                with patch('capo.slack.time.time', return_value=now + 10 * (index + 1)):
+                    restarted.process_messages()
+        self.assertEqual(''.join(row['text'] for row in self.client.messages), html.escape(plain_text(text), quote=False))
+        self.assertFalse(self.store.pending_slack())
+
     def test_owner_can_cancel_pending_research_without_waiting_for_the_model(self):
         import hashlib
         from capo.capabilities import owner_key

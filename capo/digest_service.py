@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from .conversation import _write
+from .message_format import plain_text
 from .digest import DigestStore, compose, identity, scope, slot
 from .digest_sources import collect
 
@@ -112,7 +113,7 @@ class DigestManager:
             for message in result.get('messages',[]):
                 marker=(message.get('metadata') or {}).get('event_payload',{}).get('key')
                 if (message.get('bot_id') and message.get('user') == self.service.bot_user_id and (marker==run['marker'] or message.get('client_msg_id')==run['marker'])
-                        and message.get('text')==html.escape(run['payload']['text'],quote=False)):
+                        and message.get('text')==run.get('wire_text', html.escape(run['payload']['text'],quote=False))):
                     return message['ts']
             cursor=result.get('response_metadata',{}).get('next_cursor','')
             if not cursor:return None
@@ -153,12 +154,13 @@ class DigestManager:
             if now.timestamp()-run['sending_at']<60:return
         if now.timestamp()>=run['deadline']:
             run['status']='expired';self.db.save(run,now);return
+        run.setdefault('wire_text', html.escape(plain_text(run['payload']['text']), quote=False))
         run.update(status='sending',sending_at=now.timestamp(),retry_at=now.timestamp()+60,
                    marker=str(uuid.uuid5(uuid.NAMESPACE_URL,run['key'])))
         self.db.save(run,now)
         try:
             result=self.service.client.chat_postMessage(channel=run['identity']['channel_id'],
-                text=html.escape(run['payload']['text'],quote=False),client_msg_id=run['marker'],
+                text=run['wire_text'],client_msg_id=run['marker'],
                 metadata={'event_type':'capo_digest','event_payload':{'key':run['marker']}},
                 mrkdwn=False,parse='none',link_names=False,unfurl_links=False,unfurl_media=False)
             if not result.get('ok',True) or not result.get('ts'):return

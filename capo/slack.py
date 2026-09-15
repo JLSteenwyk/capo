@@ -756,6 +756,8 @@ class SlackService:
             if row[1]:
                 continue
             index = row[0]
+            from .message_format import plain_text
+            text = plain_text(text)
             chunks = [text[offset:offset + 2500] for offset in range(0, len(text), 2500)]
             # Reload after discovery: a queued follow-up supersedes this notice.
             if self.store.get(identifier) != objective:
@@ -824,7 +826,8 @@ class SlackService:
                 except (ValueError, RuntimeError, OSError) as exc:
                     text = f"Could not handle this request: {exc}"
                     self.pending_review = None
-                data = {"text": text, "review": self.pending_review}
+                from .message_format import plain_text
+                data = {"text": plain_text(text), "review": self.pending_review}
                 self.pending_review = None
                 with self.store.db:
                     self.store.db.execute("INSERT INTO slack_deliveries(event_id,data) VALUES (?,?)",
