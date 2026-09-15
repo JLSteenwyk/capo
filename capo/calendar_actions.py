@@ -2,6 +2,7 @@
 import fcntl
 import os
 import hashlib
+import json
 from datetime import datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -10,6 +11,7 @@ from .calendar import GoogleCalendar, apply, event_body, instant, writable
 from .contracts import TEXT, object_schema
 from .effects import Effects, UncertainEffect
 from .research_tools import ReadTool
+from .conversation import _write
 
 
 def equivalent(event, body):
@@ -19,8 +21,10 @@ def equivalent(event, body):
     for key in ('start','end'):
         left,right=event.get(key,{}),body[key]
         if 'date' in right:
+            if left.get('dateTime') is not None:return False
             if left.get('date')!=right['date']:return False
         else:
+            if left.get('date') is not None:return False
             try:
                 if instant(left['dateTime'])!=instant(right['dateTime']):return False
             except (KeyError,ValueError):return False
@@ -38,15 +42,28 @@ class CalendarActions:
     def target_id(self,operation_id,plan):
         return hashlib.sha256(str(self.directory(operation_id)).encode()).hexdigest() if plan['action']=='create' else plan['event_id']
 
-    def check_pending(self,operation_id,request,client):
+    def verified(self,operation_id,request,client):
         plan=request['plan'];target=self.target_id(operation_id,plan)
         current=client.lookup(target)
         if plan['action']=='delete':
-            if current is not None:return None
+            return current is None
         elif current is None or not equivalent(current,event_body(plan,self.zone)):
-            return None
+            return False
+        if current.get('id')!=target:return False
+        expected=event_body(plan,self.zone)
+        if current.get('summary')!=expected['summary'] or current.get('location','')!=expected['location']:
+            return False
+        snapshot=self.directory(operation_id)/'verification.json'
+        if snapshot.exists():
+            preserved=json.loads(snapshot.read_text())['preserved']
+            if any(current.get(key)!=value for key,value in preserved.items()):return False
+        return True
+
+    def check_pending(self,operation_id,request,client):
+        if not self.verified(operation_id,request,client):return None
+        plan=request['plan'];target=self.target_id(operation_id,plan)
         return self.effects.resolve(operation_id,request,{'changed':True,'event_id':target,
-                                    'reconciled':True,'calendar_id':plan.get('calendar_id','primary'),'reply':'Confirmed the requested calendar state.'})
+                                    'reconciled':True,'verified':True,'calendar_id':plan.get('calendar_id','primary'),'reply':'Confirmed the requested calendar state.'})
 
     def pending(self):
         self.known_pending={hashlib.sha256(op.encode()).hexdigest():(op,req)
@@ -97,10 +114,17 @@ class CalendarActions:
                 existing={'changed':False,'already_exists':True,'event_id':matches[0]['id'],'calendar_id':self.calendar_id,
                           'reply':'The matching event is already on your calendar.'}
         directory=self.directory(operation_id);directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+        if action=='update':
+            original=self.cache[event_id]
+            keys=('description','attendees','recurrence','recurringEventId','attachments','reminders',
+                  'visibility','transparency','extendedProperties','conferenceData')
+            _write(directory/'verification.json',{'preserved':{key:original[key] for key in keys if key in original}})
         def execute():
             if existing is not None:return existing
             reply=apply(client,plan,list(self.cache.values()),self.zone,directory)
-            return {'changed':True,'event_id':self.target_id(operation_id,plan),'calendar_id':self.calendar_id,'reply':reply}
+            if not self.verified(operation_id,request,client):
+                raise UncertainEffect('The calendar write was sent, but the requested state could not be verified. Reconcile before another write.')
+            return {'changed':True,'verified':True,'event_id':self.target_id(operation_id,plan),'calendar_id':self.calendar_id,'reply':reply}
         return self.effects.run(operation_id,request,execute)
 
     def tools(self):

@@ -178,6 +178,11 @@ class CalendarTests(unittest.TestCase):
         window=dict(action='window',start=self.plan['start'],end=self.plan['end'],question='')
         with patch('capo.calendar.GoogleCalendar',return_value=self.client),patch('capo.calendar_actions.GoogleCalendar',return_value=self.client),patch('capo.calendar.Providers') as provider:
             self.client.events.return_value=[]
+            remote={}
+            def save(method,**kwargs):
+                value=dict(kwargs['json']);remote[value['id']]=value;return value
+            self.client.request.side_effect=save
+            self.client.lookup.side_effect=lambda id:remote.get(id)
             provider.return_value.call.side_effect=[window,self.plan]
             for _ in range(500):
                 try:

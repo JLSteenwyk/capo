@@ -104,6 +104,8 @@ class PlanningTests(unittest.TestCase):
                   'end':'2026-09-18T12:00:00-07:00','all_day':False}
             with patch('capo.calendar.GoogleCalendar') as factory, patch('capo.calendar_actions.GoogleCalendar',factory):
                 client=factory.return_value;client.events.return_value=[target];client.request.return_value=target
+                from capo.calendar import event_body
+                client.lookup.return_value=dict(target,**event_body(args,'America/Los_Angeles'))
                 with self.assertRaises(ValueError):tools.call('calendar.change',args,operation_id='before-read')
                 tools.call('calendar.events',{'start':'2026-09-18T00:00:00-07:00','end':'2026-09-19T00:00:00-07:00'})
                 result=tools.call('calendar.change',args,operation_id='change')

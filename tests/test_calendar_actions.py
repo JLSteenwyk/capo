@@ -89,6 +89,62 @@ class CalendarActionTests(unittest.TestCase):
         with self.assertRaises(CalendarError):client.lookup('event')
         response.status_code=404;self.assertIsNone(client.lookup('event'))
 
+    def test_acknowledged_create_requires_authoritative_saved_event(self):
+        self.client.request.return_value={'accepted':True}
+        self.client.lookup.return_value=None
+        with self.assertRaises(UncertainEffect):
+            self.adapter.change(**arguments(),operation_id='create')
+        with self.assertRaises(UncertainEffect):
+            self.adapter.change(**arguments(),operation_id='retry')
+        self.assertEqual(self.client.request.call_count,1)
+        actual=dict(self.client.request.call_args.kwargs['json'])
+        self.client.lookup.return_value=actual
+        pending=self.adapter.pending()['actions'][0]
+        actual['start']['dateTime']='2026-10-31T09:00:00-07:00'
+        self.assertFalse(self.adapter.reconcile(pending['id'])['confirmed'])
+        del actual['start']['dateTime']
+        result=self.adapter.reconcile(pending['id'])
+        self.assertTrue(result['verified'])
+        self.assertEqual(self.client.request.call_count,1)
+
+    def test_update_verifies_preserved_details_and_reconciles_after_restart(self):
+        import copy
+        old=dict(event_body(arguments(),'America/Los_Angeles'),id='event',etag='v1',
+                 organizer={'self':True},description='Keep these notes',reminders={'useDefault':True})
+        self.adapter.cache['event']=copy.deepcopy(old)
+        remote=copy.deepcopy(old)
+        def request(method,id,**kwargs):
+            if method=='GET':return copy.deepcopy(old)
+            self.assertEqual(method,'PATCH')
+            for key,value in kwargs['json'].items():
+                remote[key]={k:v for k,v in value.items() if v is not None} if isinstance(value,dict) else value
+            remote.pop('description')
+            return remote
+        self.client.request.side_effect=request
+        self.client.lookup.side_effect=lambda id:copy.deepcopy(remote)
+        args=dict(arguments(),action='update',event_id='event',title='Updated decision')
+        with self.assertRaises(UncertainEffect):
+            self.adapter.change(**args,operation_id='update')
+        restarted=CalendarActions(self.home,'owner','America/Los_Angeles',{})
+        pending=restarted.pending()['actions'][0]
+        self.assertFalse(restarted.reconcile(pending['id'])['confirmed'])
+        remote['description']='Keep these notes'
+        self.assertTrue(restarted.reconcile(pending['id'])['verified'])
+        self.assertEqual(len([c for c in self.client.request.call_args_list if c.args[0]=='PATCH']),1)
+
+    def test_delete_requires_confirmed_absence(self):
+        old=dict(event_body(arguments(),'America/Los_Angeles'),id='event',etag='v1',organizer={'self':True})
+        self.adapter.cache['event']=old
+        self.client.request.return_value=old
+        self.client.lookup.return_value=old
+        args=dict(arguments(),action='delete',event_id='event')
+        with self.assertRaises(UncertainEffect):
+            self.adapter.change(**args,operation_id='delete')
+        pending=self.adapter.pending()['actions'][0]
+        self.client.lookup.return_value=None
+        self.assertTrue(self.adapter.reconcile(pending['id'])['verified'])
+        self.assertEqual(len([c for c in self.client.request.call_args_list if c.args[0]=='DELETE']),1)
+
     def test_two_action_request_recovers_only_unfinished_work(self):
         remote={};writes=[]
         self.client.events.side_effect=lambda start,end:list(remote.values())

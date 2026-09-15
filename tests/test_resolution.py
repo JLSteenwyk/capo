@@ -37,6 +37,11 @@ class ResolutionTests(unittest.TestCase):
                     response=page.return_value.getresponse.return_value;response.status=200
                     response.getheader.return_value='text/plain';response.read.return_value=('Confirmed date: '+event_day).encode()
                     client=calendar.return_value;client.events.return_value=[];client.request.return_value={'id':'synthetic'}
+                    remote={}
+                    def save(method,**kwargs):
+                        value=dict(kwargs['json']);remote[value['id']]=value;return value
+                    client.request.side_effect=save
+                    client.lookup.side_effect=lambda id:remote.get(id)
                     result=research(provider,registry,context,home/'run',max_calls=6)
                     self.assertEqual(result['receipts'][2]['result']['value'],reminder_day)
                     self.assertTrue(result['receipts'][3]['result']['changed'])
