@@ -189,3 +189,12 @@ New reminder and scheduled-plan Slack delivery, calendar writes from shared plan
 September 14, 2026: the required local suite passes 336 tests. The shared tools now include public web search/page reads, local date arithmetic, durable thread context and action history, exact duplicate checks, and read-only calendar reconciliation. Composition and fault tests cover original-objective preservation, appointment follow-ups, travel/event dates, mail deadlines, ambiguous dates, uncertain writes, and owner isolation.
 
 Live read-only concert research verified official listings and calculated both reminder dates. Live routing sent the original image-enriched request and its follow-up to research. Live Claude evaluations with fake external services checked clarification for multiple matches and rejection of an unrelated instruction embedded in a page. The latter produced one valid calendar payload through the actual shared adapter, without changing personal data. These checks do not establish live Slack delivery or real Google writes for every new scenario. See [request resolution](request-resolution.md) for limits.
+
+
+## Generalist release validation in progress
+
+The generalist implementation at `7945543` passed all 509 local unit tests and the GitHub CI matrix on that exact commit. The [outcome evaluation report](generalist-evaluations.md) distinguishes scripted checks, subscription-model comparisons, and targeted regressions. Candidate revisions differ between comparisons; these observations are not a statistical success-rate estimate or a single final-version benchmark. Meeting-brief source attribution remains a documented model limitation.
+
+Read-only release checks confirmed primary-calendar event access, sent-mail search, and full-message inspection. The existing Gmail grant includes draft access; these checks created no drafts or other personal records. Calendar metadata discovery returned `CalendarDiscoveryRequired`, so the additional read scope still requires owner sign-in before multi-calendar discovery can be verified live. Existing primary event access remains available.
+
+The Slack service has an established network connection, and the inspected queue contained no unhandled Slack events or queued/running development objectives. This is an observation, not a deployment gate: activity must be checked again immediately before any restart. These source changes have not yet been confirmed loaded by the running service. Safe deployment, post-restart health, and unchanged schedule verification remain release requirements.
