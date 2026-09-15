@@ -6,6 +6,24 @@ from .contracts import TEXT, object_schema
 from .research_tools import ReadTool
 
 
+def describe(value, timezone):
+    """Derive local date facts from an explicit date or offset-bearing instant."""
+    zone = ZoneInfo(timezone)
+    if len(value) == 10:
+        local = date.fromisoformat(value)
+        result = {'kind': 'date', 'value': local.isoformat()}
+    else:
+        source = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if source.tzinfo is None:
+            raise ValueError('Timed values require an explicit UTC offset')
+        local = source.astimezone(zone)
+        result = {'kind': 'datetime', 'value': local.isoformat(),
+                  'utc_offset_seconds': int(local.utcoffset().total_seconds())}
+    return {**result, 'date': local.isoformat()[:10], 'timezone': timezone,
+            'weekday': ('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday')[local.weekday()],
+            'iso_weekday': local.isoweekday()}
+
+
 def shift(value, days, timezone):
     """Shift calendar days, preserving local wall time or asking about DST ambiguity."""
     zone = ZoneInfo(timezone)
@@ -34,7 +52,12 @@ def shift(value, days, timezone):
 
 
 def tools():
-    return [ReadTool('dates.shift',
+    return [ReadTool('dates.describe',
+        'Calculate the weekday, local date and UTC offset for an ISO date or explicit-offset datetime. '
+        'Converts instants into the requested timezone; date-only inputs remain calendar dates. '
+        'Use verified source dates; this tool does not infer when a source was written.',
+        object_schema({'value': TEXT, 'timezone': TEXT}), describe),
+        ReadTool('dates.shift',
         'Add or subtract local calendar days from a verified ISO date or offset datetime. '
         'Two weeks before means days=-14. Preserves local time across DST. Does not infer ambiguous dates; '
         'returns a clarification requirement for a nonexistent or repeated destination time.',

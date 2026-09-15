@@ -33,6 +33,18 @@ class CalendarToolTests(unittest.TestCase):
             {'id':'shared','accessRole':'reader','summary':'Shared'}]}
         self.tools.list('')
 
+    def test_calendar_date_facts_preserve_source_and_exclusive_end(self):
+        row=event('Planning')
+        result=self.tools.describe('primary',row)
+        self.assertEqual(result['local_dates']['start']['weekday'],'Wednesday')
+        self.assertTrue(result['local_dates']['end']['exclusive'])
+        self.assertEqual(result['source_times']['start'],row['start'])
+        row['start']={'dateTime':'2030-11-04T01:00:00Z'}
+        result=self.tools.describe('primary',row)
+        self.assertEqual(result['local_dates']['start']['weekday'],'Sunday')
+        self.assertEqual(result['start']['dateTime'],'2030-11-03T17:00:00-08:00')
+        self.assertEqual(row['start']['dateTime'],'2030-11-04T01:00:00Z')
+
     def test_preferred_creation_requires_discovery_and_targets_owned_calendar(self):
         tools=CalendarTools('America/Los_Angeles',self.factory,preferences={'default_calendar_id':'work'})
         registry=ReadTools(tools.action_tools(self.home,'owner'))

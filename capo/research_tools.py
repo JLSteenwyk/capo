@@ -187,6 +187,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'Use relevant context as a hypothesis to verify. Prefer official sources, check dates including the year, and retain source URLs. '
             'Ask one short question only for a material unresolved ambiguity or personal choice. '
             'Before creating items search for existing matches. After partial success continue only unfinished actions; never repeat unconfirmed writes. '
+            'Use supplied local_dates or dates.describe for weekdays and timezone conversions; never guess weekdays. '
             'Use dates.shift for local calendar offsets. Save resolved facts, uncertainties and next steps with context.save when useful. '
             'Current time describes execution, not the date of every source. Resolve relative dates in owner messages '
             'against their message timestamp and timezone when available; resolve quoted email or screenshot dates '

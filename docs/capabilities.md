@@ -6,7 +6,7 @@ Available primitives:
 
 | Tool | Capability |
 | --- | --- |
-| clock.now / dates.shift | Current local time and calendar-day arithmetic |
+| clock.now / dates.describe / dates.shift | Current local time, verified weekdays and timezone conversion, and calendar-day arithmetic |
 | specialists.list / specialists.read / specialists.remember | Specialist expertise and existing role-scoped owner preferences |
 | digest.read / digest.change | Delivered digest context, settings, and explicit owner feedback with revision checks |
 | web.search / web.read | Subscription web search and bounded public HTTPS evidence |
@@ -59,3 +59,5 @@ The private Slack configuration accepts an optional `execution` object:
 Limits are pinned when a request begins. Configuration changes affect new requests; they cannot reset or expand an in-progress request's budget. Existing shared checkpoints retain their original tool budget and prior evidence limit. An oversized tool result is preserved as a private run artifact and represented by an explicit partial-coverage receipt. Exhaustion survives restarts and stops further tools; a tool that already ran is not mislabeled as failed because its returned evidence was too large. Full overflow artifacts currently require local inspection. These limits govern tool attempts and retained evidence, not a precise token-cost or wall-clock allowance.
 
 `development.prepare` reuses the publication gateway for an existing candidate in its original owner thread. It stores the exact host-generated invitation under the requesting Slack event. After shared reasoning finishes, Slack appends that invitation to the answer and delivers it through the existing durable chunk receipts. Only complete delivery of the current candidate digest binds approval; preparing, model-generated wording, failed delivery, or a stale candidate does not. The owner still approves through the existing explicit command. The tool cannot publish or merge. Existing repository policy controls whether approval subsequently opens a draft PR or merges a checked change.
+
+Calendar discovery and inspection results include `local_dates` with calculated weekdays in the configured display timezone. Original timestamps remain in `source_times`; end boundaries are marked exclusive. `dates.describe` provides the same calculation for other tools and workflows. It accepts an ISO calendar date or an explicit-offset instant, rejects naive datetimes, and does not infer the date of an old email or screenshot. Date-only inputs are not shifted across timezones. These facts reduce model arithmetic errors; they do not by themselves validate every claim in a generated answer.

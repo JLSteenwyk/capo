@@ -1,5 +1,5 @@
 import unittest
-from capo.date_tools import shift
+from capo.date_tools import shift, describe
 
 
 class DateToolTests(unittest.TestCase):
@@ -21,3 +21,15 @@ class DateToolTests(unittest.TestCase):
         for value, days in [('2026-09-14T09:00:00', '1'), ('2026-09-14T09:00:00-08:00', '1'),
                             ('2026-09-14', 'tomorrow'), ('2026-09-14', '99999')]:
             with self.assertRaises(ValueError): shift(value, days, 'America/Los_Angeles')
+
+    def test_weekday_from_date_and_cross_midnight_instant(self):
+        self.assertEqual(describe('2030-11-04','America/Los_Angeles')['weekday'],'Monday')
+        local=describe('2030-11-04T01:00:00Z','America/Los_Angeles')
+        self.assertEqual(local['date'],'2030-11-03')
+        self.assertEqual(local['weekday'],'Sunday')
+        self.assertEqual(local['utc_offset_seconds'],-8*3600)
+        self.assertEqual(describe('2028-02-29','UTC')['iso_weekday'],2)
+
+    def test_describe_requires_explicit_instant_and_preserves_date(self):
+        with self.assertRaises(ValueError):describe('2030-11-04T01:00:00','UTC')
+        self.assertEqual(describe('2030-11-04','Pacific/Honolulu')['date'],'2030-11-04')

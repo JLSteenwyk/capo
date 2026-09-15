@@ -88,7 +88,13 @@ class CalendarTools:
         value=copy.deepcopy({key:row[key] for key in keys if key in row})
         value['calendar_id']=calendar_id
         value['source_times']=copy.deepcopy({key:row[key] for key in ('start','end') if key in row})
+        from .date_tools import describe as date_facts
+        value['local_dates']={}
         for key in ('start','end'):
+            source=value.get(key,{})
+            if source.get('dateTime') or source.get('date'):
+                value['local_dates'][key]=date_facts(source.get('dateTime') or source['date'],self.zone)
+                if key=='end':value['local_dates'][key]['exclusive']=True
             if value.get(key,{}).get('dateTime'):
                 local=instant(value[key]['dateTime']).astimezone(ZoneInfo(self.zone))
                 value[key]={'dateTime':local.isoformat(),'timeZone':self.zone}
