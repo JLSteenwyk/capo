@@ -18,6 +18,8 @@ Available primitives:
 | mail.search | Gmail query with pagination; returns message IDs |
 | mail.read | Read discovered messages with headers, labels and body excerpts |
 | calendar.events | Read primary-calendar events in a bounded date range |
+| calendar.calendars / calendar.inspect | Discover calendars and inspect metadata and access roles |
+| calendar.search / calendar.event | Find events in a selected calendar and inspect details and edit restrictions |
 | github.issues | Read open issues for a configured repository |
 | github.pull_requests / github.pull_request / github.reviews | Discover and inspect current PRs and review history |
 | github.workflow_runs / github.workflow_run / github.checks / github.job_log | Inspect workflow attempts, jobs, commit checks and bounded logs |

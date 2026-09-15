@@ -90,32 +90,16 @@ def shared_tools(home,config,documents,request=None):
                 def draft_exists(self,*args,**kwargs):return self.ready().draft_exists(*args,**kwargs)
             tools.extend(DraftTools(LazyDraftMail(),mail,home,owner_key(config),request).tools())
     if config.get('calendar',{}).get('enabled'):
-        calendar_cache={}
-        def events(start,end):
-            from .calendar import GoogleCalendar,instant
-            first,last=instant(start),instant(end)
-            if not 0<(last-first).total_seconds()<=31*86400:raise ValueError('Calendar range must be at most 31 days')
-            rows=GoogleCalendar().events(start,end)
-            calendar_cache.update({e['id']:e for e in rows if isinstance(e.get('id'),str) and e['id']})
-            normalized=[]
-            for e in rows:
-                value={k:e[k] for k in ('id','summary','start','end','location','transparency','status') if k in e}
-                for key in ('start','end'):
-                    if value.get(key,{}).get('dateTime'):
-                        local=instant(value[key]['dateTime']).astimezone(ZoneInfo(zone))
-                        value[key]={'dateTime':local.isoformat(),'timeZone':zone}
-                normalized.append(value)
-            return {'events':normalized,
-                    'coverage':'Primary calendar only.'}
-        tools.append(ReadTool('calendar.events','Read primary calendar events in an explicit RFC3339 start/end window, maximum 31 days.',
-                              object_schema({'start':TEXT,'end':TEXT}),events))
+        from .calendar_tools import CalendarTools
+        calendar_tools=CalendarTools(zone)
+        tools.extend(calendar_tools.tools())
+        events=calendar_tools.events
         def free_time(start,end,work_start,work_end,weekdays,minimum_minutes):
             from .availability import availability
             return availability(events(start,end)['events'],start,end,zone,work_start,work_end,weekdays,minimum_minutes)
         tools.append(ReadTool('calendar.availability','Find free windows and event conflicts within explicit work hours. Weekdays: 0 Monday through 6 Sunday. Supply owner preferences or label assumptions. Read-only; never books time.',
             object_schema({'start':TEXT,'end':TEXT,'work_start':TEXT,'work_end':TEXT,'weekdays':TEXTS,'minimum_minutes':TEXT}),free_time))
-        from .calendar_actions import CalendarActions
-        tools.extend(CalendarActions(home,owner_key(config),zone,calendar_cache).tools())
+        tools.extend(calendar_tools.action_tools(home,owner_key(config)))
     repositories=config.get('repositories',{})
     if repositories:
         from .github_tools import GitHubTools

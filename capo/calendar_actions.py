@@ -28,8 +28,8 @@ def equivalent(event, body):
 
 
 class CalendarActions:
-    def __init__(self,home,owner,zone,cache):
-        self.home=Path(home);self.zone=zone;self.cache=cache
+    def __init__(self,home,owner,zone,cache,calendar_id='primary'):
+        self.home=Path(home);self.zone=zone;self.cache=cache;self.calendar_id=calendar_id
         self.effects=Effects(home,owner);self.known_pending={}
 
     def directory(self,operation_id):
@@ -46,18 +46,20 @@ class CalendarActions:
         elif current is None or not equivalent(current,event_body(plan,self.zone)):
             return None
         return self.effects.resolve(operation_id,request,{'changed':True,'event_id':target,
-                                    'reconciled':True,'reply':'Confirmed the requested calendar state.'})
+                                    'reconciled':True,'calendar_id':plan.get('calendar_id','primary'),'reply':'Confirmed the requested calendar state.'})
 
     def pending(self):
         self.known_pending={hashlib.sha256(op.encode()).hexdigest():(op,req)
                             for op,req in self.effects.pending('calendar-change')}
-        return {'actions':[{'id':id,'action':req['plan']['action'],'title':req['plan']['title']}
+        return {'actions':[{'id':id,'action':req['plan']['action'],'title':req['plan']['title'],'calendar_id':req['plan'].get('calendar_id','primary')}
                            for id,(_,req) in self.known_pending.items()]}
 
     def reconcile(self,id):
         if id not in self.known_pending:raise ValueError('List pending calendar actions first')
         op,req=self.known_pending[id]
-        result=self.check_pending(op,req,GoogleCalendar())
+        calendar_id=req['plan'].get('calendar_id','primary')
+        client=GoogleCalendar() if calendar_id=='primary' else GoogleCalendar(calendar_id)
+        result=self.check_pending(op,req,client)
         return result or {'confirmed':False,'reply':'The previous calendar change remains unconfirmed. No write was repeated.'}
 
     def change(self,action,event_id,title,location,start,end,all_day,operation_id):
@@ -71,11 +73,12 @@ class CalendarActions:
 
     def _change(self,action,event_id,title,location,start,end,all_day,operation_id):
         plan=dict(action=action,event_id=event_id,title=title,location=location,start=start,end=end,all_day=all_day,reply='')
+        if self.calendar_id!='primary':plan['calendar_id']=self.calendar_id
         request={'kind':'calendar-change','plan':plan}
         previous=self.effects.completed(operation_id,request)
         if previous is not None:return previous
         body=event_body(plan,self.zone) if action in ('create','update') else None
-        client=GoogleCalendar()  # Authentication failures must precede the durable write intent.
+        client=GoogleCalendar() if self.calendar_id=='primary' else GoogleCalendar(self.calendar_id)  # Authentication failures must precede the durable write intent.
         for prior,req in self.effects.pending('calendar-change'):
             if req==request:
                 found=self.check_pending(prior,req,client)
@@ -91,13 +94,13 @@ class CalendarActions:
                 last=datetime.combine(datetime.fromisoformat(end).date(),time.min,ZoneInfo(self.zone)).isoformat()
             matches=[e for e in client.events(first,last) if equivalent(e,body)]
             if matches:
-                existing={'changed':False,'already_exists':True,'event_id':matches[0]['id'],
+                existing={'changed':False,'already_exists':True,'event_id':matches[0]['id'],'calendar_id':self.calendar_id,
                           'reply':'The matching event is already on your calendar.'}
         directory=self.directory(operation_id);directory.mkdir(parents=True,exist_ok=True,mode=0o700)
         def execute():
             if existing is not None:return existing
             reply=apply(client,plan,list(self.cache.values()),self.zone,directory)
-            return {'changed':True,'event_id':self.target_id(operation_id,plan),'reply':reply}
+            return {'changed':True,'event_id':self.target_id(operation_id,plan),'calendar_id':self.calendar_id,'reply':reply}
         return self.effects.run(operation_id,request,execute)
 
     def tools(self):

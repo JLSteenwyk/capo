@@ -28,7 +28,8 @@ def validate(value, schema, path="result"):
     if "enum" in schema and value not in schema["enum"]:
         raise ValueError(f"{path}: unsupported value {value!r}")
     if isinstance(value, dict):
-        if set(value) != set(schema["properties"]):
+        required = set(schema.get("required", schema["properties"]))
+        if not required <= set(value) or not set(value) <= set(schema["properties"]):
             raise ValueError(f"{path}: missing or unexpected fields")
         for key, child in value.items():
             validate(child, schema["properties"][key], f"{path}.{key}")

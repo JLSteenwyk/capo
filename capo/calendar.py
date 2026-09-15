@@ -16,8 +16,11 @@ from .conversation import ConversationError, ConversationRouter, _write
 from .providers import Providers
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.events.owned']
+# Broader reads allow discovery and inspection without granting broader writes.
+AUTHORIZATION_SCOPES = SCOPES + ['https://www.googleapis.com/auth/calendar.readonly']
 TOKEN = Path.home() / '.config' / 'capo' / 'google-calendar-token.json'
-BASE = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
+API = 'https://www.googleapis.com/calendar/v3'
+BASE = API + '/calendars/primary/events'
 
 
 class CalendarError(RuntimeError):
@@ -28,11 +31,15 @@ class CalendarAccessError(PermissionError, CalendarError):
     pass
 
 
+class CalendarDiscoveryRequired(CalendarError):
+    """Discovery may need a new grant; other enabled calendar tools can still work."""
+
+
 def authorize(client_secrets):
     from google_auth_oauthlib.flow import InstalledAppFlow
     TOKEN.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     TOKEN.parent.chmod(0o700)
-    flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), SCOPES)
+    flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets), AUTHORIZATION_SCOPES)
     credentials = flow.run_local_server(host='localhost', port=0, timeout_seconds=300,
                                       authorization_prompt_message='Opening Google sign-in in your browser.')
     if not credentials.refresh_token:
@@ -41,20 +48,52 @@ def authorize(client_secrets):
 
 
 class GoogleCalendar:
-    def __init__(self):
+    def __init__(self, calendar_id='primary'):
+        if not isinstance(calendar_id, str) or not calendar_id or len(calendar_id)>1024:
+            raise ValueError('Invalid calendar ID')
+        self.calendar_id = calendar_id
         if not TOKEN.exists():
             raise CalendarError('Google Calendar is not connected yet. Run capo calendar-auth first.')
         from google.auth.transport.requests import AuthorizedSession, Request
         from google.oauth2.credentials import Credentials
         TOKEN.chmod(0o600)
-        credentials = Credentials.from_authorized_user_file(str(TOKEN), SCOPES)
+        # Loading an existing grant must not silently request new scopes.
+        stored = json.loads(TOKEN.read_text())
+        credentials = Credentials.from_authorized_user_file(str(TOKEN), stored.get('scopes', SCOPES))
         if not credentials.valid:
             credentials.refresh(Request())
             _write(TOKEN, json.loads(credentials.to_json()))
         self.session = AuthorizedSession(credentials)
 
+    @property
+    def events_url(self):
+        return API+'/calendars/'+quote(getattr(self, 'calendar_id', 'primary'), safe='')+'/events'
+
+    def calendar_list(self, page_token=''):
+        return self.metadata('/users/me/calendarList', {'maxResults':50, 'pageToken':page_token})
+
+    def calendar_info(self):
+        return self.metadata('/calendars/'+quote(getattr(self, 'calendar_id', 'primary'), safe=''), {})
+
+    def metadata(self, path, params):
+        response = self.session.get(API+path, params=params, timeout=25)
+        from .service_errors import check
+        try:
+            check(response, 'Google Calendar')
+        except PermissionError:
+            raise CalendarDiscoveryRequired('Calendar metadata access was denied. Reconnect Google Calendar with read access to calendar metadata; existing event tools may still work.') from None
+        if not response.ok:
+            raise CalendarError('Calendar metadata could not be read.')
+        return response.json()
+
+    def events_page(self, start, end, query='', page_token=''):
+        params = {'timeMin':start, 'timeMax':end, 'singleEvents':'true',
+                  'orderBy':'startTime', 'maxResults':50, 'pageToken':page_token}
+        if query: params['q'] = query
+        return self.request('GET', params=params)
+
     def request(self, method, event_id='', **kwargs):
-        url = BASE + ('/' + quote(event_id, safe='') if event_id else '')
+        url = self.events_url + ('/' + quote(event_id, safe='') if event_id else '')
         response = self.session.request(method, url, timeout=25, **kwargs)
         from .service_errors import check
         try:
@@ -68,7 +107,7 @@ class GoogleCalendar:
         return response.json() if response.content else {}
 
     def lookup(self, event_id):
-        response=self.session.get(BASE+'/'+quote(event_id,safe=''),timeout=25)
+        response=self.session.get(self.events_url+'/'+quote(event_id,safe=''),timeout=25)
         if response.status_code in (404,410):return None
         if not response.ok:raise CalendarError('Calendar recovery could not verify the event. Check the connection.')
         event=response.json()

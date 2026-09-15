@@ -113,4 +113,7 @@ class PlanningTests(unittest.TestCase):
                 self.assertEqual(tools.call('calendar.change',args,operation_id='change'),result)
                 self.assertEqual(len([c for c in client.request.call_args_list if c.args[0]=='PATCH']),1)
                 target['attendees']=[{'email':'guest@example.com'}]
-                with self.assertRaises(ValueError):tools.call('calendar.change',args,operation_id='guest')
+                # Discovery snapshots are isolated; the fresh preflight detects new guests.
+                from capo.calendar import CalendarError
+                with self.assertRaises(CalendarError):tools.call('calendar.change',args,operation_id='guest')
+                self.assertEqual(len([c for c in client.request.call_args_list if c.args[0]=='PATCH']),1)

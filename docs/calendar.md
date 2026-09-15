@@ -53,3 +53,12 @@ Calendar summaries and requested changes are processed by your Claude Code subsc
 Automated tests use mocked Google responses. A successful `calendar-check` verifies read access only; live creation, editing, and deletion should be checked with an explicitly requested test event after account connection.
 
 Capo supplies its current local clock and configured calendar timezone to conversational routing. Today and tomorrow are resolved automatically. Clarification replies continue the unfinished request without asking for permission again. Personal events with no end time use a one-hour default; creation replies show the scheduled time. Explicit durations take precedence. Newly supplied reservation screenshots are treated as current unless their content suggests an older date; conflicting dates or unclear start times still need clarification.
+
+
+## Calendar discovery and event inspection
+
+The shared tools can list accessible calendars (`calendar.calendars`), inspect metadata (`calendar.inspect`), search a selected calendar with pagination (`calendar.search`), and inspect event details (`calendar.event`). Inspection includes descriptions, attendees, organizer, recurrence, original timezone information, and current edit restrictions. Truncation and missing events are explicit.
+
+`calendar.events` retains its primary-calendar interface for existing callers. `calendar.change` accepts an optional `calendar_id`, defaulting to primary. Other calendars must first be discovered and have the owner access role. Guests and recurring events remain outside Capo's edit policy. Calendar identity is carried through caches, mutations, duplicate checks and uncertain-action reconciliation; event IDs alone do not identify a resource across calendars. Existing receipts without a calendar ID still mean primary.
+
+New authorizations request `calendar.readonly` alongside the existing `calendar.events.owned` scope. The added scope enables calendar discovery, metadata and shared-calendar reads; it does not broaden write permission. Existing credentials retain their original grant until the owner reconnects with `capo calendar-auth` and the private OAuth client file. Primary-calendar event access continues working with the old grant. Google may require this one-time consent before discovery works.
