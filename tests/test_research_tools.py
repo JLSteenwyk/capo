@@ -59,6 +59,29 @@ class ResearchToolsTests(unittest.TestCase):
             result = research(provider, ReadTools([]), {}, Path(tmp))
         self.assertEqual(result['reply'], 'List: apples, rice.')
 
+    def test_malformed_completion_repairs_without_repeating_write(self):
+        callback=Mock(return_value={'saved':True})
+        tools=ReadTools([ReadTool('test.save','Synthetic write',object_schema({}),callback,mutates=True)])
+        provider=Mock()
+        provider.call.side_effect=[tool_step('test.save',{}),
+            dict(finish(''),document_title='Result',document='Saved.'),finish('Saved.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=research(provider,tools,{},Path(tmp),max_calls=3)
+            again=research(provider,tools,{},Path(tmp),max_calls=3)
+        callback.assert_called_once()
+        self.assertEqual(provider.call.call_count,3)
+        self.assertEqual(result,again)
+        self.assertEqual(result['reply'],'Saved.')
+
+    def test_repeated_malformed_completion_stops_with_preserved_receipts(self):
+        provider=Mock();provider.call.return_value=finish('')
+        with tempfile.TemporaryDirectory() as tmp:
+            result=research(provider,ReadTools([]),{},Path(tmp),max_calls=1)
+        self.assertEqual(provider.call.call_count,2)
+        self.assertEqual(result['status'],'partial')
+        self.assertEqual(result['stop_reason'],'invalid_completion_report')
+        self.assertEqual(len(result['receipts']),2)
+
     def test_failed_tools_are_redacted_and_budgeted(self):
         callback = Mock(side_effect=RuntimeError('SECRET_TOKEN'))
         tools = ReadTools([ReadTool('test.read', 'Synthetic', object_schema({}), callback)])
