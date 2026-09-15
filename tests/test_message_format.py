@@ -24,3 +24,18 @@ class MessageFormatTests(unittest.TestCase):
         self.assertEqual(strip_transport_tail('Available options: none'),'Available options: none')
         self.assertEqual(strip_transport_tail('`</parameter>`'),'`</parameter>`')
         self.assertEqual(strip_transport_tail('```xml\n</reply>\n</invoke>'),'```xml\n</reply>\n</invoke>')
+
+
+class EscapedLayoutTests(unittest.TestCase):
+    def test_escaped_agenda_layout_and_repeated_formatting(self):
+        raw = r"Added four blocks:\n\n- Lunch: 11:30–12:30\n- Sessions: 12:30–3:30\n- Closing: 4–5\n- Reception: 5–7\n\nExisting events are unchanged."
+        expected = "Added four blocks:\n\n- Lunch: 11:30–12:30\n- Sessions: 12:30–3:30\n- Closing: 4–5\n- Reception: 5–7\n\nExisting events are unchanged."
+        self.assertEqual(plain_text(raw), expected)
+        self.assertEqual(plain_text(expected), expected)
+
+    def test_numbered_layout_preserves_code_paths_and_links(self):
+        raw = r"Steps:\r\n1. Check\r\n2. Finish\r\n\r\n" + r"`literal\n\n- example` C:\new\notes https://example.invalid/a\n\n-b"
+        expected = "Steps:\n1. Check\n2. Finish\n\n" + r"`literal\n\n- example` C:\new\notes https://example.invalid/a\n\n-b"
+        self.assertEqual(plain_text(raw), expected)
+        fenced = r"```text literal\n\n- example```"
+        self.assertEqual(plain_text(fenced), fenced)

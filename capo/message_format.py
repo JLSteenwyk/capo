@@ -32,6 +32,12 @@ def plain_text(text):
 
 
 def _prose(text):
+    # Repair double-escaped paragraph/list separators, not arbitrary backslash
+    # sequences (paths, regexes and examples can legitimately contain them).
+    # Code has already been separated; URLs must also remain byte-for-byte.
+    separators = r'https?://[^\s<>]+|(?<!\\)(?:\\r\\n|\\n){2,}|(?<!\\)(?:\\r\\n|\\n)(?= *(?:[-*] |[0-9]+[.)] |#{1,6} ))'
+    text = re.sub(separators, lambda m: m.group() if m.group().startswith(('http://', 'https://'))
+                  else m.group().replace(r'\r\n', '\n').replace(r'\n', '\n'), text)
     text = re.sub(r'(?m)^ {0,3}#{1,6} +(.+?)(?: +#+)?$', r'\1', text)
     text = re.sub(r'\*\*([^\n*]+)\*\*', r'\1', text)
     text = re.sub(r'(?<!\w)__([^\n_]+)__(?!\w)', r'\1', text)
