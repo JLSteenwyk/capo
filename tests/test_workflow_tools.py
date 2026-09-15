@@ -1,7 +1,8 @@
 import tempfile
+import json
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch,Mock
 
 from capo.capabilities import Documents, shared_tools, owner_key
 from capo.repository import git
@@ -81,6 +82,44 @@ class WorkflowTests(unittest.TestCase):
         with patch('capo.slack_images.context', side_effect=AssertionError('No second extraction')):
             result = self.tools.start('project', 'Fix the label', False, 'image-work')
         self.assertIn('setup button is mislabeled', self.store.get(result['objective_id'])['request'])
+
+    def test_prepare_binds_approval_only_after_host_preview_delivery(self):
+        from capo.slack import SlackService
+        result=self.tools.start('project','Clarify README',False,'start')
+        id=result['objective_id'];row=self.store.get(id)
+        self.config['repositories']['project']['allow_publication']=True
+        git(Path(row['repo']),'remote','add','origin','https://github.com/example/project.git')
+        publication={'digest':'a'*64,'payload':{'title':'Clarify setup','repository':'example/project',
+            'base_branch':'main','commit':'b'*40,'body':'Tests passed.'}}
+        row['publication']=publication;self.store.save(row,'fixture')
+        directory=self.home/'artifacts'/id;directory.mkdir(parents=True)
+        (directory/'changes.patch').write_text('-Old\n+New\n')
+        with patch('capo.github.prepare',return_value=publication) as prepare,patch('capo.github.publish') as publish:
+            prepared=self.tools.prepare(id,'review')
+            self.assertTrue(prepared['prepared'])
+            self.assertEqual(self.tools.prepare(id,'review'),prepared)
+            prepare.assert_called_once()
+            publish.assert_not_called()
+        self.assertNotIn('slack_review_digest',self.store.get(id))
+        client=Mock();service=SlackService(self.store,self.config,client)
+        service.capability_conversation=Mock()
+        service.capability_conversation.poll.return_value={'reply':'The other requested result is ready.'}
+        with patch.object(service,'send_chunk',return_value=False):service.process_messages()
+        self.assertNotIn('slack_review_digest',self.store.get(id))
+        stored=json.loads(self.store.db.execute('SELECT data FROM slack_deliveries WHERE event_id=?',('owner-event',)).fetchone()[0])
+        self.assertIn('other requested result',stored['text'])
+        self.assertIn('Ready for review: Clarify setup',stored['text'])
+        self.assertEqual(stored['review'],[id,'a'*64])
+        # A restart can finish delivering the frozen host preview, then bind it.
+        resumed=SlackService(self.store,self.config,client)
+        with patch.object(resumed,'send_chunk',return_value=True):resumed.process_messages()
+        self.assertEqual(self.store.get(id)['slack_review_digest'],'a'*64)
+
+    def test_prepare_rejects_other_thread_and_disabled_publication(self):
+        result=self.tools.start('project','Clarify README',False,'start');id=result['objective_id']
+        with self.assertRaisesRegex(ValueError,'publication is not enabled'):self.tools.prepare(id,'disabled')
+        row=self.store.get(id);row['slack']['thread_ts']='999.999';self.store.save(row,'fixture')
+        with self.assertRaisesRegex(ValueError,'objective thread'):self.tools.prepare(id,'wrong-thread')
 
 
 if __name__ == '__main__':

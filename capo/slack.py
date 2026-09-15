@@ -424,7 +424,7 @@ class SlackService:
             from .capabilities import CapabilityConversation
             if not hasattr(self, 'capability_conversation'):
                 self.capability_conversation = CapabilityConversation(self.store.home, self.config)
-            return self.capability_conversation.poll(event_id, {
+            reply = self.capability_conversation.poll(event_id, {
                 'aliases': list(self.config['repositories']),
                 'objectives': [{'id': row['id'], 'status': row['status']} for row in owned],
                 'thread_objective_id': in_thread[0]['id'] if len(in_thread) == 1 else '',
@@ -435,6 +435,15 @@ class SlackService:
                 'browser_preferences': self.config.get('browser', {}).get('preferences', {}),
                 'timezone': self.config.get('calendar', {}).get('timezone', 'America/Los_Angeles'),
                 'recent_messages': list(reversed(recent))})['reply']
+            table=self.store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workflow_previews'").fetchone()
+            preview=self.store.db.execute('SELECT data FROM workflow_previews WHERE event_id=?',(event_id,)).fetchone() if table else None
+            if preview:
+                data=json.loads(preview[0])
+                self.pending_review=tuple(data['review'])
+                # Publication instructions come from the host gateway, never a
+                # model rewrite. Existing chunk receipts bind approval on delivery.
+                return reply+'\n\n'+data['text'] if data['text'] not in reply else reply
+            return reply
         if self.conversation is None:
             self.conversation = ConversationRouter(self.store.home)
         route = self.conversation.poll(event_id, {

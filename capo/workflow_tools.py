@@ -96,6 +96,32 @@ class WorkflowTools:
                                 '\n\nInterpretation:\n'+instructions, operation_id)
         return self.command('cancel '+id, operation_id)
 
+    def prepare(self,id,operation_id):
+        """Prepare through the existing gateway; only Slack delivery binds review."""
+        if not re.fullmatch('[a-f0-9]{16}',id):raise ValueError('Invalid objective ID')
+        from .capabilities import owner_key
+        with self.session() as (service,body):
+            row=service.objective(id)
+            if row['slack'].get('thread_ts')!=self.request['request_thread']:
+                raise ValueError('Prepare the review in the objective thread')
+            if not service.settings(row).get('allow_publication',False):
+                raise ValueError('Slack publication is not enabled for this repository alias')
+            service.store.db.execute('CREATE TABLE IF NOT EXISTS workflow_previews(event_id TEXT PRIMARY KEY,data TEXT NOT NULL)')
+            receipt={'kind':'workflow-prepare','owner_event':self.request['request_event'],'objective_id':id}
+            def execute():
+                forwarded=dict(body,event=dict(body['event'],text='<@UCAPO> prepare '+id))
+                service.pending_review=None
+                text=service.dispatch(self.request['request_event'],forwarded,context_prepared=True)
+                if service.pending_review:
+                    preview={'text':text,'review':service.pending_review}
+                    with service.store.db:
+                        service.store.db.execute('INSERT OR REPLACE INTO workflow_previews VALUES (?,?)',
+                            (self.request['request_event'],json.dumps(preview)))
+                return {'prepared':bool(service.pending_review),'queued':bool(service.pending_review),'objective_id':id,
+                        'message':text,'published':False,'completed':False,
+                        'delivery':'The host delivers the exact review invitation; approval is not granted by this tool.'}
+            return Effects(self.home,owner_key(self.config)).run(operation_id,receipt,execute)
+
     def browse(self, instructions, operation_id):
         if not self.config.get('browser', {}).get('enabled'):
             raise PermissionError('Browser workflow is disabled')
@@ -110,6 +136,7 @@ class WorkflowTools:
         result = [
             ReadTool('development.list', 'Discover this owner’s coding objectives, statuses and threads.', object_schema({}), self.list),
             ReadTool('development.inspect', 'Inspect an owner coding objective and its publication link. The controlled workflow handles implementation, verification, review and publication under repository policy. Approval remains an explicit owner command.', object_schema({'id': TEXT}), self.inspect),
+            ReadTool('development.prepare','Prepare an existing verified candidate for owner review in its original thread. The host delivers the exact review preview. Does not publish, approve, merge, or weaken repository policy.',object_schema({'id':TEXT}),self.prepare,True),
             ReadTool('development.start', 'Delegate explicitly requested repository work to the existing coding workflow. Preserve the whole owner objective in a bounded brief. This queues work; it does not mean implementation is complete. Do not turn monitoring or a request for advice into permission to edit code.',
                 object_schema({'repository': TEXT, 'instructions': TEXT, 'self_improvement': {'type': 'boolean'}}), self.start, True),
             ReadTool('development.manage', 'Follow up or cancel an owner coding objective in its original thread. Does not approve publication or merge. For cancel, instructions may be empty.',
