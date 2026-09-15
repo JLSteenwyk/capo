@@ -18,6 +18,38 @@ class CalendarActionTests(unittest.TestCase):
         self.client=Mock();self.client.events.return_value=[]
         self.patch=patch('capo.calendar_actions.GoogleCalendar',return_value=self.client);self.patch.start();self.addCleanup(self.patch.stop)
 
+    def test_update_switches_date_representation_without_losing_other_fields(self):
+        from capo.calendar import apply
+        import copy
+        for old_all_day in (True, False):
+            with self.subTest(old_all_day=old_all_day):
+                old = event_body(dict(arguments(), all_day=old_all_day,
+                    start='2026-10-31' if old_all_day else '2026-10-31T18:00:00-07:00',
+                    end='2026-11-01' if old_all_day else '2026-10-31T20:00:00-07:00'), 'America/Los_Angeles')
+                old.update(id='event', etag='version1', organizer={'self':True}, description='Keep these notes')
+                saved = copy.deepcopy(old)
+                def request(method, event_id, **kwargs):
+                    if method == 'GET': return copy.deepcopy(saved)
+                    self.assertEqual(method, 'PATCH')
+                    self.assertEqual(kwargs['headers']['If-Match'], 'version1')
+                    for key, value in kwargs['json'].items():
+                        if key in ('start', 'end'):
+                            for field, item in value.items():
+                                if item is None: saved[key].pop(field, None)
+                                else: saved[key][field] = item
+                            self.assertNotEqual('date' in saved[key], 'dateTime' in saved[key])
+                        else: saved[key] = value
+                    return copy.deepcopy(saved)
+                client = Mock();client.request.side_effect = request
+                plan = dict(arguments(), action='update', event_id='event', all_day=not old_all_day,
+                    start='2026-10-31T18:00:00-07:00' if old_all_day else '2026-10-31',
+                    end='2026-10-31T20:00:00-07:00' if old_all_day else '2026-11-01')
+                directory = self.home / str(old_all_day);directory.mkdir()
+                apply(client, plan, [old], 'America/Los_Angeles', directory)
+                self.assertEqual(saved['description'], 'Keep these notes')
+                self.assertEqual('date' in saved['start'], not old_all_day)
+                if not old_all_day: self.assertNotIn('timeZone', saved['start'])
+
     def test_existing_match_and_followup_never_create_another(self):
         body=event_body(arguments(),'America/Los_Angeles');body['id']='existing'
         self.client.events.return_value=[body]

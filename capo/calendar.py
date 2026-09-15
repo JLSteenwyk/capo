@@ -148,6 +148,13 @@ def apply(client, plan, events, zone, directory):
     elif action in ('update', 'delete'):
         kwargs = {'headers': {'If-Match': target['etag']}, 'params': {'sendUpdates': 'none'}}
         if action == 'update':
+            # PATCH merges nested objects. Clear the old date representation
+            # explicitly when switching between all-day and timed events.
+            for boundary in ('start', 'end'):
+                if plan['all_day']:
+                    body[boundary].update(dateTime=None, timeZone=None)
+                else:
+                    body[boundary]['date'] = None
             kwargs['json'] = body
         client.request('PATCH' if action == 'update' else 'DELETE', target['id'], **kwargs)
         reply = f'{"Updated" if action == "update" else "Deleted"} “{target.get("summary", "Untitled event")}”.'
