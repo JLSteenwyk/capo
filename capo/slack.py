@@ -23,6 +23,17 @@ def legacy_conversation(home, event_id):
     return (home/'conversation'/key/'started.json').exists()
 
 
+def owner_message_record(text, event):
+    """Keep the message's actual date separate from processing or upload time."""
+    from datetime import datetime, timezone
+    value={'message':text}
+    try:
+        value['sent_at']=datetime.fromtimestamp(float(event['ts']),timezone.utc).isoformat()
+    except (KeyError,TypeError,ValueError,OverflowError,OSError):
+        value['timestamp_coverage']='Message timestamp unavailable; do not infer source dates.'
+    return value
+
+
 def resolve_issue_links(settings, request):
     """Read bounded issue context from the selected repository, never arbitrary URLs."""
     from urllib.parse import urlsplit
@@ -379,9 +390,9 @@ class SlackService:
                 if authorized(self.config, prior, self.store) and prior['event'].get('ts') == thread:
                     if saved['id'] == event_id:
                         break  # Preserve this event's image-enriched text below.
-                    memory.record(saved['id'], 'owner', {'message': prior['event'].get('text', '')})
+                    memory.record(saved['id'], 'owner', owner_message_record(prior['event'].get('text', ''),prior['event']))
                     break
-        memory.record(event_id, 'owner', {'message': text})
+        memory.record(event_id, 'owner', owner_message_record(text,event))
         request_state = memory.read()
         owned = [row for row in self.store.list() if self.owns(row)]
         in_thread = self.thread_objectives(thread)

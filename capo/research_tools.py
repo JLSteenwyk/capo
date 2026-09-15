@@ -113,7 +113,6 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         raise RecoveryStopped(state['stopped'])
     if time.time() < state.get('retry_at', 0):
         raise RetryLater(state['retry_at'], 'Connected service is still cooling down')
-    now = state['now']
     receipts = state['receipts']
     if state['pending'] is not None:
         # A process may have died after a write reached the service. Retain the
@@ -135,6 +134,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         if (directory/'cancelled.json').exists():
             raise RecoveryStopped('Research was cancelled')
         remaining = max_calls - step
+        now = datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat()
         prompt = (
             f'Current local time: {now}. Complete the owner request using the registered tools. Choose your next tool '
             'based on returned evidence, then finish when sufficient. Tool arguments must be JSON '
@@ -157,10 +157,17 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'Ask one short question only for a material unresolved ambiguity or personal choice. '
             'Before creating items search for existing matches. After partial success continue only unfinished actions; never repeat unconfirmed writes. '
             'Use dates.shift for local calendar offsets. Save resolved facts, uncertainties and next steps with context.save when useful. '
+            'Current time describes execution, not the date of every source. Resolve relative dates in owner messages '
+            'against their message timestamp and timezone when available; resolve quoted email or screenshot dates '
+            'against the source date, never its upload date. Request-start time is only a fallback for the current '
+            'request when no message timestamp is available, not evidence of an older source date. If the source '
+            'date is unknown, inspect context or research the referenced event; ask only if that uncertainty '
+            'still materially changes the action. Recheck time-sensitive facts after a delayed continuation. '
             'Never claim an action succeeded without a successful mutation receipt. '
 
             + instructions + '\n' + json.dumps({
                 'request': request, 'tools': tools.catalog(), 'receipts': receipts,
+                'request_started_at': state['now'],
                 'remaining_tool_calls': remaining,
                 'must_finish': remaining == 0 or evidence_size >= 180000,
             })
@@ -170,6 +177,20 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         validate(result, STEP)
         if (directory/'cancelled.json').exists():
             raise RecoveryStopped('Research was cancelled')
+        # Recover in-flight workers with their exact original prompt, then reject a
+        # decision whose local date is stale before it can execute any action.
+        prompted_at=datetime.fromisoformat(prompt.split('Current local time: ',1)[1].split('. Complete',1)[0])
+        current=datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles')))
+        if prompted_at.astimezone(current.tzinfo).date()!=current.date():
+            receipts.append({'tool':'','error':'Local date changed during this reasoning step. Its decision was discarded; no tool was executed. Re-evaluate dates using current time and the original source dates.'})
+            _write(checkpoint,state)
+            _write(directory/'receipts.json',receipts)
+            if remaining:continue
+            completed={'reply':'The date changed while I was working, and I reached the execution limit before rechecking the remaining work. No action from the stale decision was taken.',
+                       'document_title':'','document':'','receipts':receipts}
+            state['result']=completed
+            _write(checkpoint,state)
+            return completed
         if result['action'] == 'finish':
             if (result['tool'] or result['arguments_json'].strip() != '{}'
                     or not result['reply'].strip() or len(result['reply']) > 1900

@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -122,6 +123,64 @@ class CheckpointTests(unittest.TestCase):
         self.write.assert_called_once()
         self.assertTrue(result['receipts'][0]['uncertain'])
         self.assertIn('reconciled', result['receipts'][1]['error'])
+
+    def test_midnight_resume_discards_stale_write_and_refreshes_time(self):
+        backend=Mock();backend.call.side_effect=[TimeoutError(),CREATE,FINISH]
+        before=datetime.fromisoformat('2026-09-15T23:59:00-07:00')
+        after=datetime.fromisoformat('2026-09-16T00:01:00-07:00')
+        with patch('capo.research_tools.datetime',wraps=datetime) as clock:
+            clock.now.return_value=before
+            with self.assertRaises(RetryLater):self.call(backend,[self.original],100)
+            clock.now.return_value=after
+            result=self.call(backend,[self.original],200)
+        self.write.assert_not_called()
+        self.assertEqual(backend.call.call_args_list[0].args[1],backend.call.call_args_list[1].args[1])
+        self.assertIn('Current local time: '+after.isoformat(),backend.call.call_args.args[1])
+        data=json.loads(backend.call.call_args.args[1].splitlines()[-1])
+        self.assertEqual(data['request_started_at'],before.isoformat())
+        self.assertIn('discarded',result['receipts'][0]['error'])
+
+    def test_new_step_refreshes_clock_without_changing_source_context(self):
+        backend=Mock()
+        before=datetime.fromisoformat('2026-09-15T10:00:00-07:00')
+        after=datetime.fromisoformat('2026-09-15T11:00:00-07:00')
+        request={'message':'Use tomorrow from this older email',
+                 'source':{'sent_at':'2026-09-10T15:00:00Z','text':'Tomorrow'}}
+        with patch('capo.research_tools.datetime',wraps=datetime) as clock:
+            clock.now.return_value=before
+            def inspect():
+                clock.now.return_value=after
+                return {'source_date':'2026-09-10','relative_text':'Tomorrow'}
+            tool=ReadTool('source.inspect','Inspect source',object_schema({}),inspect)
+            backend.call.side_effect=[dict(CREATE,tool='source.inspect'),FINISH]
+            self.call(backend,[tool],100,request)
+        prompt=backend.call.call_args.args[1]
+        data=json.loads(prompt.splitlines()[-1])
+        self.assertIn('Current local time: '+after.isoformat(),prompt)
+        self.assertEqual(data['request'],request)
+        self.assertEqual(data['request_started_at'],before.isoformat())
+
+    def test_owner_message_timestamp_is_source_metadata(self):
+        from capo.slack import owner_message_record
+        self.assertEqual(owner_message_record('Tomorrow',{'ts':'0'})['sent_at'],'1970-01-01T00:00:00+00:00')
+        self.assertNotIn('sent_at',owner_message_record('Tomorrow',{'ts':'unknown'}))
+
+    def test_date_revalidation_cannot_reset_budget(self):
+        backend=Mock()
+        dates=iter([datetime.fromisoformat('2026-09-16T00:01:00-07:00'),
+                    datetime.fromisoformat('2026-09-17T00:01:00-07:00')])
+        with patch('capo.research_tools.datetime',wraps=datetime) as clock:
+            clock.now.return_value=datetime.fromisoformat('2026-09-15T23:59:00-07:00')
+            def decide(*args,**kwargs):
+                clock.now.return_value=next(dates)
+                return CREATE
+            backend.call.side_effect=decide
+            result=research(backend,ReadTools([self.original]),self.request,self.root,max_calls=1)
+        self.write.assert_not_called()
+        self.assertEqual(backend.call.call_count,2)
+        self.assertIn('execution limit',result['reply'])
+        self.assertEqual(len(result['receipts']),2)
+        self.assertEqual(research(backend,ReadTools([self.original]),self.request,self.root,max_calls=1),result)
 
 
 if __name__ == '__main__':
