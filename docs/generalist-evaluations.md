@@ -8,4 +8,19 @@ Grades compare the resulting calendar state and write count with the requested o
 
 Each run stores a summary, before/after service state, and the normal private request artifacts. The summary includes revision, implementation hash, fixture hash, harness hash, mode, elapsed time, tool attempts, writes, and checks. This runner covers shared reasoning and calendar/Gmail/GitHub inspection adapters, not end-to-end Slack routing or other integrations. It is the first part of the broader evaluation harness, not a completed benchmark.
 
-Run deterministic harness checks with `PYTHONPATH=tests python3 -m unittest test_generalist_evaluations -q`. These inject scripted decisions and establish fixture and grading behavior; they do not measure model capability. No baseline-versus-candidate model comparison has been run for this generalist change yet. The preserved baseline must remain unchanged until both revisions are evaluated with equivalent fixtures and conditions. Further research combinations, recovery scenarios, comparison reporting, and bounded subscription runs remain to be added.
+Run deterministic harness checks with `PYTHONPATH=tests python3 -m unittest test_generalist_evaluations -q`. These inject scripted decisions and establish fixture and grading behavior; they do not measure model capability. The first two matched model comparisons are recorded below. The preserved baseline must remain unchanged until both revisions are evaluated with equivalent fixtures and conditions. Further research combinations, recovery scenarios, broader comparison reporting, and additional bounded subscription runs remain to be added.
+
+## Initial model comparisons
+
+Two synthetic calendar cases were run once each against baseline `d0fa196` and candidate `501bcc5`, through the existing Claude subscription CLI. Both versions used the same fixture and harness fingerprints. The baseline ran in a detached checkout with unchanged tracked implementation files and only the evaluation package copied in. The candidate implementation fingerprint was recorded separately from the evaluation harness changes. CLI usage records reported `claude-sonnet-5` and `claude-haiku-4-5-20251001` for all four runs; these are observed provider records, not a claim about internal model routing.
+
+| Case | Baseline | Candidate | Evidence |
+| --- | --- | --- | --- |
+| Personal appointment move | Pass | Pass | Each made one intended change and preserved the other state. |
+| Work calendar with matching personal event | Fail | Pass | Baseline changed the personal event and incorrectly reported success; candidate changed the Work event and preserved the personal calendar. |
+
+Each run used two or three tool attempts and three or four provider calls. The implementation agent reviewed final replies against synthetic state: no unnecessary clarification in these four runs; one unsupported completion claim in the baseline selection run. This was not independent review. The selection case was held out from model-based tuning before this first evaluation. A later targeted rerun must be labeled a regression check, not fresh held-out evidence.
+
+These four observations do not establish a general success rate or speed improvement. Mail/GitHub semantic review and broader comparisons are still pending. Personal calendars, inboxes, and Slack were not modified. Private artifacts contain full receipts, world states, provider provenance, and the comparison.
+
+The runner can keep its in-memory synthetic state and adapter caches alive across `RetryLater` using `recovery_wait_seconds` (0 by default, at most 600). This bounds additional recovery waiting; it does not replace provider-call limits or support rebuilding a lost process from disk. The model driver used a 90-second per-call timeout, 15-call cap, and 180-second recovery-wait allowance. A scripted regression test verifies that a timeout after a write does not recreate the fixture or repeat the write.

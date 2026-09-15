@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 
 from capo.evaluations.runner import run_case
 
@@ -98,3 +98,18 @@ class GeneralistEvaluationTests(unittest.TestCase):
             result=run_case(provider,'github_notification',Path(tmp)/'run')
         self.assertFalse(result['task_success'])
         self.assertFalse(result['checks']['current_pr_inspected'])
+
+    def test_provider_retry_keeps_written_fixture_and_receipts(self):
+        provider=Mock();provider.call.side_effect=[
+            step('calendar.events',start='2030-11-04T00:00:00-08:00',end='2030-11-05T00:00:00-08:00'),
+            step('calendar.event',calendar_id='primary',event_id='planning'),
+            step('calendar.change',action='update',event_id='planning',title='Planning',location='Room 4',
+                 start='2030-11-04T14:00:00-08:00',end='2030-11-04T15:00:00-08:00',all_day=False),
+            TimeoutError(),finish()]
+        now=[100.0]
+        def sleep(seconds):now[0]+=seconds
+        with tempfile.TemporaryDirectory() as tmp,patch('time.time',side_effect=lambda:now[0]),patch('time.sleep',side_effect=sleep):
+            result=run_case(provider,'calendar_move',Path(tmp)/'run',recovery_wait_seconds=180)
+        self.assertTrue(result['task_success'])
+        self.assertEqual(result['remote_writes'],1)
+        self.assertEqual(provider.call.call_count,5)

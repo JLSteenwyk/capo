@@ -12,8 +12,10 @@ from .mail_cases import CASES as MAIL_CASES,MailWorld
 from .github_cases import CASES as GITHUB_CASES,GitHubWorld
 
 
-def run_case(provider,name,output,mode='scripted'):
+def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
     if mode not in ('scripted','model'):raise ValueError('Label the evaluation provider mode')
+    if type(recovery_wait_seconds) is not int or not 0<=recovery_wait_seconds<=600:
+        raise ValueError('Recovery wait must be between zero and 600 seconds')
     output=Path(output).resolve()
     repository=Path(__file__).resolve().parents[2]
     if output==repository or repository in output.parents:
@@ -48,7 +50,18 @@ def run_case(provider,name,output,mode='scripted'):
         allowed=('calendar.','dates.','clock.','mail.') if case.get('mail') else ('calendar.','dates.','clock.')
         if case.get('github'):allowed+=('github.',)
         tools=ReadTools([tool for name,tool in registry.tools.items() if name.startswith(allowed) and name!='github.issues'])
-        result=research(provider,tools,request,output/'request',max_calls=10)
+        from capo.recovery import RetryLater
+        waited=0
+        while True:
+            try:
+                result=research(provider,tools,request,output/'request',max_calls=10)
+                break
+            except RetryLater as exc:
+                delay=max(1,exc.retry_at-time.time())
+                if waited+delay>recovery_wait_seconds:raise
+                # Keep the same simulated world and adapter discovery caches.
+                # Never recreate a world after a tool might have changed it.
+                time.sleep(delay);waited+=delay
     checks=world.grade(result)
     revision=subprocess.run(['git','rev-parse','HEAD'],cwd=repository,capture_output=True,text=True,check=True).stdout.strip()
     source_hash=hashlib.sha256()
