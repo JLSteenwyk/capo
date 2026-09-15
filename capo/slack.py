@@ -17,6 +17,12 @@ from .store import Store
 from .communication import plan_message, completed_message
 
 
+def legacy_conversation(home, event_id):
+    """Only already-started classifier requests use the former routing path."""
+    key = hashlib.sha256(str(event_id).encode()).hexdigest()
+    return (home/'conversation'/key/'started.json').exists()
+
+
 def resolve_issue_links(settings, request):
     """Read bounded issue context from the selected repository, never arbitrary URLs."""
     from urllib.parse import urlsplit
@@ -390,8 +396,6 @@ class SlackService:
                            "capo": json.loads(delivery[0])["text"][:4000] if delivery else ""})
             if len(recent) == 5:
                 break
-        if self.conversation is None:
-            self.conversation = ConversationRouter(self.store.home)
         from .reminders import thread_context as reminder_context
         reminder = reminder_context(self.store.home, self.config, thread)
         if reminder:
@@ -401,6 +405,23 @@ class SlackService:
         if scheduled:
             recent.append({'user': '', 'capo': 'Scheduled request context: '+json.dumps(scheduled)})
         from .team import roster
+        if not legacy_conversation(self.store.home, event_id):
+            from .capabilities import CapabilityConversation
+            if not hasattr(self, 'capability_conversation'):
+                self.capability_conversation = CapabilityConversation(self.store.home, self.config)
+            return self.capability_conversation.poll(event_id, {
+                'aliases': list(self.config['repositories']),
+                'objectives': [{'id': row['id'], 'status': row['status']} for row in owned],
+                'thread_objective_id': in_thread[0]['id'] if len(in_thread) == 1 else '',
+                'message': text, 'request_state': request_state, 'request_thread': thread,
+                'request_event': event_id, 'owner_scope': owner_key(self.config),
+                'owner_request': {'event': event_id, 'thread': thread, 'text': event['text']},
+                'team': roster(self.config),
+                'browser_preferences': self.config.get('browser', {}).get('preferences', {}),
+                'timezone': self.config.get('calendar', {}).get('timezone', 'America/Los_Angeles'),
+                'recent_messages': list(reversed(recent))})['reply']
+        if self.conversation is None:
+            self.conversation = ConversationRouter(self.store.home)
         route = self.conversation.poll(event_id, {
             "request_state": request_state, "request_thread": thread, "owner_scope": owner_key(self.config),
             "team": roster(self.config),

@@ -1,12 +1,13 @@
 # Shared tools, not one workflow per request
 
-Capo and its personal specialists use the same bounded tool loop for research and analysis. The model sees a catalog of registered capabilities, chooses a tool and its arguments, inspects the actual result, and chooses the next step. New combinations of existing tools do not require another intent enum or a task-specific handler.
+New ordinary Slack requests go directly to one shared reasoning and tool loop, without a preliminary domain classifier. Capo combines specialist expertise, connected sources and controlled workflow handoffs in that loop. The model sees a catalog of registered capabilities, chooses a tool and its arguments, inspects the actual result, and chooses the next step. New combinations of existing tools do not require another intent enum or a task-specific handler.
 
 Available primitives:
 
 | Tool | Capability |
 | --- | --- |
 | clock.now / dates.shift | Current local time and calendar-day arithmetic |
+| specialists.list / specialists.read / specialists.remember | Specialist expertise and existing role-scoped owner preferences |
 | web.search / web.read | Subscription web search and bounded public HTTPS evidence |
 | context.read / context.save / context.history / context.actions | Original thread objective, working notes and durable action history |
 | tasks.search / tasks.get / tasks.save | Shared personal tasks and reminders |
@@ -41,3 +42,5 @@ GitHub inspection uses fixed read-only REST endpoints through the existing CLI a
 Gmail message and thread inspection share a 50-attempt, 120,000-body-character budget. A partially exhausted budget returns useful excerpts plus explicit unread IDs rather than discarding the whole thread. Results distinguish partial coverage and access/service failure categories; access failures stop further reads in that batch. A complete inspection status means every requested message was read, not that its body or attachments were fully examined. Check each message’s truncation flag. Sent labels identify candidate owner writing, not proof that signatures or quoted text were authored by the owner.
 
 Authenticated interactive requests expose `development.list`, `development.inspect`, `development.start`, and `development.manage`, plus `browser.start` when enabled. These are handoffs to the existing isolated workflows, not direct shell or publication access. Host code reloads the stored owner event, validates thread ownership, and carries the original request into coding/browser briefs. Coding uses repository-configured checks, workers and limits. Follow-ups and cancellations require the original objective thread. Durable receipts prevent repeating the same handoff; returned queue status is not completion. Publication and browser approval commands remain outside model-selected tools. Scheduled monitoring without an authenticated interactive owner event does not gain these handoffs.
+
+Explicit commands, thread replies without mentions, working indicators, delivery receipts and cancellation retain their existing Slack paths. Only events with an already-saved legacy classifier `started.json` use the former domain routing handlers, to preserve their in-progress state. New ordinary requests use the shared loop even when they mention calendar, email, shopping, or coding.

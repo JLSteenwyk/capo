@@ -51,6 +51,8 @@ def shared_tools(home,config,documents,request=None):
                    lambda:{'now':datetime.now(ZoneInfo(zone)).isoformat(),'timezone':zone}),
            ReadTool('documents.list','List reusable private documents saved for this owner.',object_schema({}),documents.list),
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
+    from .specialist_tools import SpecialistTools
+    tools.extend(SpecialistTools(home, owner_key(config)).tools(writable=bool((request or {}).get('owner_request'))))
     if request and request.get('owner_request') and all(config.get(k) for k in ('team_id', 'channel_id', 'owner_user_id')):
         from .workflow_tools import WorkflowTools
         tools.extend(WorkflowTools(home, config, request).tools())
@@ -133,6 +135,9 @@ class CapabilityConversation(ConversationRouter):
         try:
             result=research(Providers(timeout=90),shared_tools(self.home,self.config,self.documents,context),context,directory,
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
+                'For relevant specialist expertise and saved preferences, use specialists.list/read and apply them in this same loop. '
+                'For explicitly requested repository work, use development tools; for browser control, use browser.start when available. '
+                'A queued handoff is not completion. Preserve existing publication and browser approval requirements. '
                 'For writing from owner examples, use their own sent prose, not received messages. '
                 'Do not substitute an unrelated inbox summary. Discover useful saved documents when relevant. '
                 'For a requested reusable document, return it for private storage. Never assume a connection '

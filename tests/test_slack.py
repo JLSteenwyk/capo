@@ -20,6 +20,11 @@ class Client:
 
 class SlackCase(unittest.TestCase):
     def setUp(self):
+        # These fixtures exercise commands and the preserved legacy classifier
+        # path. New ordinary routing has separate shared-loop integration tests.
+        legacy_patch = patch('capo.slack.legacy_conversation', return_value=True)
+        legacy_patch.start()
+        self.addCleanup(legacy_patch.stop)
         router_patch = patch("capo.conversation.ConversationRouter")
         self.router = router_patch.start().return_value
         self.addCleanup(router_patch.stop)
@@ -317,7 +322,7 @@ class SlackCase(unittest.TestCase):
         self.assertIn("independent review", explanation)
         self.assertNotIn("secret-sentinel", explanation)
 
-    def test_natural_issue_question_reads_selected_repository_without_queuing(self):
+    def test_legacy_natural_issue_question_reads_selected_repository_without_queuing(self):
         git(self.repo, "remote", "add", "origin", "https://github.com/example/project.git")
         self.router.poll.side_effect = None
         self.router.poll.return_value = {"action": "issues", "repository": "project", "objective_id": "", "reply": ""}
@@ -329,7 +334,7 @@ class SlackCase(unittest.TestCase):
         self.assertEqual(self.store.list(), [])
         self.assertFalse(self.router.poll.call_args.args[1]["message"].startswith(","))
 
-    def test_natural_objective_uses_original_request_and_trusted_checks(self):
+    def test_legacy_natural_objective_uses_original_request_and_trusted_checks(self):
         self.router.poll.side_effect = None
         self.router.poll.return_value = {"action": "objective", "repository": "project", "objective_id": "", "reply": ""}
         request = "Please improve Project's greeting"
@@ -340,7 +345,7 @@ class SlackCase(unittest.TestCase):
         self.assertEqual(objective["request"], request)
         self.assertEqual(objective["checks"], [["python3", "hello.py"]])
 
-    def test_natural_status_in_thread_does_not_reopen_completed_objective(self):
+    def test_legacy_natural_status_in_thread_does_not_reopen_completed_objective(self):
         self.service.dispatch("Ev123", self.body())
         objective = self.store.list()[0]
         objective["status"] = "completed"
