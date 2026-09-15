@@ -167,12 +167,20 @@ class GmailReadTools(ReadTools):
     def thread(self,id):
         if id not in self.known_threads:raise ValueError('Search the thread first')
         data=self.client.get('threads/'+quote(id,safe=''),{'format':'minimal'})
-        ids=[m['id'] for m in data.get('messages',[])][:50]
+        ids=list(dict.fromkeys(m['id'] for m in data.get('messages',[])))
         self.known_ids.update(ids)
         rows=[]
-        for start in range(0,len(ids),25):
-            rows.append(self.read(ids[start:start+25],strip_quotes=False))
-        return {'thread_id':id,'pages':rows,'more_available':len(data.get('messages',[]))>50}
+        attempted=0
+        while attempted<len(ids) and self.read_attempts<50 and self.characters<120000:
+            page=self.read(ids[attempted:attempted+25],strip_quotes=False)
+            rows.append(page)
+            attempted+=len(page['messages'])+len(page['errors'])
+            if page['errors'] or page['unread_ids']:
+                break
+        unread=ids[attempted:]
+        return {'thread_id':id,'pages':rows,'more_available':bool(unread),
+                'unread_ids':unread,'status':'partial' if unread or any(p['errors'] for p in rows) else 'complete',
+                'coverage':'Thread message excerpts within the shared read budget; attachments are separate.'}
 
     def search(self, query, page_size, page_token):
         if not query.strip() or len(query) > 500 or len(page_token) > 2000:
@@ -195,12 +203,12 @@ class GmailReadTools(ReadTools):
 
     def read(self, ids, strip_quotes):
         if (not 1 <= len(ids) <= 25 or len(set(ids)) != len(ids)
-                or not set(ids) <= self.known_ids or self.read_attempts + len(ids) > 50
+                or not set(ids) <= self.known_ids or self.read_attempts >= 50
                 or self.characters >= 120000):
             raise ValueError('Invalid IDs or exhausted message budget')
         rows, errors = [], []
         for message_id in ids:
-            if self.characters >= 120000:
+            if self.characters >= 120000 or self.read_attempts >= 50:
                 break
             # Attempts consume the budget too, including repeats and failed reads.
             self.read_attempts += 1
@@ -209,6 +217,7 @@ class GmailReadTools(ReadTools):
                 payload = message.get('payload', {})
                 headers = {h['name'].lower(): h['value'][:300] for h in payload.get('headers', [])}
                 text = body_text(payload, strip_quotes=strip_quotes)
+                source_truncated = len(text) >= 12000
                 if strip_quotes:
                     text = re.split(r'(?m)^On .{0,300}wrote:\s*$|^[- ]*Original Message[- ]*$', text)[0]
                     text = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('>'))
@@ -219,12 +228,26 @@ class GmailReadTools(ReadTools):
                     'from': headers.get('from', ''), 'to': headers.get('to', ''),
                     'subject': headers.get('subject', ''), 'date': headers.get('date', ''),
                     'labels': message.get('labelIds', []), 'body': excerpt,
-                    'truncated': len(text) > limit or len(text) >= 12000,
+                    'truncated': len(text) > limit or source_truncated,
+                    'authorship': 'Sent-mail candidate; review sender, signatures and quoted text.'
+                        if 'SENT' in message.get('labelIds', []) else 'Sender-authored correspondence; not established as owner writing.',
                     'quotes_filtered': strip_quotes})
-            except Exception:
-                errors.append({'id': message_id, 'error': 'Message could not be read.'})
+            except Exception as exc:
+                from .providers import ServiceAuthenticationError
+                from .recovery import RateLimited
+                category = ('authentication_required' if isinstance(exc, ServiceAuthenticationError)
+                    else 'permission_denied' if isinstance(exc, PermissionError)
+                    else 'rate_limited' if isinstance(exc, RateLimited)
+                    else 'service_unavailable' if isinstance(exc, ConnectionError)
+                    else 'read_failed')
+                errors.append({'id': message_id, 'error': 'Message could not be read.', 'category': category})
+                if category != 'read_failed':
+                    break
         return {'messages': rows, 'errors': errors,
                 'unread_ids': ids[len(rows)+len(errors):],
+                'status': 'partial' if errors or len(rows)<len(ids) else 'complete',
+                'remaining_message_reads': 50-self.read_attempts,
+                'remaining_body_characters': 120000-self.characters,
                 'coverage': 'Body excerpts, not attachments. Empty bodies may be unavailable. '
                     'Quote filtering is heuristic; signatures and quoted authors need review.'}
 
