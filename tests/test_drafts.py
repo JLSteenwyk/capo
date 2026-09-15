@@ -63,10 +63,43 @@ class DraftTests(unittest.TestCase):
 
     def test_delete_replay_does_not_need_deleted_draft(self):
         self.tools.known.add('draft1');self.client.get.return_value=self.raw_draft()
+        self.client.draft_exists.return_value=False
         revision=self.tools.read('draft1')['revision']
         result=self.tools.delete('draft1',revision,'delete')
+        self.assertTrue(result['verified'])
+        self.client.draft_exists.assert_called_once_with('draft1')
         self.client.get.side_effect=AssertionError('deleted draft no longer readable')
         self.assertEqual(self.tools.delete('draft1',revision,'delete'),result)
+        self.client.draft_write.assert_called_once_with('DELETE','draft1')
+
+    def test_delete_acknowledgement_requires_confirmed_absence(self):
+        from capo.effects import UncertainEffect
+        self.tools.known.add('draft1');self.client.get.return_value=self.raw_draft()
+        revision=self.tools.read('draft1')['revision']
+        self.client.draft_exists.return_value=True
+        with self.assertRaises(UncertainEffect):
+            self.tools.delete('draft1',revision,'delete')
+        restored=DraftTools(self.client,self.mail,self.home,'owner')
+        action=restored.pending()['actions'][0]['id']
+        self.assertFalse(restored.reconcile(action)['confirmed'])
+        self.client.draft_exists.return_value=None
+        self.assertFalse(restored.reconcile(action)['confirmed'])
+        self.client.draft_exists.return_value=False
+        result=restored.reconcile(action)
+        self.assertTrue(result['deleted']);self.assertTrue(result['verified'])
+        self.assertEqual(restored.delete('draft1',revision,'delete'),result)
+        self.client.draft_write.assert_called_once_with('DELETE','draft1')
+
+    def test_delete_failed_verification_remains_pending(self):
+        self.tools.known.add('draft1');self.client.get.return_value=self.raw_draft()
+        revision=self.tools.read('draft1')['revision']
+        self.client.draft_exists.side_effect=TimeoutError('read unavailable')
+        with self.assertRaises(TimeoutError):
+            self.tools.delete('draft1',revision,'delete')
+        self.assertEqual(len(self.tools.pending()['actions']),1)
+        from capo.effects import UncertainEffect
+        with self.assertRaises(UncertainEffect):
+            self.tools.delete('draft1',revision,'delete')
         self.client.draft_write.assert_called_once_with('DELETE','draft1')
 
     def test_source_attachment_reference_and_thread_read(self):

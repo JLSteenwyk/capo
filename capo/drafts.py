@@ -10,7 +10,7 @@ from email.utils import getaddresses
 from urllib.parse import quote
 
 from .contracts import TEXT, TEXTS, object_schema
-from .effects import Effects
+from .effects import Effects, UncertainEffect
 from .research_tools import ReadTool
 
 
@@ -152,8 +152,12 @@ class DraftTools:
         if existing is not None:return existing
         _,raw,_=self._raw(id)
         if hashlib.sha256(raw).hexdigest()!=revision:raise ValueError('Draft changed; read again before deleting')
-        return self.effects.run(operation_id,{'kind':'gmail-draft-delete','id':id,'revision':revision},
-                                lambda:self.client.draft_write('DELETE',id))
+        def write():
+            self.client.draft_write('DELETE',id)
+            if self.client.draft_exists(id) is not False:
+                raise UncertainEffect('Draft deletion is unconfirmed; reconcile before retrying')
+            return {'deleted':True,'id':id,'verified':True}
+        return self.effects.run(operation_id,request,write)
 
     def pending(self):
         result=[]
@@ -171,8 +175,9 @@ class DraftTools:
         completed=self.effects.completed(operation,request)
         if completed is not None:return completed
         if request['kind']=='gmail-draft-delete':
-            if self.client.draft_exists(request['id']):return {'confirmed':False,'reason':'Draft still exists; no change was made.'}
-            return self.effects.resolve(operation,request,{'deleted':True,'id':request['id'],'reconciled':True})
+            if self.client.draft_exists(request['id']) is not False:
+                return {'confirmed':False,'reason':'Draft absence is not confirmed. No write was repeated.'}
+            return self.effects.resolve(operation,request,{'deleted':True,'id':request['id'],'reconciled':True,'verified':True})
         tag='capo-'+hashlib.sha256(operation.encode()).hexdigest()+'@capo.invalid'
         next_cursor=''
         if request['id']:ids=[request['id']]
