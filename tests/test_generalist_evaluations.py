@@ -43,3 +43,36 @@ class GeneralistEvaluationTests(unittest.TestCase):
         self.assertTrue(result['checks']['remote_state_matches'])
         self.assertIsNone(result['checks']['restriction_disclosed'])
         self.assertIsNone(result['task_success'])
+
+    def test_meeting_brief_uses_real_calendar_and_mail_readers(self):
+        provider=Mock();provider.call.side_effect=[
+            step('calendar.events',start='2030-11-04T00:00:00-08:00',end='2030-11-05T00:00:00-08:00'),
+            step('calendar.event',calendar_id='primary',event_id='planning'),
+            step('mail.search',query='subject:Planning',page_size='10',page_token=''),
+            step('mail.thread',id='thread1'),
+            dict(finish(),reply='Planning is in Room 4. Review the 17 samples and $2,400 equipment budget.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'meeting_brief',Path(tmp)/'run')
+        self.assertTrue(result['task_success'],result)
+        self.assertEqual(result['remote_writes'],0)
+
+    def test_scripted_reply_draft_checks_recipient_thread_and_facts(self):
+        provider=Mock();provider.call.side_effect=[
+            step('mail.search',query='subject:Planning',page_size='10',page_token=''),
+            step('mail.read',ids=['mail1'],strip_quotes=False),
+            step('mail.drafts.save',id='',revision='',to=['morgan@example.invalid'],cc=[],bcc=[],
+                 subject='Planning',body='Confirming 17 samples and the $2400 budget.',
+                 reply_to_message='mail1',attachment_ids=[]),
+            dict(finish(),reply='The reply draft is ready; it has not been sent.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'reply_draft',Path(tmp)/'run')
+        self.assertTrue(result['task_success'],result)
+        self.assertEqual(result['remote_writes'],1)
+
+    def test_unread_meeting_facts_cannot_pass_from_reply_wording_alone(self):
+        provider=Mock();provider.call.return_value=dict(finish(),reply='Room 4, 17 samples, $2400.')
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'meeting_brief',Path(tmp)/'run')
+        self.assertTrue(result['checks']['facts_present'])
+        self.assertFalse(result['task_success'])
+        self.assertFalse(result['checks']['source_inspected'])

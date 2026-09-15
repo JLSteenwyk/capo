@@ -5,8 +5,10 @@ import time
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
+from contextlib import ExitStack
 
 from .calendar_cases import CASES,CalendarWorld
+from .mail_cases import CASES as MAIL_CASES,MailWorld
 
 
 def run_case(provider,name,output,mode='scripted'):
@@ -17,21 +19,26 @@ def run_case(provider,name,output,mode='scripted'):
         raise ValueError('Evaluation artifacts must be outside the public repository')
     if output.exists() and any(output.iterdir()):raise ValueError('Use a fresh evaluation directory')
     output.mkdir(parents=True,mode=0o700,exist_ok=True)
-    case=CASES[name];world=CalendarWorld(case)
+    case={**CASES,**MAIL_CASES}[name];world=MailWorld(case) if case.get('mail') else CalendarWorld(case)
     from capo.capabilities import shared_tools,Documents
     from capo.research_tools import ReadTools,research
     from capo.conversation import _write
     config={'repositories':{},'calendar':{'enabled':True,'timezone':'America/Los_Angeles'}}
+    if case.get('mail'):config['gmail']={'enabled':True,'drafts':bool(case.get('draft'))}
     request={'message':case['request'],'timezone':'America/Los_Angeles'}
     started=time.monotonic()
     # Patch both the lazy lookup and the action module's imported class; neither
     # may retain a real client or a different scenario's mock between cases.
     import capo.calendar_actions
-    with patch('capo.calendar.GoogleCalendar',side_effect=world.client),patch('capo.calendar_actions.GoogleCalendar',side_effect=world.client):
+    with ExitStack() as stack:
+        stack.enter_context(patch('capo.calendar.GoogleCalendar',side_effect=world.client))
+        stack.enter_context(patch('capo.calendar_actions.GoogleCalendar',side_effect=world.client))
+        if case.get('mail'):stack.enter_context(patch('capo.gmail.Gmail',side_effect=world.mail_client))
         registry=shared_tools(output/'state',config,Documents(output/'state','synthetic'),request)
         # Only these adapters are backed by this fixture. No web, GitHub, or
         # personal-service fallback is allowed during a calendar-only evaluation.
-        tools=ReadTools([tool for name,tool in registry.tools.items() if name.startswith(('calendar.','dates.','clock.'))])
+        allowed=('calendar.','dates.','clock.','mail.') if case.get('mail') else ('calendar.','dates.','clock.')
+        tools=ReadTools([tool for name,tool in registry.tools.items() if name.startswith(allowed)])
         result=research(provider,tools,request,output/'request',max_calls=10)
     checks=world.grade(result)
     revision=subprocess.run(['git','rev-parse','HEAD'],cwd=repository,capture_output=True,text=True,check=True).stdout.strip()
@@ -46,8 +53,9 @@ def run_case(provider,name,output,mode='scripted'):
         'unnecessary_clarification':None,'unsupported_claims':None,
         'fixture_sha256':hashlib.sha256(json.dumps(case,sort_keys=True).encode()).hexdigest(),
         'revision':revision,'implementation_sha256':source_hash.hexdigest(),
-        'harness_sha256':hashlib.sha256(Path(__file__).read_bytes()+Path(__file__).with_name('calendar_cases.py').read_bytes()).hexdigest(),
-        'coverage':'Actual shared reasoning loop and calendar adapters with fake Google state. Excludes Slack routing/delivery and other integrations. Semantic answer claims and clarification require separate review.'}
+        'harness_sha256':hashlib.sha256(b''.join(path.read_bytes() for path in sorted(Path(__file__).parent.glob('*.py')))).hexdigest(),
+        'coverage':'Actual shared reasoning loop and calendar/Gmail adapters with fake Google state. Excludes Slack routing/delivery and other integrations. Fact-token checks do not prove full semantic quality; answer claims and clarification require separate review.'}
     _write(output/'summary.json',summary)
-    _write(output/'world.json',{'before':world.original,'after':world.calendars,'writes':world.writes})
+    _write(output/'world.json',{'before':world.original,'after':world.calendars,'writes':world.writes,
+                              'drafts':getattr(world,'drafts',{}),'mail_reads':getattr(world,'mail_reads',[])})
     return summary
