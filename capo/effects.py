@@ -52,6 +52,25 @@ class Effects:
             return result
         finally:db.close()
 
+    def release_unsent(self, operation_id, request):
+        """Archive and release a proven-unsent attempt under the adapter's lock.
+
+        The caller must have caught an explicit local preflight rejection and
+        verified that no outbound-write journal exists. Absence of a result or
+        elapsed time is never sufficient proof. Not exposed as a model tool.
+        """
+        db=self.connect()
+        try:
+            with db:
+                db.execute('BEGIN IMMEDIATE')
+                row=db.execute('SELECT request,status FROM effects WHERE id=?',(operation_id,)).fetchone()
+                if row is None or row!=(json.dumps(request,sort_keys=True),'started'):
+                    raise ValueError('Only the matching unsent attempt may be released')
+                db.execute('CREATE TABLE IF NOT EXISTS unsent_attempts(sequence INTEGER PRIMARY KEY, operation_id TEXT, request TEXT)')
+                db.execute('INSERT INTO unsent_attempts(operation_id,request) VALUES (?,?)',(operation_id,row[0]))
+                db.execute('DELETE FROM effects WHERE id=?',(operation_id,))
+        finally:db.close()
+
     def run(self, operation_id, request, execute, reconcile=None):
         if not operation_id:raise ValueError('Host receipt required')
         encoded=json.dumps(request,sort_keys=True)

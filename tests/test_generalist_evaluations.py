@@ -249,3 +249,28 @@ class GeneralistEvaluationTests(unittest.TestCase):
         self.assertEqual(world.writes,[])
         self.assertEqual(world.stale_changes,1)
         self.assertEqual(world.calendars['primary']['planning']['description'],'Updated preparation notes from another editor.')
+
+    def test_stale_refresh_retries_same_operation_and_preserves_external_notes(self):
+        from capo.evaluations.calendar_cases import CASES,CalendarWorld
+        from capo.calendar_tools import CalendarTools
+        from capo.calendar_actions import CalendarActions
+        from capo.calendar import CalendarPreconditionFailed
+        world=CalendarWorld(CASES['calendar_stale'])
+        with tempfile.TemporaryDirectory() as tmp:
+            tools=CalendarTools('America/Los_Angeles',world.client)
+            read=lambda:tools.events('2030-11-04T00:00:00-08:00','2030-11-05T00:00:00-08:00')
+            read();action=CalendarActions(Path(tmp),'owner','America/Los_Angeles',tools.primary_cache)
+            args=('update','planning','Planning','Room 4','2030-11-04T14:00:00-08:00','2030-11-04T15:00:00-08:00',False,'same-operation')
+            with patch('capo.calendar_actions.GoogleCalendar',side_effect=world.client):
+                with self.assertRaises(CalendarPreconditionFailed):action.change(*args)
+                self.assertEqual(action.pending()['actions'],[])
+                with self.assertRaises(ValueError):action.change(*args)
+                read()
+                result=action.change(*args)
+                self.assertTrue(result['verified'])
+                self.assertEqual(action.change(*args),result)
+            db=action.effects.connect()
+            try:self.assertEqual(db.execute('SELECT count(*) FROM unsent_attempts').fetchone()[0],1)
+            finally:db.close()
+        self.assertEqual(len(world.writes),1)
+        self.assertTrue(world.grade({'reply':'Moved.'})['remote_state_matches'])

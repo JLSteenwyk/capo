@@ -7,7 +7,7 @@ from datetime import datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .calendar import GoogleCalendar, apply, event_body, instant, writable
+from .calendar import GoogleCalendar, apply, event_body, instant, writable, CalendarPreconditionFailed
 from .contracts import TEXT, object_schema
 from .effects import Effects, UncertainEffect
 from .research_tools import ReadTool
@@ -125,7 +125,15 @@ class CalendarActions:
             if not self.verified(operation_id,request,client):
                 raise UncertainEffect('The calendar write was sent, but the requested state could not be verified. Reconcile before another write.')
             return {'changed':True,'verified':True,'event_id':self.target_id(operation_id,plan),'calendar_id':self.calendar_id,'reply':reply}
-        return self.effects.run(operation_id,request,execute)
+        try:
+            return self.effects.run(operation_id,request,execute)
+        except CalendarPreconditionFailed:
+            # This exception is emitted only before apply creates its write
+            # journal. Retain any old/uncertain attempt rather than infer safety.
+            if not (directory/'effect.json').exists():
+                self.effects.release_unsent(operation_id,request)
+                self.cache.pop(event_id,None)
+            raise
 
     def tools(self):
         return [ReadTool('calendar.change','Apply an explicitly owner-requested personal change. Reads existing events before creation to avoid exact duplicates; read events before update/delete. Full preserved title/location/times on update. No guests/repeats. Timed values require local offsets; all-day end is exclusive. Unused strings empty. Unconfirmed identical changes are reconciled without another write.',

@@ -27,6 +27,10 @@ class CalendarError(RuntimeError):
     pass
 
 
+class CalendarPreconditionFailed(CalendarError):
+    """Local preflight rejected an action before its write journal was created."""
+
+
 class CalendarAccessError(PermissionError, CalendarError):
     pass
 
@@ -171,7 +175,7 @@ def apply(client, plan, events, zone, directory):
             raise CalendarError('Please change this event in Google Calendar. I currently edit only personal events without guests or repeats.')
         current = client.request('GET', target['id'])
         if current.get('etag') != target['etag'] or not writable(current):
-            raise CalendarError('That event changed. Please ask again so I can check its latest details.')
+            raise CalendarPreconditionFailed('That event changed before any write was sent. Read its latest details and retry only if the original request still applies.')
     # Persist before any side effect. Neither this function nor the caller retries writes.
     journal = directory / 'effect.json'
     if journal.exists():

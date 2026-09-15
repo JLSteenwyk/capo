@@ -171,3 +171,22 @@ class CalendarActionTests(unittest.TestCase):
             with self.assertRaises(UncertainEffect):self.adapter.change(**arguments(),operation_id='overlap')
             self.client.events.assert_not_called();self.client.request.assert_not_called()
         finally:os.close(fd)
+
+    def test_preflight_exception_after_outbound_journal_is_not_released(self):
+        from capo.calendar import CalendarPreconditionFailed
+        self.client.request.side_effect=CalendarPreconditionFailed('Synthetic failure after write started')
+        self.client.lookup.return_value=None
+        with self.assertRaises(CalendarPreconditionFailed):
+            self.adapter.change(**arguments(),operation_id='written')
+        self.assertEqual(len(self.adapter.pending()['actions']),1)
+        with self.assertRaises(UncertainEffect):
+            self.adapter.change(**arguments(),operation_id='written')
+        self.client.request.assert_called_once()
+
+    def test_unsent_release_rejects_mismatched_or_completed_receipts(self):
+        effects=self.adapter.effects;request={'kind':'test'}
+        with self.assertRaises(RuntimeError):effects.run('pending',request,lambda:(_ for _ in ()).throw(RuntimeError()))
+        with self.assertRaises(ValueError):effects.release_unsent('pending',{'kind':'other'})
+        effects.run('done',{'kind':'done'},lambda:{'saved':True})
+        with self.assertRaises(ValueError):effects.release_unsent('done',{'kind':'done'})
+        self.assertEqual(len(effects.pending('test')),1)
