@@ -158,6 +158,30 @@ class SharedConversationTests(unittest.TestCase):
         _write(root/'started.json', {'context': {}})
         self.assertTrue(legacy_conversation(self.home, 'old'))
 
+    def test_digest_thread_can_use_calendar_without_feedback_classifier(self):
+        from datetime import datetime, timezone
+        from capo.digest import DigestStore, scope
+        db=DigestStore(self.home)
+        try:
+            before=db.preferences(scope(self.config))
+            db.save({'key':'digest-fixture','scope':scope(self.config),'day':'2026-11-02',
+                     'status':'sent','ts':'100.1','payload':{'text':'Morning briefing','news':[]}},
+                    datetime.now(timezone.utc))
+        finally:db.close()
+        body=self.body('What is on my calendar?', 'digest-reply', '100.1')
+        body['event'].update(type='message',text='What is on my calendar?')
+        with patch('capo.capabilities.Providers') as providers, patch('capo.calendar.GoogleCalendar') as calendar, \
+                patch('capo.digest_feedback.FeedbackConversation',side_effect=AssertionError('No digest-only classifier')):
+            calendar.return_value.events.return_value=[]
+            providers.return_value.call.side_effect=[step('digest.read'),
+                step('calendar.events',start='2026-11-02T00:00:00-08:00',end='2026-11-03T00:00:00-08:00'),
+                finish('No events were found on your primary calendar for that day.')]
+            self.assertIn('No events',self.run_request(body))
+            calendar.return_value.events.assert_called_once()
+        db=DigestStore(self.home)
+        try:self.assertEqual(db.preferences(scope(self.config)),before)
+        finally:db.close()
+
 
 if __name__ == '__main__':
     unittest.main()

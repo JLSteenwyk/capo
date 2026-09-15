@@ -70,7 +70,7 @@ class SlackCase(unittest.TestCase):
         reply["event"]["user"]="UOTHER"
         self.assertFalse(authorized(self.config, reply, self.store))
 
-    def test_digest_thread_accepts_only_owner_feedback_without_mention(self):
+    def test_legacy_digest_thread_accepts_only_owner_feedback_without_mention(self):
         from capo.digest import DigestStore, scope
         from datetime import datetime, timezone
         db = DigestStore(self.store.home)
@@ -81,6 +81,11 @@ class SlackCase(unittest.TestCase):
         body = self.body("more AI news")
         body["event"].update(type="message", text="more AI news", ts="101.1", thread_ts="100.1")
         self.assertTrue(authorized(self.config, body, self.store))
+        import hashlib
+        from capo.conversation import _write
+        marker=self.store.home/'digest-feedback'/'conversation'/hashlib.sha256(b'digest-event').hexdigest()
+        marker.mkdir(parents=True)
+        _write(marker/'started.json', {'context': {}})
         with patch("capo.digest_feedback.FeedbackConversation") as router:
             router.return_value.poll.return_value = {"reply": "I’ll show more AI."}
             self.assertEqual(self.service.dispatch("digest-event", body), "I’ll show more AI.")

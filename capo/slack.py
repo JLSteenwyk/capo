@@ -449,7 +449,7 @@ class SlackService:
                 "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles")})
         if action == "digest":
             from .digest_feedback import dispatch as digest_dispatch
-            return digest_dispatch(self, event_id, event, "digest " + text)
+            return digest_dispatch(self, event_id, event, "digest " + text, legacy=True)
         if action in ("inbox", "research"):
             from .capabilities import CapabilityConversation
             if not hasattr(self, "capability_conversation"):

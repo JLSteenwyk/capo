@@ -55,6 +55,7 @@ class DigestStore:
             status TEXT NOT NULL, data TEXT NOT NULL, updated REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS seen(scope TEXT, id TEXT, data TEXT, PRIMARY KEY(scope,id));
         CREATE TABLE IF NOT EXISTS feedback(scope TEXT, event TEXT, response TEXT, PRIMARY KEY(scope,event));
+        CREATE TABLE IF NOT EXISTS feedback_identity(scope TEXT, event TEXT, identity TEXT, PRIMARY KEY(scope,event));
         ''')
         (self.root / 'digest.sqlite3').chmod(0o600)
 

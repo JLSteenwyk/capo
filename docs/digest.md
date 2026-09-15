@@ -35,7 +35,7 @@ Reply in the digest's thread without an @mention:
 - “Send it at 7:30 am.”
 - “Reset my digest preferences.”
 
-Outside a digest thread, start with `@Capo digest ...`. Only the configured owner can change preferences. Replayed Slack events do not apply feedback twice. Silence and thanks do not change interests. Reset restores starting preferences and delivery time while preserving the current pause state. Previously shared story URLs remain excluded. To avoid confusing topics with artists or applying several unintended changes, Capo asks when feedback is ambiguous.
+Outside a digest thread, mention Capo and ask naturally; `@Capo digest ...` also works. Only the configured owner can change preferences. Replayed Slack events do not apply feedback twice. Silence and thanks do not change interests. Reset restores starting preferences and delivery time while preserving the current pause state. Previously shared story URLs remain excluded. Capo can apply multiple clearly requested changes with fresh preference reads between them, and asks when feedback is materially ambiguous.
 
 Following a topic changes ranking within the configured source coverage; it does not give Capo access to every news source. Excluded phrases are also filtered locally before selection. Story numbers are bound to their original digest, so feedback on an older digest remains meaningful.
 
@@ -47,4 +47,6 @@ No scheduled digest is posted after its morning deadline. Spring-forward times t
 
 For persistent operation on macOS, run `capo slack-daemon --config PRIVATE_CONFIG --env-file PRIVATE_ENV` under a user LaunchAgent with RunAtLoad and KeepAlive. The environment file is parsed as literal assignments rather than executed as shell code. Keep the machine awake and the user logged in through the morning window. Google OAuth apps left in Testing may require reauthorization after seven days; failed Calendar access is explicitly reported while other digest sections remain available.
 
-The digest never edits calendar events, repositories, or tasks. Its external writes are the authorized Slack digest and replies acknowledging owner feedback.
+Scheduled digest generation does not edit calendar events, repositories, or tasks. Its external write is the authorized Slack digest. Replies in that thread use Capo’s shared tools: an explicit new owner request can inspect or act on connected resources under their normal permissions. Reading a digest or discussing a story grants no additional action permission.
+
+Shared `digest.read` returns current settings, the delivered digest for this thread, and ten recent feedback receipts. `digest.change` requires an inspected settings revision and a host operation receipt. Preference updates, replay identity and acknowledgment commit together in the local ledger. A concurrent preference change requires a new read; repeating a committed operation after restart does not change its weight again. The old digest-only classifier is retained solely for already-started legacy feedback requests.

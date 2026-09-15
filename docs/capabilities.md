@@ -8,6 +8,7 @@ Available primitives:
 | --- | --- |
 | clock.now / dates.shift | Current local time and calendar-day arithmetic |
 | specialists.list / specialists.read / specialists.remember | Specialist expertise and existing role-scoped owner preferences |
+| digest.read / digest.change | Delivered digest context, settings, and explicit owner feedback with revision checks |
 | web.search / web.read | Subscription web search and bounded public HTTPS evidence |
 | context.read / context.save / context.history / context.actions | Original thread objective, working notes and durable action history |
 | tasks.search / tasks.get / tasks.save | Shared personal tasks and reminders |

@@ -11,13 +11,19 @@ ACTIONS=['inspect','more','less','exclude','follow','artist','remove_artist','kn
 SCHEMA=object_schema({'action':{'type':'string','enum':ACTIONS},'item':TEXT,'value':TEXT,'reply':TEXT})
 
 
-def apply(db, owner, event_id, decision, items):
+def apply(db, owner, event_id, decision, items, *, expected_preferences=None, request_identity=None):
     validate(decision,SCHEMA)
     with db.db:
         db.db.execute('BEGIN IMMEDIATE')
         receipt=db.db.execute('SELECT response FROM feedback WHERE scope=? AND event=?',(owner,event_id)).fetchone()
-        if receipt:return receipt[0]
+        if receipt:
+            if request_identity is not None:
+                identity=db.db.execute('SELECT identity FROM feedback_identity WHERE scope=? AND event=?',(owner,event_id)).fetchone()
+                if not identity or identity[0]!=request_identity:raise ValueError('Feedback receipt changed')
+            return receipt[0]
         p=db.preferences(owner)
+        if expected_preferences is not None and p!=expected_preferences:
+            raise ValueError('Digest preferences changed; inspect them again')
         action=decision['action'];value=decision['value'].strip()
         matching=[v for v in items if v['number']==decision['item']]
         if decision['item'] and len(matching)!=1:
@@ -71,6 +77,8 @@ def apply(db, owner, event_id, decision, items):
         db.db.execute('INSERT INTO preferences VALUES(?,?,?) ON CONFLICT(scope) DO UPDATE SET data=excluded.data',
                       (owner,json.dumps(p),json.dumps(p)))
         db.db.execute('INSERT INTO feedback VALUES(?,?,?)',(owner,event_id,response))
+        if request_identity is not None:
+            db.db.execute('INSERT INTO feedback_identity VALUES(?,?,?)',(owner,event_id,request_identity))
         return response
 
 
@@ -101,7 +109,12 @@ class FeedbackConversation(ConversationRouter):
         finally:os.close(fd)
 
 
-def dispatch(service,event_id,event,text):
+def dispatch(service,event_id,event,text, *, legacy=False):
+    # New digest replies use shared capabilities, including unrelated requests
+    # in digest threads. Preserve only a previously started feedback classifier.
+    import hashlib
+    marker=service.store.home/'digest-feedback'/'conversation'/hashlib.sha256(str(event_id).encode()).hexdigest()/'started.json'
+    if not legacy and not marker.exists():return None
     db=DigestStore(service.store.home)
     try:
         owner=scope(service.config)
