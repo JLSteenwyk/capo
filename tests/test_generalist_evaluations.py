@@ -199,3 +199,22 @@ class GeneralistEvaluationTests(unittest.TestCase):
         self.assertTrue(all(world.grade({}).values()))
         world.writes.append(('primary','invented'))
         self.assertFalse(world.grade({})['no_writes'])
+
+    def test_lost_calendar_response_reconciles_without_duplicate_creation(self):
+        from capo.evaluations.research_cases import URL
+        with tempfile.TemporaryDirectory() as tmp:
+            output=Path(tmp)/'run'
+            choices=[step('web.read',url=URL),
+                step('calendar.change',action='create',event_id='',title='Decide about Lakeside show',location='',
+                    start='2030-11-04',end='2030-11-05',all_day=True),step('calendar.pending')]
+            def choose(*args):
+                if choices:return choices.pop(0)
+                receipts=json.loads((output/'request/receipts.json').read_text())
+                if receipts[-1]['tool']=='calendar.pending':
+                    return step('calendar.reconcile',id=receipts[-1]['result']['actions'][0]['id'])
+                return dict(finish(),reply='Confirmed the November 4 reminder; no duplicate created.')
+            provider=Mock();provider.call.side_effect=choose
+            result=run_case(provider,'research_lost_response',output)
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertEqual(result['remote_writes'],1)
+        self.assertTrue(result['checks']['write_reconciled'])

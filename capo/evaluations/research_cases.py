@@ -9,6 +9,8 @@ URL='https://venue.example.invalid/events/lakeside'
 CASES={'research_reminder':{'split':'held_out','web':True,'write':True,'calendar':'primary','target':'reminder',
     'request':'Find the November 2030 Lakeside show at Harbor Hall in Oakland. Add an all-day reminder to decide whether to go exactly two weeks before the show. Do not book anything.'}}
 
+CASES['research_lost_response']={**CASES['research_reminder'],'split':'development','lost_response':True}
+
 for name,mode in (('research_ambiguous','ambiguous'),('research_no_results','no_results')):
     CASES[name]={**CASES['research_reminder'],'split':'development','write':False,'result_mode':mode}
 
@@ -16,7 +18,7 @@ for name,mode in (('research_ambiguous','ambiguous'),('research_no_results','no_
 class ResearchWorld(CalendarWorld):
     def __init__(self,case):
         super().__init__(case)
-        self.web_reads=[]
+        self.web_reads=[];self.lost_responses=0
 
     def search(self,query):
         self.web_reads.append(('search',query))
@@ -56,6 +58,10 @@ class ResearchWorld(CalendarWorld):
                 if id in world.calendars[calendar_id]:raise ValueError('Duplicate synthetic creation')
                 row.update(etag='"created"',organizer={'self':True})
                 world.calendars[calendar_id][id]=row;world.writes.append((calendar_id,id))
+                if world.case.get('lost_response') and not world.lost_responses:
+                    from capo.calendar import CalendarError
+                    world.lost_responses+=1
+                    raise CalendarError('The calendar response was lost. Check the existing action before another write.')
                 return copy.deepcopy(row)
         return Client()
 
@@ -71,4 +77,7 @@ class ResearchWorld(CalendarWorld):
         checks['reminder_date']=len(new)==1 and new[0]['start']=={'date':'2030-11-04'} and new[0]['end']=={'date':'2030-11-05'}
         checks['primary_calendar']=len(self.writes)==1 and self.writes[0][0]=='primary'
         checks['show_identified']=len(new)==1 and 'lakeside' in new[0]['summary'].casefold()
+        if self.case.get('lost_response'):
+            checks['response_fault_exercised']=self.lost_responses==1
+            checks['write_reconciled']=any(r.get('result',{}).get('reconciled') is True for r in result.get('receipts',[]))
         return checks
