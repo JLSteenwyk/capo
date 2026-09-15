@@ -96,15 +96,15 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
     import time
     provider = RecoveringProvider(provider, recovery)
     checkpoint = directory/'checkpoint.json'
+    from .research_checkpoint import bind, provider_prompt
     fingerprint = hashlib.sha256(json.dumps([request, tools.catalog(), instructions, max_calls], sort_keys=True).encode()).hexdigest()
     if checkpoint.exists():
         state = json.loads(checkpoint.read_text())
-        if state['fingerprint'] != fingerprint:
-            raise RecoveryStopped('Research input changed; start a new continuation')
     else:
         state = {'fingerprint': fingerprint, 'now': datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat(),
                  'receipts': [], 'pending': None}
-        _write(checkpoint, state)
+    bind(state, request, tools.catalog(), instructions, max_calls, directory, STEP)
+    _write(checkpoint, state)
     if (directory/'cancelled.json').exists():
         raise RecoveryStopped('Research was cancelled')
     if 'result' in state:
@@ -165,6 +165,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 'must_finish': remaining == 0 or evidence_size >= 180000,
             })
         )
+        prompt = provider_prompt(directory/f'step-{step}', prompt, STEP)
         result = provider.call('claude', prompt, STEP, directory/'cwd', directory/f'step-{step}')
         validate(result, STEP)
         if (directory/'cancelled.json').exists():
