@@ -18,6 +18,15 @@ class DraftTests(unittest.TestCase):
         self.tools=DraftTools(self.client,self.mail,self.home,'owner',{'message':'Draft to friend@example.com'})
         self.args=dict(id='',revision='',to=['friend@example.com'],cc=[],bcc=[],subject='Meeting',body='Hi, see you Friday.',reply_to_message='',attachment_ids=[])
         self.client.draft_write.return_value={'id':'draft1','message':{'threadId':'thread1'}}
+        def write(method,id,payload=None):
+            if method=='DELETE':return {'deleted':True,'id':id}
+            saved={'id':id or 'draft1','message':dict(payload['message'])}
+            saved['message'].setdefault('threadId','thread1')
+            previous=self.client.get
+            self.client.get=Mock(side_effect=lambda path,params:
+                saved if path=='drafts/'+saved['id'] else previous(path,params))
+            return {'id':saved['id'],'message':{'threadId':saved['message']['threadId']}}
+        self.client.draft_write.side_effect=write
 
     def raw_draft(self):
         m=EmailMessage();m['To']='friend@example.com';m['Subject']='Meeting';m.set_content('Original')
@@ -41,9 +50,10 @@ class DraftTests(unittest.TestCase):
         message=BytesParser(policy=policy.default).parsebytes(base64.urlsafe_b64decode(sent['message']['raw']))
         self.assertEqual(next(message.iter_attachments()).get_payload(decode=True),b'file contents')
         self.assertEqual(sent['message']['threadId'],'thread1')
+        read_saved=self.client.get.side_effect
         self.client.get.side_effect=AssertionError('replay must not read mutated draft')
         self.assertEqual(self.tools.save(**args,operation_id='update'),result)
-        self.client.get.side_effect=None
+        self.client.get.side_effect=read_saved
         with self.assertRaises(ValueError):self.tools.save(**dict(args,revision='stale'),operation_id='stale')
         with self.assertRaises(ValueError):self.tools.save(**dict(args,attachment_ids=['unknown']),operation_id='bad-file')
 
@@ -153,7 +163,7 @@ class DraftTests(unittest.TestCase):
         m['Message-ID']='<rewritten@example.com>'
         m['X-Capo-Action']='capo-'+hashlib.sha256(b'uncertain').hexdigest()+'@capo.invalid'
         m.set_content(self.args['body'])
-        data={'message':{'raw':base64.urlsafe_b64encode(m.as_bytes()).decode(),'threadId':'thread1'}}
+        data={'id':'draft1','message':{'raw':base64.urlsafe_b64encode(m.as_bytes()).decode(),'threadId':'thread1'}}
         self.client.get.side_effect=[{'drafts':[{'id':'draft1'}]}, {'message':{'payload':{'headers':[{'name':'X-Capo-Action','value':str(m['X-Capo-Action'])}]}}},data]
         result=restored.reconcile(action)
         self.assertTrue(result['saved']);self.assertTrue(result['reconciled'])
@@ -168,6 +178,94 @@ class DraftTests(unittest.TestCase):
         self.assertFalse(self.tools.reconcile(action)['confirmed'])
         self.assertEqual(len(self.tools.pending()['actions']),1)
         self.assertEqual(self.client.draft_write.call_count,1)
+
+    def test_save_verifies_actual_contents_and_recovers_without_rewrite(self):
+        from capo.effects import UncertainEffect
+        for field in ('recipient','body','attachment','subject','reply_header'):
+            with self.subTest(field=field):
+                client=Mock();mail=GmailReadTools(client)
+                tools=DraftTools(client,mail,self.home,field,{'message':'Draft to friend@example.com'})
+                tools.attachments['file']=('notes.txt','text/plain',b'original bytes')
+                args=dict(self.args,attachment_ids=['file'])
+                state={}
+                def write(method,id,payload):
+                    state['expected']=payload['message']['raw']
+                    message=BytesParser(policy=policy.default).parsebytes(base64.urlsafe_b64decode(state['expected']))
+                    if field=='recipient':message.replace_header('To','someone@example.org')
+                    elif field=='subject':message.replace_header('Subject','Wrong subject')
+                    elif field=='body':message.get_body().set_content('Wrong body')
+                    elif field=='attachment':next(message.iter_attachments()).set_payload('wrong bytes')
+                    else:message['In-Reply-To']='<wrong@example.org>'
+                    state['raw']=base64.urlsafe_b64encode(message.as_bytes()).decode()
+                    return {'id':'draft1'}
+                client.draft_write.side_effect=write
+                def read(path,params):
+                    if path=='drafts':return {'drafts':[{'id':'draft1'}]}
+                    message=BytesParser(policy=policy.default).parsebytes(base64.urlsafe_b64decode(state['raw']))
+                    if params['format']=='metadata':
+                        return {'message':{'payload':{'headers':[{'name':'X-Capo-Action','value':str(message['X-Capo-Action'])}]}}}
+                    return {'id':'draft1','message':{'raw':state['raw'],'threadId':'thread1'}}
+                client.get.side_effect=read
+                with self.assertRaises(UncertainEffect):tools.save(**args,operation_id=field)
+                restored=DraftTools(client,mail,self.home,field)
+                action=restored.pending()['actions'][0]['id']
+                self.assertFalse(restored.reconcile(action)['confirmed'])
+                state['raw']=state['expected']
+                self.assertTrue(restored.reconcile(action)['verified'])
+                self.assertTrue(restored.save(**args,operation_id=field)['verified'])
+                client.draft_write.assert_called_once()
+
+    def test_reply_thread_mismatch_stays_pending(self):
+        from capo.effects import UncertainEffect
+        self.mail.known_ids.add('parent')
+        self.client.get.return_value={'threadId':'original','payload':{'headers':[
+            {'name':'From','value':'friend@example.com'},{'name':'Message-ID','value':'<parent@example.com>'},
+            {'name':'Subject','value':'Meeting'}]}}
+        original_write=self.client.draft_write.side_effect
+        def write(method,id,payload):
+            payload['message']['threadId']='different'
+            return original_write(method,id,payload)
+        self.client.draft_write.side_effect=write
+        with self.assertRaises(UncertainEffect):
+            self.tools.save(**dict(self.args,reply_to_message='parent'),operation_id='wrong-thread')
+        self.assertEqual(len(self.tools.pending()['actions']),1)
+
+    def test_gmail_mime_normalization_preserves_verified_content(self):
+        original_write=self.client.draft_write.side_effect
+        def write(method,id,payload):
+            message=BytesParser(policy=policy.default).parsebytes(base64.urlsafe_b64decode(payload['message']['raw']))
+            message.replace_header('Message-ID','<gmail-rewritten@example.com>')
+            message.set_boundary('gmail-boundary')
+            payload['message']['raw']=base64.urlsafe_b64encode(message.as_bytes(policy=policy.SMTP)).decode()
+            return original_write(method,id,payload)
+        self.client.draft_write.side_effect=write
+        self.tools.attachments['file']=('notes.txt','text/plain',b'original\r\nbytes')
+        result=self.tools.save(**dict(self.args,attachment_ids=['file']),operation_id='normalized')
+        self.assertTrue(result['verified'])
+        self.assertEqual(self.tools.snapshot_path('normalized').stat().st_mode & 0o777,0o600)
+
+    def test_missing_write_identifier_never_reports_saved(self):
+        from capo.effects import UncertainEffect
+        self.client.draft_write.side_effect=None
+        self.client.draft_write.return_value={}
+        with self.assertRaises(UncertainEffect):self.tools.save(**self.args,operation_id='missing-id')
+        self.assertEqual(len(self.tools.pending()['actions']),1)
+        self.client.get.assert_not_called()
+
+    def test_legacy_pending_save_does_not_claim_content_verification(self):
+        import hashlib
+        self.client.draft_write.side_effect=TimeoutError()
+        with self.assertRaises(TimeoutError):self.tools.save(**self.args,operation_id='legacy')
+        self.tools.snapshot_path('legacy').unlink()
+        tag='capo-'+hashlib.sha256(b'legacy').hexdigest()+'@capo.invalid'
+        m=EmailMessage();m['To']='friend@example.com';m['Subject']='Meeting';m['X-Capo-Action']=tag
+        m.set_content(self.args['body'])
+        self.client.get.side_effect=[{'drafts':[{'id':'draft1'}]},
+            {'message':{'payload':{'headers':[{'name':'X-Capo-Action','value':tag}]}}},
+            {'id':'draft1','message':{'raw':base64.urlsafe_b64encode(m.as_bytes()).decode()}}]
+        action=self.tools.pending()['actions'][0]['id']
+        self.assertFalse(self.tools.reconcile(action)['confirmed'])
+        self.assertEqual(len(self.tools.pending()['actions']),1)
 
     def test_missing_credentials_fail_before_action_is_reserved(self):
         self.client.ready.side_effect=RuntimeError('Reconnect required')

@@ -12,9 +12,29 @@ from urllib.parse import quote
 from .contracts import TEXT, TEXTS, object_schema
 from .effects import Effects, UncertainEffect
 from .research_tools import ReadTool
+from .conversation import _write
 
 
 LIMIT = 5 * 1024 * 1024
+
+
+def content_signature(message):
+    """Compare MIME contents without depending on boundaries or Gmail's Message-ID."""
+    headers={key:[address.casefold() for _,address in getaddresses(
+        [str(value) for value in message.get_all(key,[])])]
+        for key in ('To','Cc','Bcc')}
+    for key in ('Subject','In-Reply-To','References','X-Capo-Action'):
+        headers[key]=[str(value) for value in message.get_all(key,[])]
+    parts=[]
+    for part in message.walk():
+        if part.is_multipart():continue
+        content=part.get_payload(decode=True) or b''
+        # Gmail may normalize MIME line endings, but attachment bytes must match.
+        if part.get_content_maintype()=='text' and not part.get_filename() and part.get_content_disposition()!='attachment':
+            content=part.get_content().replace('\r\n','\n').encode('utf-8')
+        parts.append({'type':part.get_content_type(),'disposition':part.get_content_disposition(),
+                      'filename':part.get_filename(),'sha256':hashlib.sha256(content).hexdigest()})
+    return {'headers':headers,'parts':parts}
 
 
 def addresses(values):
@@ -87,6 +107,19 @@ class DraftTools:
         headers={h['name'].lower():h['value'] for h in value.get('payload',{}).get('headers',[])}
         return value,headers
 
+    def snapshot_path(self,operation):
+        return self.effects.path.parent/('draft-'+hashlib.sha256(operation.encode()).hexdigest()+'.json')
+
+    def matches(self,operation,request,draft_id,data,message):
+        path=self.snapshot_path(operation)
+        if not path.exists():return False
+        expected=json.loads(path.read_text())
+        fingerprint=hashlib.sha256(json.dumps(request,sort_keys=True).encode()).hexdigest()
+        return (expected['request']==fingerprint and data.get('id')==draft_id
+                and (not request['id'] or request['id']==draft_id)
+                and (not expected['thread_id'] or data['message'].get('threadId')==expected['thread_id'])
+                and content_signature(message)==expected['content'])
+
     def save(self,id,revision,to,cc,bcc,subject,body,reply_to_message,attachment_ids,operation_id):
         request=dict(kind='gmail-draft-save',id=id,revision=revision,to=to,cc=cc,bcc=bcc,subject=subject,
                      body=body,reply_to_message=reply_to_message,attachment_ids=attachment_ids)
@@ -140,9 +173,18 @@ class DraftTools:
         payload={'message':{'raw':base64.urlsafe_b64encode(raw).decode()}}
         if thread_id:payload['message']['threadId']=thread_id
         def write():
+            _write(self.snapshot_path(operation_id),{
+                'request':hashlib.sha256(json.dumps(request,sort_keys=True).encode()).hexdigest(),
+                'thread_id':thread_id,'content':content_signature(BytesParser(policy=policy.default).parsebytes(raw))})
             result=self.client.draft_write('PUT' if id else 'POST',id,payload)
-            self.known.add(result['id'])
-            return {'saved':True,'id':result['id'],'thread_id':result.get('message',{}).get('threadId',''),
+            target=result.get('id')
+            if not isinstance(target,str) or not re.fullmatch(r'[A-Za-z0-9_-]+',target):
+                raise UncertainEffect('Gmail did not return a valid draft ID; reconcile before retrying')
+            self.known.add(target)
+            data,_,saved=self._raw(target)
+            if not self.matches(operation_id,request,target,data,saved):
+                raise UncertainEffect('Saved draft contents could not be verified; reconcile before retrying')
+            return {'saved':True,'verified':True,'id':target,'thread_id':data['message'].get('threadId',''),
                     'to':to,'cc':cc,'bcc':bcc,'subject':subject,'attachments':len(attachment_ids),'sent':False}
         return self.effects.run(operation_id,request,write)
 
@@ -197,18 +239,18 @@ class DraftTools:
                 data,raw,message=self._raw(draft_id)
             except Exception:continue
             if str(message.get('X-Capo-Action',''))!=tag and str(message.get('Message-ID',''))!='<'+tag+'>':continue
-            body=message.get_body(preferencelist=('plain',))
-            changed=body is None or body.get_content().strip()!=request['body'].strip() or str(message.get('Subject',''))!=request['subject']
+            if not self.matches(operation,request,draft_id,data,message):
+                return {'confirmed':False,'id':draft_id,'reason':'Found the action marker, but complete saved contents could not be verified. No write was repeated.'}
             return self.effects.resolve(operation,request,{'saved':True,'id':draft_id,'sent':False,
-                'reconciled':True,'changed_since_write':changed,'thread_id':data['message'].get('threadId','')})
+                'reconciled':True,'verified':True,'changed_since_write':False,'thread_id':data['message'].get('threadId','')})
         return {'confirmed':False,'cursor':next_cursor,'reason':'No matching draft in this page. Follow the returned cursor if present; otherwise the outcome remains unconfirmed. No write was repeated.'}
 
     def tools(self):
         return [
             ReadTool('mail.drafts.pending','List unconfirmed draft changes after a timeout or interruption. Do this before retrying a failed draft write.',object_schema({}),self.pending),
-            ReadTool('mail.drafts.reconcile','Check a pending action ID against Gmail without repeating the write. Uses a preserved action header or an explicit not-found response after deletion. Start with empty cursor; follow returned cursors for this action. Checks at most ten draft headers per call; missing evidence stays unconfirmed.',object_schema({'id':TEXT,'cursor':TEXT}),self.reconcile),
+            ReadTool('mail.drafts.reconcile','Check a pending action ID against Gmail without repeating the write. Uses a preserved action header or an explicit not-found response after deletion. Start with empty cursor; follow returned cursors for this action. Checks at most ten draft headers per call and verifies saved contents against the private action snapshot; missing or conflicting evidence stays unconfirmed.',object_schema({'id':TEXT,'cursor':TEXT}),self.reconcile),
             ReadTool('mail.drafts.search','Find Gmail drafts using Gmail search syntax. Empty query finds all; use returned cursor for more.',object_schema({'query':TEXT,'cursor':TEXT}),self.search),
             ReadTool('mail.drafts.read','Read a discovered draft, current revision, recipients and attachment references before editing or deleting.',object_schema({'id':TEXT}),self.read),
-            ReadTool('mail.drafts.save','Create or update an owner-requested Gmail draft; never sends it. New: empty id/revision. Edit: latest revision and full replacement content. Recipients must appear in owner text or source correspondence. For replies supply a searched message ID and preserve its subject exactly. Preserve existing attachments by their read reference IDs unless owner asks to remove them. Use the approved writing guide.',object_schema({'id':TEXT,'revision':TEXT,'to':TEXTS,'cc':TEXTS,'bcc':TEXTS,'subject':TEXT,'body':TEXT,'reply_to_message':TEXT,'attachment_ids':TEXTS}),self.save,mutates=True),
+            ReadTool('mail.drafts.save','Create or update an owner-requested Gmail draft and verify its saved contents; never sends it. New: empty id/revision. Edit: latest revision and full replacement content. Recipients must appear in owner text or source correspondence. For replies supply a searched message ID and preserve its subject exactly. Preserve existing attachments by their read reference IDs unless owner asks to remove them. Use the approved writing guide.',object_schema({'id':TEXT,'revision':TEXT,'to':TEXTS,'cc':TEXTS,'bcc':TEXTS,'subject':TEXT,'body':TEXT,'reply_to_message':TEXT,'attachment_ids':TEXTS}),self.save,mutates=True),
             ReadTool('mail.drafts.delete','Delete an owner-requested draft after reading its current revision; never deletes sent or received email.',object_schema({'id':TEXT,'revision':TEXT}),self.delete,mutates=True),
         ]
