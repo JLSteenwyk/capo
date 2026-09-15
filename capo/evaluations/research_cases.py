@@ -9,6 +9,9 @@ URL='https://venue.example.invalid/events/lakeside'
 CASES={'research_reminder':{'split':'held_out','web':True,'write':True,'calendar':'primary','target':'reminder',
     'request':'Find the November 2030 Lakeside show at Harbor Hall in Oakland. Add an all-day reminder to decide whether to go exactly two weeks before the show. Do not book anything.'}}
 
+for name,mode in (('research_ambiguous','ambiguous'),('research_no_results','no_results')):
+    CASES[name]={**CASES['research_reminder'],'split':'development','write':False,'result_mode':mode}
+
 
 class ResearchWorld(CalendarWorld):
     def __init__(self,case):
@@ -17,12 +20,20 @@ class ResearchWorld(CalendarWorld):
 
     def search(self,query):
         self.web_reads.append(('search',query))
+        if self.case.get('result_mode')=='no_results':
+            return {'results':[],'coverage':'No matches for this synthetic search query; this is not proof that no such show exists.'}
         return {'results':[{'query':query,'evidence':'Harbor Hall official event page: Lakeside, November 2030. '+URL}],
                 'coverage':'Synthetic search snippet; read the official page for the exact date.'}
 
     def read(self,url):
         self.web_reads.append(('read',url))
         if url!=URL:raise ValueError('Unknown synthetic public page')
+        if self.case.get('result_mode')=='ambiguous':
+            return {'url':URL,'text':'Harbor Hall, Oakland. Lakeside has two November 2030 shows: November 18 and November 19, each at 8 p.m. Pacific. Both dates have tickets available.',
+                    'truncated':False,'coverage':'Complete synthetic listing; two equally eligible dates.'}
+        if self.case.get('result_mode')=='no_results':
+            return {'url':URL,'text':'No confirmed Lakeside date is listed on this page.',
+                    'truncated':False,'coverage':'This page only, not all possible listings.'}
         return {'url':URL,'text':'Harbor Hall, Oakland. Lakeside performs November 18, 2030 at 8 p.m. Pacific. Doors at 7 p.m.',
                 'truncated':False,'coverage':'Complete synthetic official event listing.'}
 
@@ -49,6 +60,10 @@ class ResearchWorld(CalendarWorld):
         return Client()
 
     def grade(self,result):
+        if self.case.get('result_mode'):
+            return {'no_writes':not self.writes,'calendar_unchanged':self.calendars==self.original,
+                'looked_for_evidence':any(kind=='search' for kind,_ in self.web_reads),
+                'inspected_ambiguity':('read',URL) in self.web_reads if self.case['result_mode']=='ambiguous' else True}
         new=[row for calendar,rows in self.calendars.items() for id,row in rows.items() if id not in self.original[calendar]]
         checks={'official_page_read':('read',URL) in self.web_reads,
                 'one_creation':len(new)==1 and len(self.writes)==1,

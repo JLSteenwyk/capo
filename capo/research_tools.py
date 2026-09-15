@@ -231,6 +231,9 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         if result['action'] == 'finish':
             from .request_outcomes import assess,pending_text,OutcomeError
             try:
+                from .message_format import strip_transport_tail
+                result={**result,'reply':strip_transport_tail(result['reply']),
+                        'document':strip_transport_tail(result['document'])}
                 if (result['tool']
                         or not result['reply'].strip() or len(result['reply']) > 1900
                         or len(result['document_title']) > 200 or len(result['document']) > 12000

@@ -92,6 +92,16 @@ class ResearchToolsTests(unittest.TestCase):
         self.assertEqual(result['status'],'reported_complete')
         self.assertEqual(provider.call.call_count,2)
 
+    def test_transport_tail_removed_before_partial_report_is_appended(self):
+        item={'requirement':'Choose a date','kind':'answer','status':'needs_input','evidence':[],'next_step':'Which date?'}
+        provider=Mock();provider.call.return_value=dict(finish('Which date?</reply>\n</invoke>'),
+            arguments_json=json.dumps({'outcomes':[item]}),document_title='Choices',document='**Monday or Tuesday**</document>\n</invoke>')
+        with tempfile.TemporaryDirectory() as tmp:
+            result=research(provider,ReadTools([]),{},Path(tmp))
+        self.assertNotIn('</',result['reply'])
+        self.assertEqual(result['document'],'**Monday or Tuesday**')
+        self.assertIn('Still to address:',result['reply'])
+
     def test_failed_tools_are_redacted_and_budgeted(self):
         callback = Mock(side_effect=RuntimeError('SECRET_TOKEN'))
         tools = ReadTools([ReadTool('test.read', 'Synthetic', object_schema({}), callback)])

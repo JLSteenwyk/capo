@@ -180,3 +180,22 @@ class GeneralistEvaluationTests(unittest.TestCase):
         self.assertTrue(result['automated_checks_passed'],result)
         self.assertIsNone(result['task_success'])
         self.assertEqual(result['remote_writes'],1)
+
+    def test_ambiguous_dates_preserve_calendar_and_require_semantic_review(self):
+        from capo.evaluations.research_cases import URL
+        provider=Mock();provider.call.side_effect=[step('web.search',query='Lakeside Harbor Hall November 2030'),
+            step('web.read',url=URL),dict(finish(),reply='There are shows on November 18 and 19. Which one should I use?')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'research_ambiguous',Path(tmp)/'run')
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertIsNone(result['task_success'])
+        self.assertEqual(result['remote_writes'],0)
+
+    def test_empty_search_does_not_supply_a_date(self):
+        from capo.evaluations.research_cases import CASES,ResearchWorld
+        world=ResearchWorld(CASES['research_no_results'])
+        self.assertEqual(world.search('Lakeside')['results'],[])
+        self.assertEqual(world.search('Harbor Hall November')['results'],[])
+        self.assertTrue(all(world.grade({}).values()))
+        world.writes.append(('primary','invented'))
+        self.assertFalse(world.grade({})['no_writes'])

@@ -1,5 +1,5 @@
 import unittest
-from capo.message_format import plain_text
+from capo.message_format import plain_text, strip_transport_tail
 
 
 class MessageFormatTests(unittest.TestCase):
@@ -18,3 +18,9 @@ class MessageFormatTests(unittest.TestCase):
         self.assertEqual(clean.count('Details preserved.'), 300)
         self.assertEqual(plain_text(clean), clean)
         self.assertNotIn('</invoke>', clean)
+
+    def test_cleanup_preserves_markdown_and_literal_none(self):
+        self.assertEqual(strip_transport_tail('**Answer**</reply>\n</invoke>\n\nnone'),'**Answer**')
+        self.assertEqual(strip_transport_tail('Available options: none'),'Available options: none')
+        self.assertEqual(strip_transport_tail('`</parameter>`'),'`</parameter>`')
+        self.assertEqual(strip_transport_tail('```xml\n</reply>\n</invoke>'),'```xml\n</reply>\n</invoke>')

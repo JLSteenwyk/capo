@@ -4,7 +4,14 @@ import re
 # Preserve code verbatim, including XML examples and Markdown operators. An
 # unfinished fence protects the remainder too; model output may end mid-example.
 _CODE = re.compile(r'```[\s\S]*?(?:```|\Z)|~~~[\s\S]*?(?:~~~|\Z)|(`+)[^\n]*?\1')
-_TRAILER = re.compile(r'(?:\s*</(?:document|invoke|function_calls|antml:invoke|antml:function_calls)>)+\s*\Z')
+_TRAILER = re.compile(r'(?:\s*</(?:document|reply|parameter|invoke|function_calls|antml:invoke|antml:function_calls)>)+(?:\s+none)?\s*\Z')
+
+
+def strip_transport_tail(text):
+    """Remove known generation trailers before host text is appended; preserve code."""
+    end=0
+    for match in _CODE.finditer(text):end=match.end()
+    return text[:end]+_TRAILER.sub('',text[end:])
 
 
 def plain_text(text):
