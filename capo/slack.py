@@ -491,7 +491,7 @@ class SlackService:
         forwarded = dict(body, event=dict(event, text="<@UCAPO> " + translated))
         return self.dispatch(event_id, forwarded)
 
-    def dispatch(self, event_id, body):
+    def dispatch(self, event_id, body, *, context_prepared=False):
         from .cli import add_objective
         from .improvement import add_improvement
 
@@ -633,11 +633,12 @@ class SlackService:
         if not match:
             return self.natural_dispatch(event_id, body, text)
         improve, alias, request = match.groups()
-        from .slack_images import context as image_context, ImageError
-        try:
-            request = image_context(self, event_id, body, request)
-        except ImageError as exc:
-            return str(exc)
+        if not context_prepared:
+            from .slack_images import context as image_context, ImageError
+            try:
+                request = image_context(self, event_id, body, request)
+            except ImageError as exc:
+                return str(exc)
         if alias not in self.config["repositories"]:
             raise ValueError("Unknown repository alias")
         settings = self.config["repositories"][alias]

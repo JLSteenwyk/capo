@@ -51,6 +51,9 @@ def shared_tools(home,config,documents,request=None):
                    lambda:{'now':datetime.now(ZoneInfo(zone)).isoformat(),'timezone':zone}),
            ReadTool('documents.list','List reusable private documents saved for this owner.',object_schema({}),documents.list),
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
+    if request and request.get('owner_request') and all(config.get(k) for k in ('team_id', 'channel_id', 'owner_user_id')):
+        from .workflow_tools import WorkflowTools
+        tools.extend(WorkflowTools(home, config, request).tools())
     from .web_tools import WebTools
     tools.extend(WebTools(home).tools())
     if request and request.get("request_thread"):
