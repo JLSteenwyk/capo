@@ -179,6 +179,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             '"kind":"answer|action|handoff","status":"complete|partial|needs_input","evidence":["0"],"next_step":""}]}. '
             'Inventory every part of the original request, incorporating owner corrections. Evidence uses zero-based receipt indexes. '
             'Answer items may have empty evidence for direct reasoning; factual source claims need relevant receipts. '
+            'The action kind describes a requested change, not a constraint to leave something unchanged. '
+            'Report no-change constraints as answer items, grounded in the actual receipts; never perform a write to satisfy a no-change constraint. '
             'A completed action requires a successful host mutation receipt; a queued handoff proves only the handoff, '
             'not completion of the delegated work. Give each unfinished item a concrete next step or one necessary question. '
             'Continue using available tools for unfinished authorized work while budget remains. Never silently omit an unfinished part. '
@@ -227,7 +229,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             _write(checkpoint,state)
             return completed
         if result['action'] == 'finish':
-            from .request_outcomes import assess,pending_text
+            from .request_outcomes import assess,pending_text,OutcomeError
             try:
                 if (result['tool']
                         or not result['reply'].strip() or len(result['reply']) > 1900
@@ -239,8 +241,9 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 unfinished=pending_text(outcome)
                 if unfinished:rendered+='\n\nStill to address:\n'+unfinished
                 if len(rendered)>16000:raise ValueError('Completion report is too long')
-            except (ValueError,KeyError,TypeError):
-                receipts.append({'tool':'','error':'Completion report is invalid or lacks supporting receipts. Provide a nonempty reply under 1900 characters, an empty tool, and either both document_title/document or neither (limits 200/12000 characters). Account for every requested part and correct evidence links; do not repeat completed actions.'})
+            except (ValueError,KeyError,TypeError) as exc:
+                reason=(str(exc)+' ') if isinstance(exc,OutcomeError) else ''
+                receipts.append({'tool':'','error':reason+'Completion report is invalid or lacks supporting receipts. Provide a nonempty reply under 1900 characters, an empty tool, and either both document_title/document or neither (limits 200/12000 characters). Account for every requested part and correct evidence links; do not repeat completed actions.'})
                 _write(checkpoint,state)
                 _write(directory/'receipts.json',receipts)
                 if remaining:continue

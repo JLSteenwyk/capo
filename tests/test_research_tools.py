@@ -82,6 +82,16 @@ class ResearchToolsTests(unittest.TestCase):
         self.assertEqual(result['stop_reason'],'invalid_completion_report')
         self.assertEqual(len(result['receipts']),2)
 
+    def test_missing_action_evidence_returns_specific_host_feedback(self):
+        item={'requirement':'Do not send mail','kind':'action','status':'complete','evidence':[],'next_step':''}
+        provider=Mock();provider.call.side_effect=[dict(finish(),arguments_json=json.dumps({'outcomes':[item]})),
+            dict(finish('No mail sent.'),arguments_json=json.dumps({'outcomes':[dict(item,kind='answer')]}))]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=research(provider,ReadTools([]),{},Path(tmp),max_calls=2)
+        self.assertIn('Completed actions need a successful matching host mutation receipt',result['receipts'][0]['error'])
+        self.assertEqual(result['status'],'reported_complete')
+        self.assertEqual(provider.call.call_count,2)
+
     def test_failed_tools_are_redacted_and_budgeted(self):
         callback = Mock(side_effect=RuntimeError('SECRET_TOKEN'))
         tools = ReadTools([ReadTool('test.read', 'Synthetic', object_schema({}), callback)])

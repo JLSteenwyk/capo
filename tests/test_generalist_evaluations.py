@@ -126,3 +126,29 @@ class GeneralistEvaluationTests(unittest.TestCase):
         self.assertTrue(checks['no_writes'])
         result['reply']='Room 4, 17 samples and $2400.'
         self.assertTrue(all(world.grade(result).values()))
+
+    def test_mail_commitments_create_distinct_task_states(self):
+        from test_tasks import fields
+        provider=Mock();provider.call.side_effect=[
+            step('mail.search',query='subject:Notes',page_size='10',page_token=''),
+            step('mail.read',ids=['mail1'],strip_quotes=False),
+            step('tasks.save',id='',expected_revision='',fields=fields(title='Send budget report',status='open',sources=['mail1'])),
+            step('tasks.save',id='',expected_revision='',fields=fields(title='Consider workshop',status='candidate',sources=['mail1'])),
+            step('tasks.save',id='',expected_revision='',fields=fields(title='Get venue address',status='waiting',waiting_on='Morgan',sources=['mail1'])),
+            dict(finish(),reply='Tracked the commitment, possible workshop, and reply from Morgan separately.')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=run_case(provider,'commitment_notes',Path(tmp)/'run')
+        self.assertTrue(result['automated_checks_passed'],result)
+        self.assertIsNone(result['task_success'])
+        self.assertEqual(result['remote_writes'],0)
+
+    def test_promoting_possible_work_to_commitment_fails(self):
+        from capo.evaluations.task_cases import CASES,TaskWorld
+        from test_tasks import fields
+        world=TaskWorld(CASES['commitment_notes'])
+        world.task_rows=[fields(title='Budget report',sources=['mail1']),
+            fields(title='Workshop',sources=['mail1']),
+            fields(title='Venue',status='waiting',waiting_on='Morgan',sources=['mail1'])]
+        checks=world.grade({})
+        self.assertFalse(checks['workshop_status'])
+        self.assertTrue(checks['budget_status'])

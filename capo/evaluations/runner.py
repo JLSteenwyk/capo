@@ -10,6 +10,7 @@ from contextlib import ExitStack
 from .calendar_cases import CASES,CalendarWorld
 from .mail_cases import CASES as MAIL_CASES,MailWorld
 from .github_cases import CASES as GITHUB_CASES,GitHubWorld
+from .task_cases import CASES as TASK_CASES,TaskWorld
 
 
 def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
@@ -22,8 +23,8 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         raise ValueError('Evaluation artifacts must be outside the public repository')
     if output.exists() and any(output.iterdir()):raise ValueError('Use a fresh evaluation directory')
     output.mkdir(parents=True,mode=0o700,exist_ok=True)
-    case={**CASES,**MAIL_CASES,**GITHUB_CASES}[name]
-    world=GitHubWorld(case) if case.get('github') else (MailWorld(case) if case.get('mail') else CalendarWorld(case))
+    case={**CASES,**MAIL_CASES,**GITHUB_CASES,**TASK_CASES}[name]
+    world=TaskWorld(case) if case.get('tasks') else GitHubWorld(case) if case.get('github') else (MailWorld(case) if case.get('mail') else CalendarWorld(case))
     from capo.capabilities import shared_tools,Documents
     from capo.research_tools import ReadTools,research
     from capo.conversation import _write
@@ -49,6 +50,7 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         # personal-service fallback is allowed during a calendar-only evaluation.
         allowed=('calendar.','dates.','clock.','mail.') if case.get('mail') else ('calendar.','dates.','clock.')
         if case.get('github'):allowed+=('github.',)
+        if case.get('tasks'):allowed+=('tasks.',)
         tools=ReadTools([tool for name,tool in registry.tools.items() if name.startswith(allowed) and name!='github.issues'])
         from capo.recovery import RetryLater
         waited=0
@@ -62,6 +64,8 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
                 # Keep the same simulated world and adapter discovery caches.
                 # Never recreate a world after a tool might have changed it.
                 time.sleep(delay);waited+=delay
+    if case.get('tasks'):
+        world.task_rows=registry.call('tasks.search',{'query':'','status':'all','cursor':''})['tasks']
     checks=world.grade(result)
     revision=subprocess.run(['git','rev-parse','HEAD'],cwd=repository,capture_output=True,text=True,check=True).stdout.strip()
     source_hash=hashlib.sha256()
@@ -82,5 +86,5 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
     _write(output/'summary.json',summary)
     _write(output/'world.json',{'before':world.original,'after':world.calendars,'writes':world.writes,
                               'drafts':getattr(world,'drafts',{}),'mail_reads':getattr(world,'mail_reads',[]),
-                              'github_reads':getattr(world,'github_reads',[])})
+                              'github_reads':getattr(world,'github_reads',[]),'tasks':getattr(world,'task_rows',[])})
     return summary
