@@ -158,3 +158,28 @@ class AssignmentTests(unittest.TestCase):
                 self.assertEqual(run['status'],'ready')
                 self.assertIn('verified monitoring report',run['report']['blockers'][0])
             finally:manager.db.close()
+
+
+    def test_post_report_provider_failure_preserves_findings_as_incomplete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home=Path(tmp);config=dict(team_id='T',channel_id='C',owner_user_id='U')
+            Schedules(home,owner_key(config)).save('','',fields(),'save')
+            service=SimpleNamespace(store=SimpleNamespace(home=home),config=config,client=Mock(),bot_user_id='BOT')
+            manager=ScheduledManager(service)
+            def generate(provider,tools,*args,**kwargs):
+                tools.call('monitor.report',report(),operation_id='saved-before-failure')
+                raise RuntimeError('synthetic provider secret must not appear')
+            try:
+                with patch('capo.scheduled_requests.research',side_effect=generate):
+                    manager.tick(datetime.fromisoformat('2030-01-01T10:00:00-08:00'))
+                    for worker in manager.workers.values():worker.join(5)
+                import json
+                run=json.loads(manager.db.db.execute('SELECT data FROM runs').fetchone()[0])
+                self.assertEqual(run['status'],'ready')
+                self.assertEqual(run['report']['findings'],report()['findings'])
+                self.assertIn('could not finish verification',run['report']['blockers'][0])
+                self.assertNotIn('synthetic provider secret',json.dumps(run))
+                status=TeamStatus(home,config).status()
+                money=next(a for a in status['agents'] if a['agent']=='money_saver')
+                self.assertEqual(money['assignments'][0]['findings'],report()['findings'])
+            finally:manager.db.close()

@@ -74,7 +74,7 @@ class ScheduledManager(DigestManager):
             run.update(status='building',attempts=run['attempts']+1);self.db.save(run,now)
             config=json.loads(json.dumps(self.service.config))
             def work(run=run,s=s,directory=directory,fd=fd,config=config):
-                db=None
+                db=None;report=None;previous={}
                 try:
                     db=DigestStore(self.home)
                     docs=Documents(self.service.store.home,owner_key(config))
@@ -121,6 +121,13 @@ class ScheduledManager(DigestManager):
                     else:
                         from .recovery import failure_summary
                         run.update(status='queued', retry_at=datetime.now(timezone.utc).timestamp()+60, error_summary=failure_summary(exc))
+                        # A final provider-formatting failure must not discard an already
+                        # persisted monitoring report. Surface it as incomplete, not clean.
+                        if s.get('delivery')=='changes' and report is not None and report.path.exists():
+                            recorded=report.read()
+                            recorded['blockers'].append('Findings were saved, but the check could not finish verification.')
+                            run['checked_at']=datetime.now(timezone.utc).isoformat()
+                            finish(run,recorded,previous)
                 finally:
                     try:
                         if db is not None:db.save(run,datetime.now(timezone.utc))
