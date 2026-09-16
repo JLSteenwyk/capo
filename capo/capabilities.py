@@ -108,18 +108,14 @@ def shared_tools(home,config,documents,request=None):
         tools.append(ReadTool('calendar.availability','Find free windows and conflicts across selected calendars. Optional calendar_ids overrides owner availability preferences; discover non-primary calendars first. Weekdays: 0 Monday through 6 Sunday. Supply owner preferences or label work-hour assumptions. Incomplete coverage yields no free windows. Read-only; never books time.',schema,calendar_tools.availability))
         tools.extend(calendar_tools.action_tools(home,owner_key(config)))
     repositories=config.get('repositories',{})
-    if repositories:
+    from .github_profile import GitHubProfile, settings as github_profile_settings
+    policy=github_profile_settings(config)
+    profile=GitHubProfile(policy,home) if policy else None
+    if profile is not None:tools.extend(profile.tools())
+    if repositories or profile is not None:
         from .github_tools import GitHubTools
-        tools.extend(GitHubTools(repositories).tools())
-        def issues(repository):
-            from .github import GitHub,remote_repository
-            from .repository import git
-            value=repositories[repository]
-            name=remote_repository(git(value['path'],'remote','get-url','origin'))
-            rows=GitHub(value.get('github_auth','default')).issues(name)
-            return {'repository':repository,'issues':rows[:30],'coverage':'Up to 30 open issues; not a complete repository audit.'}
-        tools.append(ReadTool('github.issues','Read open issues for a configured repository alias.',
-            object_schema({'repository':{'type':'string','enum':list(repositories)}}),issues))
+        adapter=GitHubTools(repositories,profile=profile)
+        tools.extend(adapter.tools())
     return ReadTools(tools)
 
 

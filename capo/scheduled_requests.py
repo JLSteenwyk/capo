@@ -88,7 +88,8 @@ class ScheduledManager(DigestManager):
                         'Use the shared tools to complete the assigned inspection.'))
                     registry=shared_tools(self.service.store.home,config,docs,request)
                     report=AssignmentReport(directory/'execution')
-                    selected=[t for t in registry.tools.values() if not t.mutates]
+                    prefixes=tuple(s.get('tool_prefixes', []))
+                    selected=[t for t in registry.tools.values() if not t.mutates and (not prefixes or t.name.startswith(prefixes))]
                     if s.get('delivery')=='changes': selected.append(report.tool())
                     readonly=ReadTools(selected)
                     attempt=directory/'execution'

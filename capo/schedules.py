@@ -1,6 +1,7 @@
 """Owner-configured recurring read-only requests, independent of task category."""
 import hashlib
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from .contracts import TEXT, TEXTS, object_schema, validate
@@ -15,6 +16,7 @@ FIELDS=object_schema({'title':TEXT,'request':TEXT,'weekdays':TEXTS,'time':TEXT,'
 FIELDS['properties'].update({
     'agent': {'type': 'string', 'enum': ['capo', 'money_saver', 'style_assistant', 'shopping_assistant', 'coding']},
     'delivery': {'type': 'string', 'enum': ['always', 'changes']},
+    'tool_prefixes': TEXTS,
 })
 
 
@@ -30,6 +32,9 @@ class Schedules(Tasks):
 
     def save(self,id,expected_revision,fields,operation_id):
         validate(fields,FIELDS)
+        prefixes=fields.get('tool_prefixes',[])
+        if len(prefixes)>20 or any(not re.fullmatch(r'[a-z][a-z0-9_]*\.',p) for p in prefixes):
+            raise ValueError('Use capability prefixes such as github. to narrow the read-only tools')
         if not operation_id:raise ValueError('Host action receipt required')
         if not fields['title'].strip() or len(fields['title'])>200 or not fields['request'].strip() or len(fields['request'])>4000:
             raise ValueError('Provide a short title and bounded request')
@@ -53,7 +58,7 @@ class Schedules(Tasks):
             elif expected_revision:raise ValueError('New schedules have no revision')
             else:id=hashlib.sha256(operation_id.encode()).hexdigest()
             fields = dict(fields)
-            for name, default in (('agent', 'capo'), ('delivery', 'always')):
+            for name, default in (('agent', 'capo'), ('delivery', 'always'), ('tool_prefixes', [])):
                 fields.setdefault(name, (previous or {}).get(name, default))
             now=datetime.now(timezone.utc).isoformat()
             result={'schedule':dict(fields,id=id,revision=previous['revision']+1 if previous else 1,
@@ -64,7 +69,7 @@ class Schedules(Tasks):
 
     def tools(self):
         return [ReadTool('schedules.list','List owner-configured recurring read-only requests and their revisions.',object_schema({}),self.list),
-                ReadTool('schedules.save','Create/edit/pause a recurring read-only request after the owner chooses its schedule. Runs the shared tools. Optional agent assigns responsibility; delivery=changes reports only new findings or blockers, always delivers each result. Existing assignments retain these options when omitted. Weekdays 0 Monday through 6 Sunday. Empty id/revision creates; edits require current revision. Set enabled=false to stop. Does not alter the existing morning digest or hourly checks. Scheduled requests cannot send email or mutate tasks/calendar.',
+                ReadTool('schedules.save','Create/edit/pause a recurring read-only request after the owner chooses its schedule. Runs the shared tools. Optional agent assigns responsibility; delivery=changes reports only new findings or blockers, always delivers each result. Optional tool_prefixes narrows available read capabilities (for example github. and clock.); an empty list uses all read tools. Existing assignments retain these options when omitted. Weekdays 0 Monday through 6 Sunday. Empty id/revision creates; edits require current revision. Set enabled=false to stop. Does not alter the existing morning digest or hourly checks. Scheduled requests cannot send email or mutate tasks/calendar.',
                          object_schema({'id':TEXT,'expected_revision':TEXT,'fields':FIELDS}),self.save,mutates=True)]
 
 

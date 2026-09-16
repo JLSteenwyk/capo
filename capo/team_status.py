@@ -47,6 +47,7 @@ class TeamStatus:
                 report = (last or {}).get('report', {})
                 item = dict(id=schedule['id'], title=schedule['title'], request=schedule['request'],
                     enabled=schedule['enabled'], delivery=schedule.get('delivery', 'always'),
+                    tool_prefixes=schedule.get('tool_prefixes', []),
                     next_check=next_check(schedule, now), last_status=(last or {}).get('status', 'not_run'),
                     last_started=(last or {}).get('created'), last_checked=(last or {}).get('checked_at'),
                     report_revision=(last or {}).get('revision'), current_revision=schedule['revision'],

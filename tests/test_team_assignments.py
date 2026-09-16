@@ -183,3 +183,26 @@ class AssignmentTests(unittest.TestCase):
                 money=next(a for a in status['agents'] if a['agent']=='money_saver')
                 self.assertEqual(money['assignments'][0]['findings'],report()['findings'])
             finally:manager.db.close()
+
+
+    def test_assignment_capability_scope_narrows_shared_registry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home=Path(tmp);config=dict(team_id='T',channel_id='C',owner_user_id='U',gmail={'enabled':True})
+            schedules=Schedules(home,owner_key(config))
+            saved=schedules.save('','',fields(tool_prefixes=['clock.']),'save')['schedule']
+            changed=schedules.save(saved['id'],'1',fields(),'preserve')['schedule']
+            self.assertEqual(changed['tool_prefixes'],['clock.'])
+            with self.assertRaises(ValueError):schedules.save('','',fields(tool_prefixes=['*']),'invalid')
+            service=SimpleNamespace(store=SimpleNamespace(home=home),config=config,client=Mock(),bot_user_id='BOT')
+            manager=ScheduledManager(service)
+            observed=[]
+            def generate(provider,tools,*args,**kwargs):
+                observed.append(set(tools.tools))
+                tools.call('monitor.report',report(findings=[],blockers=['Synthetic scope cannot inspect mail.']),operation_id='report')
+                return dict(reply='Checked scope.',document='',document_title='',receipts=[])
+            try:
+                with patch('capo.scheduled_requests.research',side_effect=generate):
+                    manager.tick(datetime.fromisoformat('2030-01-01T10:00:00-08:00'))
+                    for worker in manager.workers.values():worker.join(5)
+                self.assertEqual(observed,[{'clock.now','monitor.report'}])
+            finally:manager.db.close()

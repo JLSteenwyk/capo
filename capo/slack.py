@@ -155,6 +155,8 @@ def validate_config(config):
         raise ValueError("Configure at least one named repository")
     from .imessage import settings as imessage_settings
     imessage_settings(config)
+    from .github_profile import settings as github_profile_settings
+    github_profile_settings(config)
     from .heartbeat import settings as heartbeat_settings
     heartbeat_settings(config)
     from .recovery import policy as recovery_policy

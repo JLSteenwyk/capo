@@ -40,3 +40,21 @@ Useful examples:
 - “Have Coding Agent check my configured repositories at 4 p.m. Report current failed builds and PRs needing attention.”
 - “Pause the shopping watch.”
 - “Show me the full findings from Money Saver’s last check.”
+
+## Watching a GitHub account
+
+An optional private `github_profile` configuration broadens GitHub inspection beyond locally cloned repositories:
+
+```json
+{"github_profile": {"enabled": true, "login": "example-user", "auth": "keyring", "excluded_owners": ["excluded-org"], "excluded_terms": ["excluded company"]}}
+```
+
+The authenticated login must match. `github.profile_repositories` discovers repositories owned by the account, accessible collaborator repositories, and organization repositories visible to that account. `github.profile_activity` reads owned or involved open issues/PRs, review requests and notifications. These tools paginate and expose coverage. Mere stars and follows do not authorize treating every unrelated repository as an active project.
+
+`github.profile_overview` combines discovery, the first page of each account activity category, and detailed CI/PR/issue checks for ten active repositories. A private durable cursor rotates that batch alphabetically across all discovered active repositories. Account activity is checked on every call; detailed checks are spread across calls. Discovery is capped at 2,000 repositories; archived/disabled repositories remain visible in discovery but are omitted from the active batch. Each detailed check reads up to ten recent runs, open PRs and issues. The agent should investigate current head checks before calling an old failure actionable and report essential gaps honestly.
+
+Configured exclusions are host policy, not model instructions. Organization names are matched case-insensitively; configurable terms conservatively filter related metadata and content. Discovery inspects fork parent/source metadata. Excluded items are filtered from repository/activity lists, and excluded direct targets are refused. Native GitHub inspection tools accept configured aliases or names discovered in the current request; they apply the same policy to returned content and logs. List pagination preserves the upstream count even when all rows on a page are filtered. API list responses can contain excluded metadata before local filtering; excluded data is not returned to the model. Metadata cannot establish every undisclosed organizational relationship.
+
+This is read-only GitHub coverage: it does not mark notifications read, clone repositories, expand publication permissions, or authorize fixes and merges in newly discovered projects. Generic shared capabilities and the existing standing-assignment scheduler remain the execution path. Connection-specific settings, scope exclusions, cursor state and real findings stay private.
+
+Assignments can optionally set `tool_prefixes` (for example `["github.", "clock."]`) to narrow their read-only tool catalog. The profile watch uses this scope so it cannot switch to email or arbitrary web tools to bypass GitHub exclusions. Local `monitor.report` bookkeeping remains available. An omitted value preserves the existing scope on edits; an explicit empty list restores the normal shared read-only catalog. This only narrows capabilities and does not grant external write authority.
