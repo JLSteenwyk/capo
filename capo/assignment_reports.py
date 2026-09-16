@@ -1,6 +1,7 @@
 """Bounded structured monitoring reports and durable change-only delivery."""
 import hashlib
 import json
+from urllib.parse import urlsplit
 from .contracts import TEXT, TEXTS, object_schema, validate
 from .conversation import _write
 from .research_tools import ReadTool
@@ -35,7 +36,9 @@ class AssignmentReport:
             'Every actionable finding needs a stable key (source/entity), a version describing meaningful facts '
             '(not today’s date or wording), a short summary and an inspected evidence source. '
             'Reuse prior keys/versions if facts did not change. Empty findings means nothing actionable in checked sources. '
-            'Missing access or incomplete essential checks belong in blockers; never treat failures as a clean check.',
+            'Missing access or incomplete essential checks belong in blockers; never treat failures as a clean check. '
+            'Ordinary page/window limits belong in coverage, not blockers, unless they prevent the requested check. '
+            'Do not request bank access or other integrations that the assignment does not require.',
             REPORT, self.record, mutates=True)
 
     def read(self):
@@ -67,7 +70,14 @@ def finish(run, report, previous):
         return
     # Deliver the bounded actual findings, never an empty model preamble.
     lines = [run['title']]
-    lines.extend('- ' + item['summary'] + ' (' + item['source'] + ')' for item in new[:3])
+    for item in new[:3]:
+        # Keep internal mail/document IDs in the saved report, not the Slack update.
+        try:
+            source=urlsplit(item['source'])
+            link=item['source'] if source.scheme in ('https', 'http') and source.netloc and not source.username else ''
+        except ValueError:
+            link=''
+        lines.append('- ' + item['summary'] + (' (' + link + ')' if link else ''))
     if len(new) > 3:
         lines.append(f'{len(new)-3} more findings saved. Ask Capo for the full check.')
     lines.extend('- Needs attention: ' + item for item in blockers[:2])

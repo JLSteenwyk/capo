@@ -47,6 +47,7 @@ class AssignmentTests(unittest.TestCase):
     def test_stable_changes_quiet_reappearance_and_blockers(self):
         run={'title':'Watch'};finish(run,report(),{})
         self.assertEqual(run['status'],'ready');self.assertIn('$20',run['payload']['text'])
+        self.assertNotIn('mail:synthetic',run['payload']['text'])
         same=report();same['findings'][0]['summary']='Different wording for same fact.'
         finish(run,same,report());self.assertEqual(run['status'],'quiet')
         finish(run,report('new-price'),report());self.assertEqual(run['status'],'ready')
