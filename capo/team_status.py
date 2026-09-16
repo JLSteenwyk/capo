@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from .contracts import object_schema
 from .digest import scope, wall
 from .research_tools import ReadTool
-from .schedules import Schedules
+from .schedules import Schedules, matches_day
 from .team import ROLES
 
 
@@ -16,10 +16,12 @@ def next_check(schedule, now):
     if not schedule['enabled']:
         return None
     zone = ZoneInfo(schedule['timezone'])
-    for offset in range(8):
-        day = now.astimezone(zone).date() + timedelta(days=offset)
+    first=now.astimezone(zone).date()
+    if schedule.get('anchor_date'):first=max(first,datetime.fromisoformat(schedule['anchor_date']).date())
+    for offset in range(7*int(schedule.get('interval_days','1'))+1):
+        day = first + timedelta(days=offset)
         due = wall(day, schedule['time'], schedule['timezone'])
-        if str(day.weekday()) in schedule['weekdays'] and due > now:
+        if matches_day(schedule,day) and due > now:
             return due.isoformat()
     return None
 
@@ -48,6 +50,7 @@ class TeamStatus:
                 item = dict(id=schedule['id'], title=schedule['title'], request=schedule['request'],
                     enabled=schedule['enabled'], delivery=schedule.get('delivery', 'always'),
                     tool_prefixes=schedule.get('tool_prefixes', []),
+                    interval_days=schedule.get('interval_days','1'), anchor_date=schedule.get('anchor_date',''),
                     next_check=next_check(schedule, now), last_status=(last or {}).get('status', 'not_run'),
                     last_started=(last or {}).get('created'), last_checked=(last or {}).get('checked_at'),
                     report_revision=(last or {}).get('revision'), current_revision=schedule['revision'],
