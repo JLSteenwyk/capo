@@ -88,6 +88,33 @@ class SharedConversationTests(unittest.TestCase):
         self.body('Use the new date','correction','123.456')
         self.assertEqual(latest(self.home,self.config,context),'correction')
 
+    def test_followup_updates_known_event_without_repeating_search(self):
+        from capo.evaluations.calendar_cases import CalendarWorld
+        import copy
+        world = CalendarWorld({})
+        original = copy.deepcopy(world.calendars)
+        body = self.body('Change the location of my previously created Planning event to Room 9. Its primary-calendar ID is planning; keep the time and notes.',
+                         'location-followup')
+        with patch('capo.capabilities.Providers') as providers, \
+                patch('capo.calendar.GoogleCalendar', side_effect=world.client), \
+                patch('capo.calendar_actions.GoogleCalendar', side_effect=world.client):
+            done = finish('Updated the location to Room 9; the time and notes are unchanged.')
+            done['arguments_json'] = json.dumps({'outcomes':[dict(requirement='Update location',kind='action',
+                status='complete',evidence=['1'],next_step='')]})
+            providers.return_value.call.side_effect = [step('calendar.event',calendar_id='primary',event_id='planning'),
+                step('calendar.change',action='update',calendar_id='primary',event_id='planning',title='Planning',
+                     location='Room 9',start='2030-11-04T09:00:00-08:00',end='2030-11-04T10:00:00-08:00',all_day=False),done]
+            self.assertIn('Room 9',self.run_request(body))
+            row = world.calendars['primary']['planning']
+            self.assertEqual(row['location'],'Room 9')
+            self.assertEqual(row['description'],original['primary']['planning']['description'])
+            self.assertEqual(row['start']['dateTime'],original['primary']['planning']['start']['dateTime'])
+            self.assertEqual(world.calendars['work'],original['work'])
+            self.assertEqual(len(world.writes),1)
+            restarted = SlackService(self.store,self.config,Mock())
+            self.run_request(body,restarted)
+            self.assertEqual(len(world.writes),1)
+
     def test_new_followup_creates_every_block_after_legacy_single_event(self):
         from capo.evaluations.calendar_cases import event
         from capo.evaluations.research_cases import ResearchWorld

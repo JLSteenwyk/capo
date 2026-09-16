@@ -33,6 +33,22 @@ class CalendarToolTests(unittest.TestCase):
             {'id':'shared','accessRole':'reader','summary':'Shared'}]}
         self.tools.list('')
 
+    def test_prior_receipt_id_can_be_inspected_without_search(self):
+        row = event('Personal')
+        self.primary.lookup.return_value = row
+        details = self.tools.event('primary', 'same-id')
+        self.assertEqual(details['event']['description'], row['description'])
+        self.assertEqual(self.tools.primary_cache['same-id'], row)
+        self.primary.events.assert_not_called()
+        self.primary.lookup.return_value = None
+        self.assertFalse(self.tools.event('primary', 'same-id')['found'])
+        self.assertNotIn('same-id', self.tools.primary_cache)
+
+    def test_direct_inspection_still_requires_calendar_scope_and_valid_id(self):
+        for calendar_id, id in [('undiscovered', 'same-id'), ('primary', ''), ('primary', 'x'*1025)]:
+            with self.assertRaises(ValueError):self.tools.event(calendar_id, id)
+        self.primary.lookup.assert_not_called()
+
     def test_calendar_date_facts_preserve_source_and_exclusive_end(self):
         row=event('Planning')
         result=self.tools.describe('primary',row)

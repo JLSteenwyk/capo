@@ -140,13 +140,15 @@ class CalendarTools:
 
     def event(self, calendar_id, event_id):
         calendar_id = self.canonical(calendar_id)
-        if (calendar_id,event_id) not in self.cache:
-            raise ValueError('Find the event in this calendar before inspecting it')
+        # A prior conversation receipt can supply an event ID. Always fetch its
+        # current state; request-local discovery is not needed for a scoped read.
+        if not isinstance(event_id,str) or not event_id or len(event_id)>1024:
+            raise ValueError('Provide a bounded event ID from a calendar result or prior receipt')
         row=self.client(calendar_id).lookup(event_id)
         if row is None:
             self.cache.pop((calendar_id,event_id),None)
             if calendar_id=='primary':self.primary_cache.pop(event_id,None)
-            return {'found':False,'calendar_id':calendar_id,'event_id':event_id,'coverage':'The previously found event is now absent or cancelled.'}
+            return {'found':False,'calendar_id':calendar_id,'event_id':event_id,'coverage':'The referenced event is absent or cancelled in this calendar.'}
         self.remember(calendar_id,row)
         return {'found':True,'event':self.describe(calendar_id,row,True),'coverage':'Current event details; description and attendee truncation are reported explicitly.'}
 
@@ -222,5 +224,5 @@ class CalendarTools:
             ReadTool('calendar.inspect','Inspect metadata for primary or a discovered calendar ID.',object_schema({'calendar_id':TEXT}),self.inspect),
             ReadTool('calendar.events','Read primary-calendar events in a maximum 31-day explicit RFC3339 window. Use calendar.search for a selected calendar and calendar.event for details.',object_schema({'start':TEXT,'end':TEXT}),self.events),
             ReadTool('calendar.search','Find events in primary or a discovered calendar. Empty query means all events; empty page_token starts a search. Reuse the cursor only with the same calendar, window and query.',object_schema({'calendar_id':TEXT,'start':TEXT,'end':TEXT,'query':TEXT,'page_token':TEXT}),self.search),
-            ReadTool('calendar.event','Inspect a discovered event with description, attendees, organizer, recurrence, timezone and edit restrictions. Calendar and event IDs must match the search result.',object_schema({'calendar_id':TEXT,'event_id':TEXT}),self.event),
+            ReadTool('calendar.event','Read current details by calendar and event ID from a search result or previous conversation receipt; no repeat search is required. Returns description, attendees, organizer, recurrence, timezone and edit restrictions. Inspect before updating; IDs must refer to the same calendar.',object_schema({'calendar_id':TEXT,'event_id':TEXT}),self.event),
         ]
