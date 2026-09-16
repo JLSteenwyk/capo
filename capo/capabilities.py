@@ -51,6 +51,8 @@ def shared_tools(home,config,documents,request=None):
                    lambda:{'now':datetime.now(ZoneInfo(zone)).isoformat(),'timezone':zone}),
            ReadTool('documents.list','List reusable private documents saved for this owner.',object_schema({}),documents.list),
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
+    from .team_status import TeamStatus
+    tools.extend(TeamStatus(home, config).tools())
     from .specialist_tools import SpecialistTools
     tools.extend(SpecialistTools(home, owner_key(config)).tools(writable=bool((request or {}).get('owner_request'))))
     if all(config.get(k) for k in ('team_id', 'channel_id', 'owner_user_id')):
@@ -136,6 +138,8 @@ class CapabilityConversation(ConversationRouter):
             from .request_updates import latest
             result=research(Providers(timeout=90),shared_tools(self.home,self.config,self.documents,context),context,directory,
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
+                'Use team.status for current assignments, last checks, next checks and blockers. '
+                'Use schedules.save to create or edit owner-requested standing assignments with an agent and delivery=changes for quiet monitoring. '
                 'For relevant specialist expertise and saved preferences, use specialists.list/read and apply them in this same loop. '
                 'For explicitly requested repository work, use development tools; for browser control, use browser.start when available. '
                 'A queued handoff is not completion. Preserve existing publication and browser approval requirements. '

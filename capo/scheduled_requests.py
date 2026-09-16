@@ -15,6 +15,8 @@ from .digest_service import DigestManager
 from .providers import Providers
 from .research_tools import ReadTools,research
 from .schedules import Schedules,due_slot
+from .assignment_reports import AssignmentReport, previous_report, finish
+from .team import ROLES
 
 
 class ScheduledManager(DigestManager):
@@ -63,7 +65,12 @@ class ScheduledManager(DigestManager):
             if run['revision']!=s['revision']:
                 run['status']='cancelled';self.db.save(run,now);os.close(fd);continue
             if run['attempts']>=2:
-                run['status']='failed';self.db.save(run,now);os.close(fd);continue
+                run['status']='failed'
+                if s.get('delivery')=='changes':
+                    previous=previous_report(self.db,self.owner,s['id'],s['revision'],run['created'])
+                    finish(run, {'findings': [], 'blockers': ['The scheduled check failed after its retry limit.'],
+                                 'coverage': 'Unable to complete this check.'}, previous)
+                self.db.save(run,now);os.close(fd);continue
             run.update(status='building',attempts=run['attempts']+1);self.db.save(run,now)
             config=json.loads(json.dumps(self.service.config))
             def work(run=run,s=s,directory=directory,fd=fd,config=config):
@@ -71,15 +78,42 @@ class ScheduledManager(DigestManager):
                 try:
                     db=DigestStore(self.home)
                     docs=Documents(self.service.store.home,owner_key(config))
-                    request={'message':run['request'],'timezone':s['timezone']}
+                    baseline=directory/'previous-report.json'
+                    if not baseline.exists():
+                        _write(baseline, previous_report(db, self.owner, s['id'], s['revision'], run['created']))
+                    previous=json.loads(baseline.read_text())
+                    request={'message':run['request'],'timezone':s['timezone'],
+                             'agent':s.get('agent', 'capo'), 'previous_check':previous}
+                    role=ROLES.get(s.get('agent'), ('Capo' if s.get('agent', 'capo')=='capo' else 'Coding Agent',
+                        'Use the shared tools to complete the assigned inspection.'))
                     registry=shared_tools(self.service.store.home,config,docs,request)
-                    readonly=ReadTools([t for t in registry.tools.values() if not t.mutates])
+                    report=AssignmentReport(directory/'execution')
+                    selected=[t for t in registry.tools.values() if not t.mutates]
+                    if s.get('delivery')=='changes': selected.append(report.tool())
+                    readonly=ReadTools(selected)
                     attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
                     result=research(Providers(timeout=90),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
-                        instructions='This is an owner-scheduled read-only request. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
+                        instructions=f'You are {role[0]}, managed by Capo. {role[1]} '
+                        'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
+                        'report verified actionable findings, essential access/coverage blockers, and what was actually checked. '
+                        'Use specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)
-                    run.update(status='ready',payload={'text':result['reply'],'news':[]})
+                    run.update(status='ready',payload={'text':result['reply'],'news':[]},
+                               checked_at=datetime.now(timezone.utc).isoformat())
+                    if s.get('delivery')=='changes':
+                        try: recorded=report.read()
+                        except ValueError:
+                            recorded={'findings': [], 'blockers': ['The check did not produce a verified monitoring report.'],
+                                      'coverage': 'Check incomplete; no clean result established.'}
+                        if result.get('status')=='partial':
+                            recorded['blockers'].append('The check reached its limits before completing all requested work.')
+                        reads=[r for r in result.get('receipts', []) if r.get('result') is not None
+                               and r.get('tool', '').startswith(('mail.', 'github.', 'calendar.', 'web.', 'documents.', 'tasks.'))]
+                        if not reads and not recorded['blockers']:
+                            recorded['blockers'].append('No source inspection was recorded for this check.')
+                        run.pop('error_summary', None)
+                        finish(run, recorded, previous)
                 except Exception as exc:
                     from .recovery import RetryLater
                     if isinstance(exc, RetryLater):

@@ -11,6 +11,12 @@ from .research_tools import ReadTool
 FIELDS=object_schema({'title':TEXT,'request':TEXT,'weekdays':TEXTS,'time':TEXT,'timezone':TEXT,
                       'enabled':{'type':'boolean'},'catch_up_hours':{'type':'string','enum':['1','6','12','24']}})
 
+# Optional fields keep existing schedules and callers compatible.
+FIELDS['properties'].update({
+    'agent': {'type': 'string', 'enum': ['capo', 'money_saver', 'style_assistant', 'shopping_assistant', 'coding']},
+    'delivery': {'type': 'string', 'enum': ['always', 'changes']},
+})
+
 
 class Schedules(Tasks):
     def __init__(self,home,owner):
@@ -46,6 +52,9 @@ class Schedules(Tasks):
                 if expected_revision!=str(previous['revision']):raise ValueError('Schedule changed; read it again')
             elif expected_revision:raise ValueError('New schedules have no revision')
             else:id=hashlib.sha256(operation_id.encode()).hexdigest()
+            fields = dict(fields)
+            for name, default in (('agent', 'capo'), ('delivery', 'always')):
+                fields.setdefault(name, (previous or {}).get(name, default))
             now=datetime.now(timezone.utc).isoformat()
             result={'schedule':dict(fields,id=id,revision=previous['revision']+1 if previous else 1,
                                     created_at=previous['created_at'] if previous else now,updated_at=now), 'saved':True}
@@ -55,7 +64,7 @@ class Schedules(Tasks):
 
     def tools(self):
         return [ReadTool('schedules.list','List owner-configured recurring read-only requests and their revisions.',object_schema({}),self.list),
-                ReadTool('schedules.save','Create/edit/pause a recurring read-only request after the owner chooses its schedule. Runs the shared tools and sends one Slack result. Weekdays 0 Monday through 6 Sunday. Empty id/revision creates; edits require current revision. Set enabled=false to stop. Does not alter the existing morning digest or hourly checks. Scheduled requests cannot send email or mutate tasks/calendar.',
+                ReadTool('schedules.save','Create/edit/pause a recurring read-only request after the owner chooses its schedule. Runs the shared tools. Optional agent assigns responsibility; delivery=changes reports only new findings or blockers, always delivers each result. Existing assignments retain these options when omitted. Weekdays 0 Monday through 6 Sunday. Empty id/revision creates; edits require current revision. Set enabled=false to stop. Does not alter the existing morning digest or hourly checks. Scheduled requests cannot send email or mutate tasks/calendar.',
                          object_schema({'id':TEXT,'expected_revision':TEXT,'fields':FIELDS}),self.save,mutates=True)]
 
 
