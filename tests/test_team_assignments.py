@@ -66,6 +66,16 @@ class AssignmentTests(unittest.TestCase):
             invalid=report();invalid['findings']*=2
             with self.assertRaises(ValueError):recorder.record(**invalid)
             recorder.record(**report());self.assertEqual(recorder.read(),report())
+            from capo.research_tools import ReadTools
+            from capo.request_outcomes import assess
+            import json
+            tools=ReadTools([recorder.tool()])
+            with self.assertRaises(ValueError):tools.call('monitor.report',report())
+            saved=tools.call('monitor.report',report(),operation_id='report')
+            result=assess(json.dumps({'outcomes':[{'requirement':'Save monitoring report', 'kind':'action',
+                'status':'complete', 'evidence':['0'], 'next_step':''}]}),
+                [{'tool':'monitor.report','result':saved}],tools)
+            self.assertEqual(result['status'],'reported_complete')
 
     def test_unsent_and_other_owner_reports_do_not_suppress(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -107,11 +117,11 @@ class AssignmentTests(unittest.TestCase):
             service=SimpleNamespace(store=SimpleNamespace(home=home),config=config,client=client,bot_user_id='BOT')
             current=report();observed=[]
             def generate(provider,tools,request,*args,**kwargs):
-                self.assertTrue(all(not t.mutates for t in tools.tools.values()))
+                self.assertTrue(all(not t.mutates for name,t in tools.tools.items() if name!='monitor.report'))
                 self.assertNotIn('schedules.save',tools.tools)
                 self.assertNotIn('tasks.save',tools.tools)
                 observed.append(request)
-                tools.call('monitor.report',current)
+                tools.call('monitor.report',current,operation_id='local-report')
                 return {'reply':'Checked.','document':'','document_title':'',
                         'receipts':[{'tool':'mail.search','result':{'messages':['synthetic']}}]}
             now=datetime.fromisoformat('2030-01-01T10:00:00-08:00')

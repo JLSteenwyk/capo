@@ -14,7 +14,7 @@ class AssignmentReport:
     def __init__(self, directory):
         self.path = directory / 'assignment-report.json'
 
-    def record(self, **report):
+    def record(self, operation_id=None, **report):
         validate(report, REPORT)
         if (len(report['findings']) > 10 or len(report['blockers']) > 5
                 or not report['coverage'].strip() or len(json.dumps(report)) > 12000):
@@ -27,7 +27,7 @@ class AssignmentReport:
         if any(not item.strip() or len(item) > 1000 for item in report['blockers']):
             raise ValueError('Use short specific blockers')
         _write(self.path, report)
-        return {'recorded': True, 'report': report}
+        return {'recorded': True, 'saved': True, 'report': report}
 
     def tool(self):
         return ReadTool('monitor.report',
@@ -36,7 +36,7 @@ class AssignmentReport:
             '(not today’s date or wording), a short summary and an inspected evidence source. '
             'Reuse prior keys/versions if facts did not change. Empty findings means nothing actionable in checked sources. '
             'Missing access or incomplete essential checks belong in blockers; never treat failures as a clean check.',
-            REPORT, self.record)
+            REPORT, self.record, mutates=True)
 
     def read(self):
         if not self.path.exists():
