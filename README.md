@@ -139,3 +139,5 @@ Meet [Capo’s specialist team](docs/team.md) and connect [Gmail inbox checks](d
 [Shared capabilities](docs/capabilities.md) let Capo and its specialists combine tools for new requests.
 
 [Slack activity status](docs/slack-activity.md) confirms that a reply is being prepared. [Shared writing style](docs/writing-style.md) applies the approved voice across the team.
+
+See [iMessage and Slack](docs/imessage.md) for the optional linked-owner messaging bridge and setup requirements.

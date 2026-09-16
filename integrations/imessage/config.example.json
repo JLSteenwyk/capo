@@ -1,0 +1,8 @@
+{
+  "imessage": {
+    "enabled": false,
+    "server_url": "http://127.0.0.1:1234",
+    "chat_guid": "iMessage;-;owner@example.invalid",
+    "owner_address": "owner@example.invalid"
+  }
+}

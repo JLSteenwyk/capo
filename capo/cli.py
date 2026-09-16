@@ -78,6 +78,12 @@ def parser():
     daemon = commands.add_parser("slack-daemon", help="Run Slack using a private token file")
     daemon.add_argument("--config", type=Path, required=True)
     daemon.add_argument("--env-file", type=Path, required=True)
+    for name in ('imessage', 'imessage-check', 'imessage-status'):
+        bridge = commands.add_parser(name, help='Run or inspect the linked-owner iMessage bridge')
+        bridge.add_argument('--config', type=Path, required=True)
+        if name != 'imessage-status':
+            bridge.add_argument('--env-file', type=Path, required=True)
+            bridge.add_argument('--password-file', type=Path, required=True)
     digest_settings = commands.add_parser("digest-settings", help="Inspect or configure the private morning digest")
     digest_settings.add_argument("--config", type=Path, required=True)
     digest_settings.add_argument("--time")
@@ -200,6 +206,22 @@ def main(argv=None):
     args = parser().parse_args(argv)
     store = None
     try:
+        if args.command in ('imessage', 'imessage-check', 'imessage-status'):
+            from .slack import validate_config
+            from .imessage import run as imessage_run, journal, status as imessage_status
+            config = validate_config(json.loads(args.config.read_text()))
+            if args.command == 'imessage-status':
+                sync = journal(args.home, config)
+                if sync is None:print('iMessage is disabled.')
+                else:print(json.dumps(imessage_status(sync)))
+                return 0
+            from .digest_cli import load_slack_environment
+            from slack_sdk import WebClient
+            load_slack_environment(args.env_file)
+            result = imessage_run(args.home, config, args.password_file,
+                WebClient(token=os.environ['SLACK_BOT_TOKEN']), check_only=args.command=='imessage-check')
+            if result:print(json.dumps(result))
+            return 0
         if args.command.startswith("digest-"):
             if args.providers_config:
                 os.environ["CAPO_PROVIDERS_CONFIG"] = str(args.providers_config.expanduser().resolve())

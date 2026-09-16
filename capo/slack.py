@@ -153,6 +153,8 @@ def validate_config(config):
     repos = config.get("repositories")
     if not isinstance(repos, dict) or not repos:
         raise ValueError("Configure at least one named repository")
+    from .imessage import settings as imessage_settings
+    imessage_settings(config)
     from .heartbeat import settings as heartbeat_settings
     heartbeat_settings(config)
     from .recovery import policy as recovery_policy
@@ -295,6 +297,11 @@ def ingest(home, config, body):
 class SlackService:
     def __init__(self, store, config, client):
         self.store, self.config, self.client = store, validate_config(config), client
+        from .imessage import journal
+        sync = journal(store.home, self.config)
+        if sync is not None:
+            from .channel_sync import MirroredSlackClient
+            self.client = MirroredSlackClient(client, sync, self.config['channel_id'])
         self.active = None
         self.active_id = None
         self.last_stage = None
