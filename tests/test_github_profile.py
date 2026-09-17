@@ -19,6 +19,26 @@ def repo(name,**kwargs):return dict(full_name=name,fork=False,archived=False,**k
 
 
 class ProfileTests(unittest.TestCase):
+    def test_notifications_include_browser_links_after_scope_checks(self):
+        client=Mock()
+        rows=[{'repository':repo('example/project'),'subject':subject} for subject in (
+            {'type':'PullRequest','url':'https://api.github.com/repos/example/project/pulls/42'},
+            {'type':'Issue','url':'https://api.github.com/repos/example/project/issues/9'},
+            {'type':'RepositoryVulnerabilityAlert','url':None},
+            {'type':'Unknown','url':'https://untrusted.example/repos/example/project/pulls/1'})]
+        def get(endpoint,**kwargs):
+            if endpoint=='user':value={'login':'example'}
+            elif endpoint.startswith('notifications?'):value=rows
+            elif endpoint=='repos/example/project':value=repo('example/project')
+            else:self.fail(endpoint)
+            return json.dumps(value),False
+        client.get.side_effect=get
+        with tempfile.TemporaryDirectory() as tmp:
+            result=GitHubProfile(policy(),Path(tmp),lambda auth:client).activity('notifications','1')
+        self.assertEqual([v['html_url'] for v in result['items']],[
+            'https://github.com/example/project/pull/42','https://github.com/example/project/issues/9',
+            'https://github.com/example/project/security/dependabot','https://github.com/example/project'])
+
     def test_discovery_filters_organizations_related_forks_and_terms_before_output(self):
         client=Mock();calls=[]
         def get(endpoint,**kwargs):

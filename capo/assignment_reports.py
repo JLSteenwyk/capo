@@ -1,6 +1,7 @@
 """Bounded structured monitoring reports and durable change-only delivery."""
 import hashlib
 import json
+import re
 from urllib.parse import urlsplit
 from .contracts import TEXT, TEXTS, object_schema, validate
 from .conversation import _write
@@ -25,6 +26,9 @@ class AssignmentReport:
             if any(not value.strip() or len(value) > 1200 for value in item.values()) or item['key'] in keys:
                 raise ValueError('Findings need unique stable keys, versions, summaries and evidence sources')
             keys.add(item['key'])
+            if re.fullmatch(r'receipt(?:_index| indexes?|s)?[\s:#\d,]+', item['source'], re.I):
+                raise ValueError('Finding sources must be reviewable: copy the relevant html_url from the inspected result, '
+                                 'not receipt numbers. For private sources without a browser link, use the actual source identifier.')
         if any(not item.strip() or len(item) > 1000 for item in report['blockers']):
             raise ValueError('Use short specific blockers')
         _write(self.path, report)
@@ -35,6 +39,8 @@ class AssignmentReport:
             'Record this check’s findings, blockers and coverage before finishing. Local run bookkeeping only. '
             'Every actionable finding needs a stable key (source/entity), a version describing meaningful facts '
             '(not today’s date or wording), a short summary and an inspected evidence source. '
+            'Use the relevant browser URL (html_url) as source whenever available, especially for PRs, issues, '
+            'CI runs and security alerts. Never use receipt indexes as sources. Include the repository in GitHub summaries. '
             'Reuse prior keys/versions if facts did not change. Empty findings means nothing actionable in checked sources. '
             'Missing access or incomplete essential checks belong in blockers; never treat failures as a clean check. '
             'Ordinary page/window limits belong in coverage, not blockers, unless they prevent the requested check. '

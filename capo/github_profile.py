@@ -127,7 +127,17 @@ class GitHubProfile:
                 unavailable+=1;continue
             self.known.add(name.casefold())
             value=selected(row,'number title html_url state updated_at reason unread')
-            if 'subject' in row:value['subject']=selected(row['subject'],'title type url')
+            if 'subject' in row:
+                value['subject']=selected(row['subject'],'title type url')
+                subject=row['subject']; base='https://github.com/'+name
+                path=urlsplit(subject.get('url') or '').path
+                match=re.fullmatch('/repos/'+re.escape(name)+r'/(issues|pulls)/(\d+)',path)
+                if match and urlsplit(subject.get('url') or '').hostname=='api.github.com':
+                    value['html_url']=base+('/pull/' if match[1]=='pulls' else '/issues/')+match[2]
+                elif subject.get('type')=='RepositoryVulnerabilityAlert':
+                    value['html_url']=base+'/security/dependabot'
+                else:
+                    value['html_url']=base
             value['repository']=name;items.append(value)
         return {'items':items,'next_page':str(int(page)+1) if more and int(page)<10 else '',
                 'limited':bool(incomplete or more and int(page)==10),'more_available':more,'unavailable':unavailable,

@@ -78,6 +78,17 @@ class AssignmentTests(unittest.TestCase):
                 [{'tool':'monitor.report','result':saved}],tools)
             self.assertEqual(result['status'],'reported_complete')
 
+    def test_reports_require_sources_instead_of_receipt_numbers_and_deliver_links(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder=AssignmentReport(Path(tmp))
+            for source in ('receipt_index 5,6','Receipt 2','receipts: 0,3'):
+                invalid=report();invalid['findings'][0]['source']=source
+                with self.assertRaisesRegex(ValueError,'html_url'):recorder.record(**invalid)
+            linked=report();linked['findings'][0]['source']='https://github.com/example/project/pull/42'
+            recorder.record(**linked)
+            run={'title':'Coding check'};finish(run,recorder.read(),{})
+            self.assertIn(linked['findings'][0]['source'],run['payload']['text'])
+
     def test_unsent_and_other_owner_reports_do_not_suppress(self):
         with tempfile.TemporaryDirectory() as tmp:
             db=DigestStore(Path(tmp));now=datetime.now(timezone.utc)
