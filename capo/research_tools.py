@@ -177,7 +177,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'under 100 words in reply unless the owner explicitly requests more detail; always under 1900 characters. When action is tool, reply/document fields must be empty. '
             'When finishing, tool must be empty. In arguments_json provide {"outcomes":[{"requirement":"requested result",'
             '"kind":"answer|action|handoff","status":"complete|partial|needs_input","evidence":["0"],"next_step":""}]}. '
-            'Inventory every part of the original request, incorporating owner corrections. Evidence uses zero-based receipt indexes. '
+            'Inventory every part of the original request, incorporating owner corrections. Evidence uses the explicit '
+            'receipt_index string on each receipt (zero-based); copy it rather than counting entries. '
             'Answer items may have empty evidence for direct reasoning; factual source claims need relevant receipts. '
             'The action kind describes a requested change, not a constraint to leave something unchanged. '
             'Report no-change constraints as answer items, grounded in the actual receipts; never perform a write to satisfy a no-change constraint. '
@@ -203,7 +204,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'Never claim an action succeeded without a successful mutation receipt. '
 
             + instructions + '\n' + json.dumps({
-                'request': request, 'tools': tools.catalog(), 'receipts': receipts,
+                'request': request, 'tools': tools.catalog(),
+                'receipts': [{**r, 'receipt_index': str(i)} for i,r in enumerate(receipts)],
                 'request_started_at': state['now'],
                 'remaining_tool_calls': remaining,
                 'remaining_evidence_chars':max(0,evidence_limit-evidence_size),
@@ -232,7 +234,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             _write(checkpoint,state)
             return completed
         if result['action'] == 'finish':
-            from .request_outcomes import assess,pending_text,OutcomeError
+            from .request_outcomes import assess,pending_text,OutcomeError,completion_failure_reply
             try:
                 from .message_format import strip_transport_tail
                 result={**result,'reply':strip_transport_tail(result['reply']),
@@ -249,11 +251,13 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 if len(rendered)>16000:raise ValueError('Completion report is too long')
             except (ValueError,KeyError,TypeError) as exc:
                 reason=(str(exc)+' ') if isinstance(exc,OutcomeError) else ''
-                receipts.append({'tool':'','error':reason+'Completion report is invalid or lacks supporting receipts. Provide a nonempty reply under 1900 characters, an empty tool, and either both document_title/document or neither (limits 200/12000 characters). Account for every requested part and correct evidence links; do not repeat completed actions.'})
+                repeated = bool(receipts and receipts[-1].get('completion_error')
+                                and receipts[-1].get('completion_error_reason') == reason)
+                receipts.append({'tool':'','completion_error':True,'completion_error_reason':reason,'error':reason+'Completion report is invalid or lacks supporting receipts. Provide a nonempty reply under 1900 characters, an empty tool, and either both document_title/document or neither (limits 200/12000 characters). Account for every requested part and correct evidence links; do not repeat completed actions.'})
                 _write(checkpoint,state)
                 _write(directory/'receipts.json',receipts)
-                if remaining:continue
-                completed={'reply':'I could not verify the completion report within the execution limit. The results are saved, but completion remains unconfirmed.',
+                if remaining and not repeated:continue
+                completed={'reply':completion_failure_reply(receipts,tools),
                            'status':'partial','stop_reason':'invalid_completion_report','document_title':'','document':'','receipts':receipts}
                 state['result']=completed
                 _write(checkpoint,state)

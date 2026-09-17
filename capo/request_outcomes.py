@@ -14,6 +14,43 @@ ITEM=object_schema({'requirement':TEXT,'kind':{'type':'string','enum':['answer',
 REPORT=object_schema({'outcomes':{'type':'array','items':ITEM}})
 
 
+def successful_action(receipt, tools, kind='action'):
+    """Receipt eligibility shared by validation and factual failure summaries."""
+    if 'error' in receipt or receipt.get('uncertain'):
+        return False
+    tool = tools.tools.get(receipt.get('tool'))
+    value = receipt.get('result')
+    if tool is None or not (tool.mutates or tool.verifies) or not isinstance(value, dict):
+        return False
+    if value.get('truncated') or value.get('confirmed') is False or value.get('verified') is False:
+        return False
+    if kind == 'action' and (value.get('completed') is False or value.get('status') in ('queued','running','pending')):
+        return False
+    return any(value.get(key) is True for key in
+               ('verified','saved','created','deleted','updated','changed','already_exists','queued','completed'))
+
+
+def completion_failure_reply(receipts, tools):
+    """Report known effects without claiming the entire request was completed."""
+    confirmations = []
+    for receipt in receipts:
+        if not successful_action(receipt, tools):
+            continue
+        value = receipt['result']
+        reply = value.get('reply')
+        if isinstance(reply, str) and reply.strip():
+            text = reply.strip()[:500]
+        else:
+            text = 'Confirmed change from '+receipt['tool']+'.'
+        if text not in confirmations:
+            confirmations.append(text)
+    if confirmations:
+        return ('\n'.join(confirmations[:3])+
+                '\n\nThese changes are confirmed. I could not verify whether the whole request is finished.')
+    return ('I could not verify the completion report. Saved results are preserved; '
+            'no successful change could be confirmed from them.')
+
+
 def assess(encoded,receipts,tools):
     if len(encoded)>12000:raise OutcomeError('Outcome report exceeds its limit')
     report=json.loads(encoded)
@@ -37,15 +74,14 @@ def assess(encoded,receipts,tools):
         if any('error' in r or r.get('uncertain') or 'result' not in r for r in selected):
             raise OutcomeError('Failed or uncertain receipts cannot prove completion')
         if item['kind'] in ('action','handoff'):
-            eligible=[]
-            for receipt in selected:
-                tool=tools.tools.get(receipt['tool']);value=receipt.get('result')
-                if tool is None or not (tool.mutates or tool.verifies) or not isinstance(value,dict):continue
-                if value.get('truncated') or value.get('confirmed') is False or value.get('verified') is False:continue
-                if item['kind']=='action' and (value.get('completed') is False or value.get('status') in ('queued','running','pending')):continue
-                if any(value.get(key) is True for key in ('verified','saved','created','deleted','updated','changed','already_exists','queued','completed')):
-                    eligible.append(receipt)
-            if not eligible:raise OutcomeError('Completed actions need a successful matching host mutation receipt')
+            if not any(successful_action(r,tools,item['kind']) for r in selected):
+                cited=', '.join(index+' ('+receipts[int(index)].get('tool','report feedback')+')'
+                                for index in item['evidence']) or 'none'
+                candidates=', '.join(str(index)+' ('+r['tool']+')' for index,r in enumerate(receipts)
+                                     if successful_action(r,tools,item['kind'])) or 'none'
+                raise OutcomeError('Completed actions need a successful matching host mutation receipt. '
+                    'Cited: '+cited+'. Eligible receipt indexes: '+candidates+
+                    '. Use an eligible receipt only if its result establishes this specific outcome; do not repeat the write.')
     unfinished=[item for item in report['outcomes'] if item['status']!='complete']
     return {**report,'status':'partial' if unfinished else 'reported_complete',
             'coverage':'Model-declared requirements and evidence links checked against host receipts; semantic coverage and relevance still require evaluation.'}
