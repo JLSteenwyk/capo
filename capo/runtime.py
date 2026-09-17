@@ -181,7 +181,7 @@ class Runtime:
             from .capacity import Capacity
             from .recovery import RateLimited
             self.providers = self.providers or Providers(objective["timeout"], config=objective.get("providers_config"),
-                                                        capacity=Capacity(self.store.home))
+                                                        capacity=Capacity(self.store.home, providers_config=objective.get('providers_config')))
             objective["supervisor_pid"] = os.getpid()
             self.store.save(objective, "supervisor_started")
             previous_handler = signal.getsignal(signal.SIGTERM)

@@ -57,12 +57,14 @@ def claude_windows(payload):
 
 
 class Capacity:
-    def __init__(self, home=None, clock=None, probes=None):
+    def __init__(self, home=None, clock=None, probes=None, providers_config=None):
         self.root = Path(home if home is not None else default_home())/'capacity'
         self.clock = clock or time.time
         if probes is None:
             from .quota_probe import codex_quota
-            probes = {'codex': codex_quota}
+            from .subscription_probes import claude_quota, grok_quota
+            probes = {'codex': codex_quota, 'claude': claude_quota,
+                      'grok': lambda: grok_quota(providers_config)}
         self.probes = probes
 
     def _prepare(self):
@@ -105,7 +107,7 @@ class Capacity:
             _write(self.root/'observations.json', value)
 
     def observe(self, provider, value, source, observed_at=None):
-        if source not in ('codex_app_server', 'claude_statusline'):
+        if source not in ('codex_app_server', 'claude_statusline', 'claude_usage', 'grok_billing'):
             raise ValueError('Unknown capacity source')
         self._update(provider, dict(windows=windows(value), source=source,
                      observed_at=self.clock() if observed_at is None else observed_at))
@@ -125,7 +127,8 @@ class Capacity:
                         continue
                     try:
                         value = self.probes[provider]()
-                        self.observe(provider, value, 'codex_app_server', now)
+                        source = {'codex': 'codex_app_server', 'claude': 'claude_usage', 'grok': 'grok_billing'}[provider]
+                        self.observe(provider, value, source, now)
                         error = None
                     except Exception:
                         # Never persist provider diagnostics, account IDs or credentials.

@@ -89,7 +89,7 @@ class Providers:
         from .capacity import Capacity
         self.timeout = timeout
         self.config = load_config() if config is None else validate_config(config)
-        self.capacity = Capacity() if capacity is None else capacity
+        self.capacity = Capacity(providers_config=self.config) if capacity is None else capacity
 
     def call(self, provider, prompt, schema, cwd, directory, images=None):
         from .recovery import RateLimited

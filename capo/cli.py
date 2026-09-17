@@ -215,7 +215,8 @@ def main(argv=None):
     try:
         if args.command in ('capacity', 'capacity-claude'):
             from .capacity import Capacity, claude_windows
-            capacity = Capacity(args.home)
+            from .transport import load_config
+            capacity = Capacity(args.home, providers_config=load_config(args.providers_config))
             if args.command == 'capacity-claude':
                 payload = sys.stdin.read(1000001)
                 if len(payload) > 1000000:

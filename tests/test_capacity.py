@@ -168,7 +168,9 @@ class CapacityTests(unittest.TestCase):
     def test_shared_tool_and_cli_are_read_only_and_do_not_expose_raw_payload(self):
         from capo.capabilities import Documents, shared_tools
         from capo.cli import main
-        with patch('capo.quota_probe.codex_quota', return_value=[window(25)]):
+        with patch('capo.quota_probe.codex_quota', return_value=[window(25)]), \
+             patch('capo.subscription_probes.claude_quota', return_value=[]), \
+             patch('capo.subscription_probes.grok_quota', return_value=[]):
             registry = shared_tools(self.root, {}, Documents(self.root, 'synthetic'))
             tool = registry.tools['workers.capacity']
             self.assertFalse(tool.mutates)

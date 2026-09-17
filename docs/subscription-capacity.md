@@ -21,8 +21,8 @@ the second reads saved observations only.
 | Provider | Source | Limits |
 | --- | --- | --- |
 | Codex | `codex app-server` → `account/rateLimits/read` | Reads the default Codex quota bucket and its active windows using the CLI's existing login. No thread or turn is created. |
-| Claude Code | Optional supported status-line JSON feed | Captures `rate_limits` percentages and reset times. Headless Capo calls do not run a status line. Without a feed, remaining quota is unknown. |
-| Grok Build | Observed usage-limit failures | The installed CLI's session token/cost counter is not a remaining subscription balance. No supported headless remaining-quota query was found. |
+| Claude Code | CLI `get_usage` control request | Automatically reads the five-hour and weekly windows through the normal account login. No model prompt is sent. |
+| Grok Build | Read-only CLI billing endpoint | Reads the current weekly/monthly subscription window. With a Lima worker, the request runs inside that VM using its existing login. |
 | All providers | Structured usage-limit errors | Share a cooldown across objectives and reasoning calls, using a reported reset or the existing one-hour fallback when none is reported. |
 
 These are percentages of provider quota windows, **not remaining token counts**.
@@ -69,6 +69,37 @@ Capo cannot reserve provider tokens. New usage-limit failures update the shared
 cooldown. This is capacity routing, not a learned task-performance model or an
 estimate of whether an entire task will fit into the remaining allowance.
 
+## Claude login and Grok billing
+
+Claude's `get_usage` control request is an experimental SDK interface; unsupported
+versions or missing profile permissions produce unknown capacity, not a guess.
+A setup-token login can run models but lacks quota-reading access. On the Capo
+computer, sign into the **same Claude account used for tasks** with:
+
+```sh
+env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY claude auth login --claudeai
+```
+
+The quota child ignores inference-token environment overrides and uses that normal
+CLI login. Task authentication is unchanged. Tools, hooks, MCP servers, and session
+persistence are disabled for this child. It sends only initialization and usage
+control requests, then terminates.
+
+Grok's `x.ai/billing` ACP extension was tested and is not implemented by the
+installed workers. The adapter therefore makes the same fixed HTTPS billing GET
+as the CLI (`/v1/billing?format=credits` on `cli-chat-proxy.grok.com`). It never
+follows redirects or modifies billing. Credentials remain in memory on the worker;
+only normalized quota windows return to the host. Both HTTP and remote execution
+have deadlines. A failed VM query never falls back to a potentially different
+local account.
+
+The billing response uses protobuf JSON. Within a recognized weekly/monthly
+`currentPeriod` with an explicit reset, omitted scalar `creditUsagePercent`
+represents zero. Missing/unrecognized period envelopes, invalid percentages, and
+missing reset times are rejected instead of inventing capacity. The CLI billing
+interface can change; failures remain redacted and unknown. Overage balances are
+not treated as subscription allowance and no credits are purchased.
+
 ## Optional Claude quota feed
 
 Claude Code can pass subscription windows to a status-line command. The importer
@@ -88,8 +119,8 @@ printf '%s' "$payload" | capo capacity-claude
 # The rest of your status-line script can render from "$payload".
 ```
 
-Do not replace an existing status line blindly. This feed updates during normal
-interactive Claude Code use; it does not run a prompt just to measure usage.
+Do not replace an existing status line blindly. This optional feed updates during normal
+interactive Claude Code use. The automatic control-request probe does not require it.
 Fields absent from the payload remain unknown. The CLI importer is deliberately
 not a model-writable tool: agents cannot declare their own quota available.
 
@@ -105,3 +136,6 @@ stored by the probe or exposed to the model.
 - [Codex App Server: account rate limits](https://developers.openai.com/codex/app-server/)
 - [Claude Code status-line fields](https://code.claude.com/docs/en/statusline)
 - [Grok Build CLI reference](https://docs.x.ai/build/cli/reference)
+
+- [Anthropic SDK usage request and response types](https://app.unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.211/files/sdk.d.ts)
+- [Protocol Buffers JSON default values](https://protobuf.dev/programming-guides/json/#presence-and-default-values)
