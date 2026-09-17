@@ -3,7 +3,6 @@
 import argparse
 import fcntl
 import hashlib
-import html
 import json
 import os
 import re
@@ -296,10 +295,11 @@ class SlackService:
 
     def reply(self, event, text):
         # Stay below Slack's truncation threshold, including escaped characters.
-        for offset in range(0, len(text), 2500):
+        from .message_format import slack_text, slack_chunks
+        for chunk in slack_chunks(text):
             self.client.chat_postMessage(channel=self.config["channel_id"],
-                thread_ts=event.get("thread_ts", event["ts"]), text=html.escape(text[offset:offset + 2500], quote=False),
-                mrkdwn=False, parse="none", link_names=False, unfurl_links=False, unfurl_media=False)
+                thread_ts=event.get("thread_ts", event["ts"]), text=slack_text(chunk),
+                mrkdwn=True, parse="none", link_names=False, unfurl_links=False, unfurl_media=False)
 
     def owns(self, objective):
         origin = objective.get("slack", {})
@@ -853,6 +853,8 @@ class SlackService:
                     self.pending_review = None
                 from .message_format import plain_text
                 data = {"text": plain_text(text), "review": self.pending_review}
+                from .message_format import slack_chunks
+                data["chunks"] = slack_chunks(data["text"])
                 self.pending_review = None
                 with self.store.db:
                     self.store.db.execute("INSERT INTO slack_deliveries(event_id,data) VALUES (?,?)",
@@ -868,7 +870,7 @@ class SlackService:
                 with self.store.db:
                     self.store.db.execute("UPDATE slack_deliveries SET data=?,next_chunk=0 WHERE event_id=?",
                                           (json.dumps(data), event_id))
-            chunks = [data["text"][offset:offset + 2500] for offset in range(0, len(data["text"]), 2500)]
+            chunks = data.get("chunks") or [data["text"][offset:offset + 2500] for offset in range(0, len(data["text"]), 2500)]
             if index < len(chunks):
                 if not self.send_chunk(body["event"], chunks[index]):
                     continue

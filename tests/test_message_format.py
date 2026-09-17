@@ -39,3 +39,31 @@ class EscapedLayoutTests(unittest.TestCase):
         self.assertEqual(plain_text(raw), expected)
         fenced = r"```text literal\n\n- example```"
         self.assertEqual(plain_text(fenced), fenced)
+
+
+class SlackLinkTests(unittest.TestCase):
+    def test_sources_render_as_clickable_labels(self):
+        from capo.message_format import slack_text
+        self.assertEqual(slack_text('Source: weather.example (https://weather.example/day?a=1&b=2).'),
+                         'Source: <https://weather.example/day?a=1&amp;b=2|weather.example>.')
+        self.assertEqual(slack_text('Read https://example.org/wiki/Thing_(detail).'),
+                         'Read <https://example.org/wiki/Thing_(detail)|example.org>.')
+        self.assertEqual(slack_text('(example.org (https://www.example.org/day))'),
+                         '(<https://www.example.org/day|example.org>)')
+
+    def test_control_syntax_credentials_and_code_are_not_activated(self):
+        from capo.message_format import slack_text
+        text='<@OTHER> <!channel> `https://example.org/a` https://user:pass@example.org/private'
+        result=slack_text(text)
+        self.assertNotIn('<@',result);self.assertNotIn('<!',result)
+        self.assertIn('`https://example.org/a`',result)
+        self.assertNotIn('<https://user',result)
+        self.assertEqual(slack_text('https://example.org/a|bad'),'<https://example.org/a%7Cbad|example.org>')
+
+    def test_message_boundary_preserves_entire_url(self):
+        from capo.message_format import slack_chunks,slack_text
+        text='a'*2490+' https://example.org/long/path?query=value end'
+        chunks=slack_chunks(text)
+        self.assertEqual(''.join(chunks),text)
+        self.assertIn('<https://example.org/long/path?query=value|example.org>',
+                      ''.join(slack_text(chunk) for chunk in chunks))

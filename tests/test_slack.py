@@ -501,7 +501,21 @@ class SlackCase(unittest.TestCase):
     def test_reply_does_not_interpret_mentions(self):
         self.service.reply(self.body()["event"], "<@UOTHER> & <!channel>")
         self.assertEqual(self.client.messages[0]["text"], "&lt;@UOTHER&gt; &amp; &lt;!channel&gt;")
-        self.assertFalse(self.client.messages[0]["mrkdwn"])
+        self.assertTrue(self.client.messages[0]["mrkdwn"])
+
+    def test_link_chunks_remain_clickable_after_restart(self):
+        text='a'*2490+' https://example.org/long/path?query=value end'
+        body=self.body('help','EvLinks')
+        ingest(self.store.home,self.config,body)
+        with patch.object(self.service,'dispatch',return_value=text):self.service.process_messages()
+        restarted=SlackService(self.store,self.config,self.client)
+        with patch.object(restarted,'dispatch',side_effect=AssertionError('Already generated')):
+            import time
+            with patch('capo.slack.time.time',return_value=time.time()+10):restarted.process_messages()
+        delivered=''.join(row['text'] for row in self.client.messages)
+        self.assertEqual(delivered,'a'*2490+' <https://example.org/long/path?query=value|example.org> end')
+        self.assertTrue(all(row['mrkdwn'] for row in self.client.messages))
+        self.assertFalse(self.store.pending_slack())
 
     def test_run_child_does_not_inherit_slack_tokens(self):
         self.service.dispatch("Ev123", self.body())

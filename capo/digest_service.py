@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from .conversation import _write
-from .message_format import plain_text
+from .message_format import plain_text, slack_text
 from .digest import DigestStore, compose, identity, scope, slot
 from .digest_sources import collect
 
@@ -154,7 +154,9 @@ class DigestManager:
             if now.timestamp()-run['sending_at']<60:return
         if now.timestamp()>=run['deadline']:
             run['status']='expired';self.db.save(run,now);return
-        run.setdefault('wire_text', html.escape(plain_text(run['payload']['text']), quote=False))
+        if 'wire_text' not in run:
+            run['wire_text'] = slack_text(plain_text(run['payload']['text']))
+            run['wire_mrkdwn'] = True
         run.update(status='sending',sending_at=now.timestamp(),retry_at=now.timestamp()+60,
                    marker=str(uuid.uuid5(uuid.NAMESPACE_URL,run['key'])))
         self.db.save(run,now)
@@ -162,7 +164,7 @@ class DigestManager:
             result=self.service.client.chat_postMessage(channel=run['identity']['channel_id'],
                 text=run['wire_text'],client_msg_id=run['marker'],
                 metadata={'event_type':'capo_digest','event_payload':{'key':run['marker']}},
-                mrkdwn=False,parse='none',link_names=False,unfurl_links=False,unfurl_media=False)
+                mrkdwn=run.get('wire_mrkdwn',False),parse='none',link_names=False,unfurl_links=False,unfurl_media=False)
             if not result.get('ok',True) or not result.get('ts'):return
             self.db.delivered(run,result['ts'],now)
         except Exception as exc:

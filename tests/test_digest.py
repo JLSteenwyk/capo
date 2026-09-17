@@ -75,13 +75,14 @@ class DigestTests(unittest.TestCase):
         self.service.client.chat_postMessage.assert_called_once()
 
     def test_formatted_uncertain_post_reconciles_exact_sent_text(self):
-        self.payload['text'] = '**Today**\n- Read the brief.\n</document>\n</invoke>'
+        self.payload['text'] = '**Today**\n- Read https://example.org/brief.\n</document>\n</invoke>'
         run = self.run_record()
         self.service.client.chat_postMessage.side_effect = TimeoutError()
         self.manager.tick(self.now)
         run = self.db.get(run['key'])
         wire = self.service.client.chat_postMessage.call_args.kwargs['text']
-        self.assertEqual(wire, 'Today\n- Read the brief.')
+        self.assertEqual(wire, 'Today\n- Read <https://example.org/brief|example.org>.')
+        self.assertTrue(self.service.client.chat_postMessage.call_args.kwargs['mrkdwn'])
         self.assertEqual(run['wire_text'], wire)
         self.service.client.conversations_history.return_value = {'ok':True,'messages':[
             dict(ts='456.7',bot_id='BBOT',user='UBOT',text=wire,client_msg_id=run['marker'])]}

@@ -1,4 +1,4 @@
-"""Readable plain-text Slack prose without interpreting model-supplied markup."""
+"""Readable prose and explicit Slack links with escaped control syntax."""
 import re
 
 # Preserve code verbatim, including XML examples and Markdown operators. An
@@ -44,3 +44,56 @@ def _prose(text):
     text = re.sub(r'(?m)^(\s*)\* +', r'\1- ', text)
     text = re.sub(r'\[([^\]\n]+)\]\((https?://[^\s)]+)\)', r'\1 (\2)', text)
     return text
+
+
+def slack_text(text):
+    """Render HTTP sources explicitly; all other Slack control syntax stays escaped."""
+    import html
+    from urllib.parse import urlsplit
+    def prose(value):
+        # Collapse the domain (URL) form produced by plain_text without hiding
+        # arbitrary surrounding prose. Other URLs get their host as the label.
+        pattern = r'(?:(?P<label>[A-Za-z0-9_.-]+) \()?(?P<url>https?://[^\s<>`]+)'
+        parts=[];end=0
+        for match in re.finditer(pattern,value):
+            url=match['url'];tail=''
+            while url and (url[-1] in '.,;!?' or (url[-1]==')' and url.count(')')>url.count('('))):
+                tail=url[-1]+tail;url=url[:-1]
+            try:
+                parsed=urlsplit(url)
+                valid=bool(parsed.hostname and not parsed.username and not parsed.password)
+            except ValueError:
+                valid=False
+            parts.append(html.escape(value[end:match.start()],quote=False))
+            if not valid:
+                parts.append(html.escape(match.group(),quote=False))
+            else:
+                label=parsed.hostname.removeprefix('www.')
+                prefix=(match['label']+' (') if match['label'] else ''
+                if match['label'] and match['label'].casefold().removeprefix('www.')==label.casefold() and tail.startswith(')'):
+                    prefix='';tail=tail[1:]
+                parts.append(html.escape(prefix,quote=False)+'<'+html.escape(url.replace('|','%7C'),quote=False)
+                             +'|'+html.escape(label,quote=False)+'>'+html.escape(tail,quote=False))
+            end=match.end()
+        parts.append(html.escape(value[end:],quote=False))
+        return ''.join(parts)
+    parts=[];end=0
+    for match in _CODE.finditer(text):
+        parts.extend((prose(text[end:match.start()]),html.escape(match.group(),quote=False)))
+        end=match.end()
+    parts.append(prose(text[end:]))
+    return ''.join(parts)
+
+
+def slack_chunks(text, limit=2500):
+    """Keep source URLs intact at message boundaries; persist chunks for retries."""
+    links=list(re.finditer(r'https?://[^\s<>`]+',text))
+    chunks=[];start=0
+    while start<len(text):
+        end=min(start+limit,len(text))
+        for link in links:
+            if link.start()<end<link.end():
+                end=link.start() if link.start()>start else link.end()
+                break
+        chunks.append(text[start:end]);start=end
+    return chunks
