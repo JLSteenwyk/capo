@@ -35,7 +35,7 @@ Reply in the digest's thread without an @mention:
 - “Send it at 7:30 am.”
 - “Reset my digest preferences.”
 
-Outside a digest thread, mention Capo and ask naturally; `@Capo digest ...` also works. Only the configured owner can change preferences. Replayed Slack events do not apply feedback twice. Silence and thanks do not change interests. Reset restores starting preferences and delivery time while preserving the current pause state. Previously shared story URLs remain excluded. Capo can apply multiple clearly requested changes with fresh preference reads between them, and asks when feedback is materially ambiguous.
+Outside a digest thread, ask naturally in the dedicated Capo channel; `@Capo digest ...` also works. Only the configured owner can change preferences. Replayed Slack events do not apply feedback twice. Silence and thanks do not change interests. Reset restores starting preferences and delivery time while preserving the current pause state. Previously shared story URLs remain excluded. Capo can apply multiple clearly requested changes with fresh preference reads between them, and asks when feedback is materially ambiguous.
 
 Following a topic changes ranking within the configured source coverage; it does not give Capo access to every news source. Excluded phrases are also filtered locally before selection. Story numbers are bound to their original digest, so feedback on an older digest remains meaningful.
 

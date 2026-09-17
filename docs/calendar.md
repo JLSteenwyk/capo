@@ -7,7 +7,7 @@ Ask Capo in Slack:
 - “Move tomorrow’s walk to 10–10:30 am.”
 - “Delete tomorrow’s walk.”
 
-Start with an @mention. Replies in that thread do not need one. Capo asks when details are missing or more than one event matches. Clear requests to create, edit, or delete one personal event run directly.
+Write in the dedicated Capo channel; @mentions are optional, including for new conversations. Capo asks when details are missing or more than one event matches. Clear requests to create, edit, or delete one personal event run directly.
 
 ## Connect your account
 

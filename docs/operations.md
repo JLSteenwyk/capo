@@ -79,7 +79,7 @@ Issue intake reads and deduplicates the issue; it does not post comments. For an
 
 ## Clarification and follow-up in Slack
 
-Starting a conversation requires an @mention in the configured channel. Replies in that Capo thread do not require another mention:
+Write directly in the configured Capo channel to start a conversation. New messages and thread replies do not require an @mention:
 
 ```text
 @capo clarify: Preserve the existing function signature.

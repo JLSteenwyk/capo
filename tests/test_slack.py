@@ -147,11 +147,9 @@ class SlackCase(unittest.TestCase):
         self.assertIn('Approved', self.service.dispatch('EvApproveBrowser', self.body('approve')))
         self.assertEqual(json.loads((directory/'approval.json').read_text())['digest'], 'abc')
 
-    def test_plain_thread_replies_require_a_known_owner_conversation(self):
+    def test_owner_messages_start_conversations_without_mentions(self):
         reply = self.body('help', 'EvPlain')
         reply['event'].update(type='message', text='help', ts='124.0', thread_ts='123.456')
-        self.assertFalse(ingest(self.store.home, self.config, reply))
-        self.assertTrue(ingest(self.store.home, self.config, self.body('help', 'EvStart')))
         self.assertTrue(ingest(self.store.home, self.config, reply))
         self.assertEqual(self.service.dispatch('EvPlain', reply), HELP)
         stranger = self.body('help', 'EvStranger')
@@ -159,7 +157,8 @@ class SlackCase(unittest.TestCase):
         self.assertFalse(ingest(self.store.home, self.config, stranger))
         top = self.body('help', 'EvTop')
         top['event'].update(type='message', text='help')
-        self.assertFalse(ingest(self.store.home, self.config, top))
+        self.assertTrue(ingest(self.store.home, self.config, top))
+        self.assertEqual(self.service.dispatch('EvTop', top), HELP)
         changed = dict(reply, event=dict(reply['event'], subtype='message_changed'))
         self.assertFalse(ingest(self.store.home, self.config, changed))
 
@@ -172,6 +171,28 @@ class SlackCase(unittest.TestCase):
         self.assertFalse(ingest(self.store.home, self.config, mention))
         count = self.store.db.execute('SELECT COUNT(*) FROM slack_inbox').fetchone()[0]
         self.assertEqual(count, 2)
+
+    def test_top_level_mentions_deduplicate_in_either_subscription_order(self):
+        for index, first_type in enumerate(('message', 'app_mention')):
+            first=self.body('help', 'first-'+str(index))
+            first['event'].update(type=first_type, ts=str(900+index)+'.0')
+            second=dict(first, event_id='second-'+str(index), event=dict(first['event'],
+                type='app_mention' if first_type=='message' else 'message'))
+            self.assertTrue(ingest(self.store.home,self.config,first))
+            self.assertFalse(ingest(self.store.home,self.config,second))
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM slack_inbox').fetchone()[0],2)
+
+    def test_unmentioned_messages_keep_owner_channel_and_bot_boundaries(self):
+        for event_change in ({'user':'OTHER'},{'channel':'OTHER'},{'bot_id':'BOT'},
+                             {'subtype':'message_changed'},{'subtype':'message_deleted'},
+                             {'subtype':'bot_message'},{'type':'reaction_added'}):
+            body=self.body();body['event'].update(type='message',text='help')
+            body['event'].update(event_change)
+            self.assertFalse(ingest(self.store.home,self.config,body))
+            with self.assertRaises(ValueError):self.service.dispatch('denied',body)
+        body=self.body();body['event'].update(type='message',text='help');body['team_id']='OTHER'
+        self.assertFalse(ingest(self.store.home,self.config,body))
+        self.assertEqual(self.store.pending_slack(),[])
 
     def test_superseded_blocker_is_not_announced(self):
         self.service.dispatch("Ev123", self.body())

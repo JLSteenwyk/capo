@@ -233,41 +233,11 @@ def owner_message(config, body):
             and not event.get("bot_id") and event.get("subtype") in (None, "file_share"))
 
 
-def known_thread(store, config, thread):
-    from .scheduled_requests import thread_context as scheduled_context
-    if scheduled_context(store.home, config, thread):return True
-    from .reminders import known_thread as reminder_thread
-    if reminder_thread(store.home, config, thread):return True
-    from .heartbeat import known_thread as heartbeat_thread
-    if heartbeat_thread(store.home, config, thread):return True
-    from .digest_service import known_thread as digest_thread
-    if digest_thread(store.home, config, thread):
-        return True
-    for objective in store.list():
-        identity = objective.get("slack", {})
-        if (identity.get("thread_ts", identity.get("ts")) == thread
-                and all(identity.get(k) == config[k] for k in ("team_id", "channel_id", "owner_user_id"))):
-            return True
-    # A mention can begin a conversation before there is a development/browser
-    # objective (for example, while asking which movie the owner wants).
-    for row in store.db.execute("SELECT data FROM slack_inbox"):
-        prior = json.loads(row[0])
-        event = prior.get("event", {})
-        if (owner_message(config, prior) and event.get("type") == "app_mention"
-                and event.get("thread_ts", event.get("ts")) == thread):
-            return True
-    return False
-
-
 def authorized(config, body, store=None):
-    if not owner_message(config, body):
-        return False
-    event = body.get("event", {})
-    if event.get("type") == "app_mention":
-        return True
-    return (event.get("type") == "message" and bool(event.get("thread_ts"))
-            and event["thread_ts"] != event.get("ts") and store is not None
-            and known_thread(store, config, event["thread_ts"]))
+    # The configured channel is the owner's dedicated Capo conversation space.
+    # Both Slack subscriptions may deliver the same message; ingest deduplicates.
+    return (owner_message(config, body)
+            and body.get("event", {}).get("type") in ("app_mention", "message"))
 
 
 def ingest(home, config, body):
