@@ -69,7 +69,7 @@ GitHub commands normally honor `GH_TOKEN`/`GITHUB_TOKEN` and the normal `gh` con
 
 Each rejected round feeds the evidence into another implementation pass, up to the configured limit. The default limits are three rounds, 24 provider calls, and 900 seconds per command. Set `--max-rounds`, `--max-calls`, and `--timeout` when adding an objective.
 
-To select a smaller available team explicitly, add `--workers codex --reviewer claude`. Claude still plans and makes the final acceptance decision, with a separate Claude session reviewing Codex's changes. The runtime rejects plans that use an excluded worker or assign implementation to the explicitly selected reviewer. No provider is silently substituted.
+To select a smaller available team explicitly, add `--workers codex --reviewer claude`. Claude still plans and makes the final acceptance decision, with a separate Claude session reviewing Codex's changes. The runtime rejects plans that use an excluded worker or assign implementation to the explicitly selected reviewer. [Capacity-aware routing](docs/subscription-capacity.md) checks quota before delegation and records any switch within the allowed implementation team. A single selected worker and an explicit reviewer stay pinned.
 
 Artifacts are in `$CAPO_HOME/artifacts/OBJECTIVE_ID/`: prompts, provider output, structured results, process metadata, test logs, `changes.patch`, and `delivery.md`. Treat them as private project data.
 

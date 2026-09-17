@@ -53,6 +53,8 @@ def shared_tools(home,config,documents,request=None):
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
     from .team_status import TeamStatus
     tools.extend(TeamStatus(home, config).tools())
+    from .capacity import Capacity
+    tools.extend(Capacity(home).tools())
     from .specialist_tools import SpecialistTools
     tools.extend(SpecialistTools(home, owner_key(config)).tools(writable=bool((request or {}).get('owner_request'))))
     if all(config.get(k) for k in ('team_id', 'channel_id', 'owner_user_id')):

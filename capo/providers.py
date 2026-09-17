@@ -84,12 +84,25 @@ def run_cli(provider, argv, cwd, directory, timeout, stdin=None):
 
 
 class Providers:
-    def __init__(self, timeout=900, config=None):
+    def __init__(self, timeout=900, config=None, capacity=None):
         from .transport import load_config, validate_config
+        from .capacity import Capacity
         self.timeout = timeout
         self.config = load_config() if config is None else validate_config(config)
+        self.capacity = Capacity() if capacity is None else capacity
 
     def call(self, provider, prompt, schema, cwd, directory, images=None):
+        from .recovery import RateLimited
+        if self.capacity:
+            self.capacity.check(provider)
+        try:
+            return self._call(provider, prompt, schema, cwd, directory, images)
+        except RateLimited as exc:
+            if self.capacity:
+                self.capacity.limited(provider, exc.reset_at)
+            raise
+
+    def _call(self, provider, prompt, schema, cwd, directory, images=None):
         if images and provider != "claude":
             raise ValueError("Image input is currently supported by Claude only")
         from .communication import writing_style

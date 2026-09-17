@@ -491,6 +491,35 @@ class SlackCase(unittest.TestCase):
             self.assertNotIn("SLACK_APP_TOKEN", process.call_args.kwargs["env"])
             self.assertNotIn("SLACK_BOT_TOKEN", process.call_args.kwargs["env"])
 
+    def test_capacity_wait_does_not_busy_loop_runner(self):
+        import time
+        self.service.dispatch('Ev123', self.body())
+        objective = self.store.list()[0]
+        objective['capacity_retry_at'] = time.time() + 3600
+        self.store.save(objective, 'capacity_waiting')
+        self.config['auto_run'] = True
+        with patch('capo.slack.subprocess.Popen') as process:
+            self.service.tick()
+            process.assert_not_called()
+            objective['capacity_retry_at'] = 0
+            self.store.save(objective, 'quota_reset')
+            self.service.tick()
+            process.assert_called_once()
+
+    def test_exited_runner_with_capacity_checkpoint_remains_queued(self):
+        import time
+        from unittest.mock import Mock
+        self.service.dispatch('Ev123', self.body())
+        objective = self.store.list()[0]
+        objective.update(capacity_retry_at=time.time()+3600, supervisor_pid=12345)
+        self.store.save(objective, 'capacity_waiting')
+        self.service.active = Mock(pid=12345)
+        self.service.active.poll.return_value = 0
+        self.service.active_id = objective['id']
+        self.service.tick()
+        self.assertEqual(self.store.get(objective['id'])['status'], 'queued')
+        self.assertIsNone(self.service.active)
+
     def test_thread_followup_is_durable_and_deduplicated(self):
         self.service.dispatch("Ev123", self.body())
         objective = self.store.list()[0]

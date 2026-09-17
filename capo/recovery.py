@@ -141,6 +141,17 @@ class RecoveringProvider:
         # Native image support remains provider-specific; never discard images.
         if images:
             selected = provider
+        from .capacity import Capacity
+        capacity = getattr(self.provider, 'capacity', None)
+        if isinstance(capacity, Capacity):
+            try:
+                selected, route = capacity.choose(selected, [provider] if images else choices)
+                state['routing'] = route
+            except RateLimited as exc:
+                # No worker was invoked: waiting must not spend an attempt.
+                state.update(status='waiting', retry_at=exc.reset_at)
+                _write(path, state)
+                raise RetryLater(exc.reset_at, 'Waiting for subscription capacity') from None
         attempt = {'provider': selected, 'started_at': now}
         state['attempts'].append(attempt)
         state['status'] = 'running'
@@ -151,6 +162,10 @@ class RecoveringProvider:
             validate(result, schema)
         except Exception as exc:
             category, retry_at = failure(exc, self.clock())
+            if isinstance(exc, RateLimited) and isinstance(capacity, Capacity) and not images:
+                alternatives = capacity.snapshot([p for p in choices if p != selected])
+                if any(row['state'] != 'exhausted' for row in alternatives.values()):
+                    retry_at = self.clock()
             attempt.update(category=category, finished_at=self.clock())
             state.update(status='failed' if retry_at is None or count+1 >= self.policy['max_attempts'] else 'waiting',
                          retry_at=max(retry_at or 0, self.clock() + min(3600, self.policy['base_delay'] * 2**count)))

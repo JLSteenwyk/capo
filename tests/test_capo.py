@@ -79,6 +79,58 @@ class RepositoryCase(unittest.TestCase):
         Runtime(self.store, fake).run(objective["id"])
         self.assertEqual(len(fake.calls), 4)
 
+    def test_capacity_reroutes_implementation_and_preserves_independent_review(self):
+        import time
+        from capo.capacity import Capacity
+        now = time.time()
+        capacity = Capacity(self.store.home, clock=lambda: now, probes={})
+        capacity.limited('codex', now + 3600)
+        fake = FakeProviders()
+        fake.capacity = capacity
+        objective = self.objective()
+        runtime = Runtime(self.store, fake)
+        waiting = runtime.run(objective['id'])
+        self.assertEqual(waiting['status'], 'queued')
+        self.assertEqual(waiting['next_task'], 1)
+        self.assertEqual(waiting['calls'], 2)
+        self.assertEqual([p for p, _ in fake.calls], ['claude', 'grok'])
+        self.assertEqual(waiting['routing'][-1]['selected'], 'grok')
+        # The actual implementer is Grok, so independent Codex review waits.
+        self.assertEqual(runtime.run(objective['id'])['calls'], 2)
+        now += 3601
+        done = runtime.run(objective['id'], retry=True)
+        self.assertEqual(done['status'], 'completed')
+        self.assertEqual([p for p, _ in fake.calls], ['claude', 'grok', 'codex', 'claude'])
+        self.assertEqual(done['verification']['reviews'][0]['provider'], 'codex')
+
+    def test_capacity_respects_pinned_worker_and_does_not_spend_call_budget_waiting(self):
+        import time
+        from capo.capacity import Capacity
+        capacity = Capacity(self.store.home, probes={})
+        capacity.limited('codex', time.time() + 3600)
+        fake = FakeProviders()
+        fake.capacity = capacity
+        objective = self.objective()
+        objective['workers'] = ['codex']
+        self.store.save(objective, 'pin_worker')
+        result = Runtime(self.store, fake).run(objective['id'])
+        self.assertEqual(result['status'], 'queued')
+        self.assertEqual(result['calls'], 1)
+        self.assertEqual([p for p, _ in fake.calls], ['claude'])
+
+    def test_capacity_cannot_take_reserved_reviewer_for_implementation(self):
+        from capo.capacity import Capacity
+        capacity = Capacity(self.store.home, probes={})
+        fake = FakeProviders()
+        fake.capacity = capacity
+        objective = self.objective()
+        objective['reviewer'] = 'grok'
+        self.store.save(objective, 'reserve_reviewer')
+        result = Runtime(self.store, fake).run(objective['id'])
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(result['implementation_workers'], ['codex'])
+        self.assertEqual(result['routing'][1]['capacity'].keys(), {'codex'})
+
     def test_review_rejection_revises_before_completion(self):
         objective = self.objective()
         fake = FakeProviders(reject_first=True)
@@ -313,7 +365,7 @@ class ProcessCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, patch("capo.providers.run_process",
                 return_value='{"is_error":true,"result":"quota"}'):
             with self.assertRaises(WorkerError):
-                Providers().call("claude", "test", PLAN, Path(temp), Path(temp) / "a")
+                Providers(capacity=False).call("claude", "test", PLAN, Path(temp), Path(temp) / "a")
 
     def test_grok_response_envelopes(self):
         result = {"summary": "Synthetic plan", "acceptance": [], "tasks": []}
@@ -325,7 +377,7 @@ class ProcessCase(unittest.TestCase):
         ]:
             with self.subTest(envelope=envelope), tempfile.TemporaryDirectory() as temp:
                 with patch("capo.providers.run_process", return_value=json.dumps(envelope)):
-                    actual = Providers().call("grok", "test", PLAN, Path(temp), Path(temp) / "a")
+                    actual = Providers(capacity=False).call("grok", "test", PLAN, Path(temp), Path(temp) / "a")
                 self.assertEqual(actual, result)
                 validate(actual, PLAN)
 
@@ -336,7 +388,7 @@ class ProcessCase(unittest.TestCase):
             with self.subTest(envelope=envelope), tempfile.TemporaryDirectory() as temp:
                 with patch("capo.providers.run_process", return_value=json.dumps(envelope)):
                     with self.assertRaises(WorkerError):
-                        Providers().call("grok", "test", PLAN, Path(temp), Path(temp) / "a")
+                        Providers(capacity=False).call("grok", "test", PLAN, Path(temp), Path(temp) / "a")
 
     def test_strict_contract_rejects_extra_fields_and_wrong_types(self):
         with self.assertRaises(ValueError):

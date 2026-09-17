@@ -37,7 +37,7 @@ class TransportCase(unittest.TestCase):
     def test_round_trip_and_private_staging_cleanup(self):
         with patch("capo.transport.command", side_effect=self.local_command), patch("capo.transport.health",
                    return_value={"binary_ok": True, "bubblewrap": True, "login_file_present": True}):
-            result = Providers(5, {"grok": self.config}).call("grok", "synthetic task", {}, self.root, self.root / "attempt")
+            result = Providers(5, {"grok": self.config}, capacity=False).call("grok", "synthetic task", {}, self.root, self.root / "attempt")
         self.assertEqual(result, {"ok": True})
         record = json.loads((self.root / "attempt/remote.json").read_text())
         directory = guest.root_dir() / record["run_id"]

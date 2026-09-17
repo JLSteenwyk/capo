@@ -28,5 +28,5 @@ class WritingStyleTests(unittest.TestCase):
                         return ''
                     return json.dumps({'structured_output':{'reply':'Done'}})
                 with patch('capo.communication.writing_style',return_value='STYLE POLICY\n'),patch('capo.providers.run_process',side_effect=run):
-                    Providers(config={}).call(provider,'TASK',object_schema({'reply':TEXT}),root,root/'run')
+                    Providers(config={}, capacity=False).call(provider,'TASK',object_schema({'reply':TEXT}),root,root/'run')
                 self.assertEqual((root/'run/prompt.txt').read_text(),'STYLE POLICY\nTASK')

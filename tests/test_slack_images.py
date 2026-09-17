@@ -24,7 +24,7 @@ class ImageTests(unittest.TestCase):
     def test_provider_uses_real_image_blocks_without_enabling_tools(self):
         result={'type':'result','subtype':'success','structured_output':{'answer':'A diagram'}}
         with patch('capo.providers.run_process',return_value=json.dumps({'type':'system'})+'\n'+json.dumps(result)) as run:
-            value=Providers(config={}).call('claude','Describe it',object_schema({'answer':TEXT}),self.root,self.root/'artifacts',images=[{'media_type':'image/png','data':base64.b64encode(self.png).decode()}])
+            value=Providers(config={}, capacity=False).call('claude','Describe it',object_schema({'answer':TEXT}),self.root,self.root/'artifacts',images=[{'media_type':'image/png','data':base64.b64encode(self.png).decode()}])
         self.assertEqual(value,{'answer':'A diagram'})
         args=run.call_args.args
         self.assertEqual(args[0][args[0].index('--tools')+1],'')
@@ -43,7 +43,7 @@ class ImageTests(unittest.TestCase):
                 'result':'Failed to authenticate: OAuth session expired and could not be refreshed'}
         with patch('capo.providers.run_process',return_value=json.dumps(result)):
             with self.assertRaisesRegex(AuthenticationError,'login has expired'):
-                Providers(config={}).call('claude','Describe it',object_schema({'answer':TEXT}),
+                Providers(config={}, capacity=False).call('claude','Describe it',object_schema({'answer':TEXT}),
                     self.root,self.root/'expired',images=[{'media_type':'image/png',
                     'data':base64.b64encode(self.png).decode()}])
 

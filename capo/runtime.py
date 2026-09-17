@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -75,15 +76,23 @@ class Runtime:
             objective.pop(key, None)
         self.store.save(objective, "followups_incorporated")
 
-    def call(self, objective, provider, role, schema, context):
+    def call(self, objective, provider, role, schema, context, allowed=None):
         self.check_cancellation(objective)
         self.check_followups(objective)
-        context = dict(context, owner_followups=objective.get("followups", []))
+        capacity = getattr(self.providers, 'capacity', None)
+        route = None
+        if capacity:
+            provider, route = capacity.choose(provider, allowed or [provider])
+        context = dict(context, owner_followups=objective.get("followups", []), delegated_provider=provider)
         if objective["calls"] >= objective["max_calls"]:
             raise ValueError("Objective worker-call budget exhausted")
         objective["calls"] += 1
         objective["status"] = "running"
         objective["active_stage"] = role
+        if objective.pop('capacity_retry_at', None) is not None:
+            objective.pop('error', None)
+        if route:
+            objective.setdefault('routing', []).append(dict(route, role=role, call=objective['calls']))
         self.store.save(objective, "attempt_started")
         directory = self.store.home / "artifacts" / objective["id"] / f"{objective['calls']:03d}-{role}"
         prompt = (f"You are the {role} for {objective.get('team_name', 'SPARKITscience')}, coordinated by Capo. Claude Code is the CEO. "
@@ -97,6 +106,8 @@ class Runtime:
                                      Path(objective["workspace"]), directory)
         self.check_followups(objective)
         validate(result, schema)
+        if role == 'implementer':
+            objective['implementation_workers'] = sorted(set(objective.get('implementation_workers', [])) | {provider})
         self.store.save(objective, "attempt_finished")
         return result
 
@@ -165,7 +176,12 @@ class Runtime:
                 return objective
             if retry:
                 self.store.clear_cancellation_requests(objective_id)
-            self.providers = self.providers or Providers(objective["timeout"], config=objective.get("providers_config"))
+            if objective.get('capacity_retry_at', 0) > time.time() and not retry:
+                return objective
+            from .capacity import Capacity
+            from .recovery import RateLimited
+            self.providers = self.providers or Providers(objective["timeout"], config=objective.get("providers_config"),
+                                                        capacity=Capacity(self.store.home))
             objective["supervisor_pid"] = os.getpid()
             self.store.save(objective, "supervisor_started")
             previous_handler = signal.getsignal(signal.SIGTERM)
@@ -181,6 +197,11 @@ class Runtime:
                         break
                     except FollowupPending:
                         self.incorporate_followups(objective)
+            except RateLimited as exc:
+                objective.update(status='queued', capacity_retry_at=max(time.time()+30, exc.reset_at))
+                objective['error'] = 'Waiting for subscription capacity; saved work will resume after the reset.'
+                self.store.save(objective, 'capacity_waiting')
+                result = objective
             except KeyboardInterrupt:
                 stopped.set()
                 objective["status"] = "cancelled"
@@ -223,6 +244,9 @@ class Runtime:
                    "available_implementation_workers": implementers,
                    "reviewer": objective.get("reviewer", "auto"),
                    "checks": objective["checks"]}
+        capacity = getattr(self.providers, 'capacity', None)
+        if capacity:
+            context['subscription_capacity'] = capacity.snapshot(implementers, refresh=True)
         if objective["plan"] is None:
             plan_schema = json.loads(json.dumps(PLAN))
             plan_schema["properties"]["tasks"]["items"]["properties"]["worker"]["enum"] = implementers
@@ -230,6 +254,8 @@ class Runtime:
                 instructions=_DELIVERY_SEQUENCE +
                 STYLE +
                 "Plan 1-6 sequential implementation tasks using only available_implementation_workers. "
+                "Consider subscription_capacity alongside task fit. Unknown quota is not unlimited. "
+                "The host checks capacity again before delegation and may choose another eligible implementer. "
                 "The runtime performs tests, independent review, and CEO acceptance automatically. "
                 "Do not add review, testing-only, or acceptance tasks to the implementation plan. "
                 "The explicit reviewer is reserved for independent review and cannot implement. "
@@ -261,6 +287,11 @@ class Runtime:
             objective["status"] = "queued"
             self.store.save(objective, "planned")
         tasks = objective["plan"]["tasks"]
+        if 'implementation_workers' not in objective:
+            # Older checkpoints predate routing receipts. Preserve the workers
+            # that already contributed before this version resumes the plan.
+            previous_tasks = tasks if objective['round'] else tasks[:objective['next_task']]
+            objective['implementation_workers'] = sorted({task['worker'] for task in previous_tasks})
         while objective["round"] < objective["max_rounds"]:
             for index in range(objective["next_task"], len(tasks)):
                 task = tasks[index]
@@ -269,7 +300,7 @@ class Runtime:
                     "objective": objective["request"], "plan": objective["plan"], "task": task,
                     "repository": current, "feedback": objective["feedback"],
                     "instructions": "Return full replacement contents for changed files. Use delete=true "
-                    "only to remove a file. No tools or direct edits. Do not edit omitted/protected files."})
+                    "only to remove a file. No tools or direct edits. Do not edit omitted/protected files."}, allowed=implementers)
                 for change in report["changes"]:
                     if change["path"] in current["omitted"]:
                         raise ValueError(f"Cannot edit an omitted file: {change['path']}")
@@ -293,7 +324,8 @@ class Runtime:
                 raise ValueError("Verification changed the candidate files; inspect workspace before retry")
             if len(diff) > 150_000:
                 raise ValueError("Diff is too large for this first-version review; split the objective")
-            reviewers = sorted({"grok" if task["worker"] == "codex" else "codex" for task in tasks})
+            actual_workers = objective.get('implementation_workers') or [task['worker'] for task in tasks]
+            reviewers = sorted({"grok" if worker == "codex" else "codex" for worker in actual_workers})
             if objective.get("reviewer", "auto") != "auto":
                 reviewers = [objective["reviewer"]]
             reviews = []

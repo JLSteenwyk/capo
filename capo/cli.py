@@ -29,6 +29,9 @@ def parser():
                       help="Private JSON transport configuration (or CAPO_PROVIDERS_CONFIG)")
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Check executables without invoking models")
+    quota = commands.add_parser('capacity', help='Read subscription quota without invoking models')
+    quota.add_argument('--cached', action='store_true', help='Use saved observations only')
+    commands.add_parser('capacity-claude', help='Import Claude statusline quota JSON from stdin (no session data retained)')
     add = commands.add_parser("add", help="Queue a local development objective")
     add.add_argument("request")
     add.add_argument("--repo", type=Path, required=True)
@@ -205,7 +208,22 @@ def recover(store, objective_id):
 def main(argv=None):
     args = parser().parse_args(argv)
     store = None
+    previous_home = os.environ.get('CAPO_HOME')
+    # Nested reasoning adapters and child processes share this invocation's
+    # state directory, including when --home overrides the environment.
+    os.environ['CAPO_HOME'] = str(args.home.resolve())
     try:
+        if args.command in ('capacity', 'capacity-claude'):
+            from .capacity import Capacity, claude_windows
+            capacity = Capacity(args.home)
+            if args.command == 'capacity-claude':
+                payload = sys.stdin.read(1000001)
+                if len(payload) > 1000000:
+                    raise ValueError('Statusline payload too large')
+                capacity.observe('claude', claude_windows(json.loads(payload)), 'claude_statusline')
+            else:
+                print(json.dumps(capacity.snapshot(refresh=not args.cached), indent=2))
+            return 0
         if args.command in ('imessage', 'imessage-check', 'imessage-status'):
             from .slack import validate_config
             from .imessage import run as imessage_run, journal, status as imessage_status
@@ -329,5 +347,9 @@ def main(argv=None):
         print(f"capo: {exc}", file=sys.stderr)
         return 1
     finally:
+        if previous_home is None:
+            os.environ.pop('CAPO_HOME', None)
+        else:
+            os.environ['CAPO_HOME'] = previous_home
         if store is not None:
             store.db.close()

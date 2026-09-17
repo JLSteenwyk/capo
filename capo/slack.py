@@ -941,7 +941,7 @@ class SlackService:
                 objective = self.store.get(self.active_id)
                 pending_followup = self.store.followups(objective["id"]) != objective.get("followups", [])
                 if (objective["status"] not in ("completed", "blocked", "cancelled", "awaiting_input")
-                        and not (objective["status"] == "queued" and pending_followup)
+                        and not (objective["status"] == "queued" and (pending_followup or objective.get('capacity_retry_at')))
                         and objective.get("supervisor_pid", self.active.pid) == self.active.pid):
                     objective["status"] = "blocked"
                     objective["error"] = "Runner exited without a terminal checkpoint; inspect its artifacts"
@@ -968,6 +968,8 @@ class SlackService:
         # Oldest first. Never restart an uncertain running or blocked objective automatically.
         for objective in reversed(self.store.list()):
             if objective["status"] == "queued" and self.owns(objective):
+                if objective.get('capacity_retry_at', 0) > time.time():
+                    continue
                 directory = self.store.home / "artifacts" / objective["id"]
                 directory.mkdir(parents=True, exist_ok=True)
                 env = os.environ.copy()
