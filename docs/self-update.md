@@ -50,3 +50,20 @@ The supervisor itself stays pinned; it cannot autonomously replace its own deplo
 `updates.status` exposes a bounded deployment status to Capo. Detailed state, test logs, prior launch configuration and release checkouts live under `CAPO_HOME/updates`. They may contain private launch settings and must remain private. No releases are deleted automatically, including the supervisor's pinned release and rollback target.
 
 To pause automatic updates, unload `org.capo.updater` with launchctl. If status is `rollback_failed`, inspect the saved launch configuration and service logs locally before resuming; the supervisor stops deploying until the problem is resolved. Do not clear a probation marker while its candidate is unverified. `--redeploy` revalidates the current branch without bypassing checks or the failed-revision hold.
+
+
+## Automatic merge before deployment
+
+Per-repository `allow_publication`, `auto_publish_routine`, and
+`merge_after_approval` together authorize routine accepted changes to publish and
+merge without another owner command. Despite its name, `merge_after_approval`
+also covers standing authorization granted by `auto_publish_routine`. Capo waits
+for GitHub checks, matches the accepted commit, and removes the work branch only
+if it still points to that commit. The updater then handles deployment separately.
+
+This applies to bounded existing-behavior fixes and documentation, including
+eligible self-improvements when `allow_self_improvement` is enabled. Larger changes,
+new source interfaces, and protected enforcement changes remain outside routine
+eligibility. `development.policy` reports effective permissions per repository
+and the last deployment-supervisor status without exposing private configuration.
+A question about capabilities does not itself queue development work.

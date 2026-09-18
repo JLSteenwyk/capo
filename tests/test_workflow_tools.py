@@ -124,3 +124,29 @@ class WorkflowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_policy_exposes_effective_standing_authority_without_private_config(self):
+        settings = self.config['repositories']['project']
+        settings.update(allow_publication=True, auto_publish_routine=True,
+                        merge_after_approval=True, allow_self_improvement=True,
+                        private_value='PRIVATE_FIXTURE')
+        result = self.tools.policy()
+        row = result['repositories'][0]
+        self.assertTrue(row['automatic_routine_merge'])
+        self.assertTrue(row['self_improvement_enabled'])
+        self.assertNotIn('PRIVATE_FIXTURE', json.dumps(result))
+        self.assertNotIn(settings['path'], json.dumps(result))
+        self.assertEqual(self.store.list(), [])
+        settings['allow_publication'] = False
+        row = self.tools.policy()['repositories'][0]
+        self.assertFalse(row['automatic_routine_merge'])
+        self.assertFalse(row['automatic_routine_publication'])
+        settings.update(allow_publication=True, auto_publish_routine=False)
+        row = self.tools.policy()['repositories'][0]
+        self.assertFalse(row['automatic_routine_merge'])
+        self.assertTrue(row['merge_after_owner_approval'])
+
+    def test_policy_requires_authenticated_owner_context(self):
+        invalid = dict(self.request, request_thread='other-thread')
+        with self.assertRaises(PermissionError):
+            WorkflowTools(self.home, self.config, invalid).policy()

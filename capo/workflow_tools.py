@@ -35,6 +35,29 @@ class WorkflowTools:
         finally:
             store.db.close()
 
+    def policy(self):
+        """Describe effective repository permissions without exposing configuration."""
+        with self.session() as (service, _):
+            repositories = []
+            for alias, settings in service.config.get('repositories', {}).items():
+                publication = bool(settings.get('allow_publication'))
+                routine = publication and bool(settings.get('auto_publish_routine'))
+                merge = publication and bool(settings.get('merge_after_approval'))
+                repositories.append({
+                    'repository': alias,
+                    'self_improvement_enabled': bool(settings.get('allow_self_improvement')),
+                    'automatic_routine_publication': routine,
+                    'automatic_routine_merge': routine and merge,
+                    'merge_after_owner_approval': merge,
+                    'routine_scope': 'Up to three Python/Markdown files; bounded changes to existing function bodies, tests or prose. No new source interfaces, imports, sensitive configuration or core enforcement changes.',
+                    'requirements': 'Passing configured checks, independent review, final acceptance, and verification of the exact candidate. Merge waits for passing GitHub checks and a clean matching PR; then removes the unchanged work branch.',
+                    'outside_routine_scope': 'Owner review is required. Core enforcement changes need review outside autonomous apply.',
+                })
+            from .updater import status
+            return {'repositories': repositories, 'deployment_status': status(self.home),
+                    'deployment': 'The separately configured updater deploys merged revisions after CI, regression tests, an idle service and startup health checks. It rolls back unhealthy startup. Dependency, updater and core storage changes require manual rollout. Saved status is evidence of the last supervisor activity, not proof it is currently running.',
+                    'instruction': 'Describe these effective permissions accurately. When automatic_routine_merge is true, do not claim every publication or merge needs a new approval. A capability question alone does not authorize a code change.'}
+
     def list(self):
         with self.session() as (service, _):
             rows = service.current_objectives()
@@ -134,10 +157,11 @@ class WorkflowTools:
 
     def tools(self):
         result = [
+            ReadTool('development.policy', 'Read effective repository permissions and deployment status before answering whether Capo can change, publish, merge or deploy its own code. Distinguishes standing routine authorization from changes needing owner review. Read-only.', object_schema({}), self.policy),
             ReadTool('development.list', 'Discover this owner’s coding objectives, statuses and threads.', object_schema({}), self.list),
-            ReadTool('development.inspect', 'Inspect an owner coding objective and its publication link. The controlled workflow handles implementation, verification, review and publication under repository policy. Approval remains an explicit owner command.', object_schema({'id': TEXT}), self.inspect),
+            ReadTool('development.inspect', 'Inspect an owner coding objective and its publication link. The controlled workflow handles implementation, verification, review and publication under repository policy. Use development.policy for effective permissions; eligible routine work can publish and merge under standing owner authorization.', object_schema({'id': TEXT}), self.inspect),
             ReadTool('development.prepare','Prepare an existing verified candidate for owner review in its original thread. The host delivers the exact review preview. Does not publish, approve, merge, or weaken repository policy.',object_schema({'id':TEXT}),self.prepare,True),
-            ReadTool('development.start', 'Delegate explicitly requested repository work to the existing coding workflow. Preserve the whole owner objective in a bounded brief. This queues work; it does not mean implementation is complete. Do not turn monitoring or a request for advice into permission to edit code.',
+            ReadTool('development.start', 'Delegate explicitly requested repository work to the existing coding workflow. Preserve the whole owner objective in a bounded brief. This queues work; it does not mean implementation is complete. Eligible routine changes can publish and merge automatically under repository policy; consult development.policy rather than assuming every change requires approval. Do not turn monitoring or a request for advice into permission to edit code.',
                 object_schema({'repository': TEXT, 'instructions': TEXT, 'self_improvement': {'type': 'boolean'}}), self.start, True),
             ReadTool('development.manage', 'Follow up or cancel an owner coding objective in its original thread. Does not approve publication or merge. For cancel, instructions may be empty.',
                 object_schema({'id': TEXT, 'action': {'type': 'string', 'enum': ['followup', 'cancel']}, 'instructions': TEXT}), self.manage, True)]
