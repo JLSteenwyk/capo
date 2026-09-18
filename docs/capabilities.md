@@ -151,6 +151,10 @@ is triggered solely by saving a continuation.
 
 Opt-in `social.search` supplies public X evidence through Grok's metered X Search
 API. It accepts a public query, up to five account handles, and optional date bounds.
+Two empty bounds default to the past three UTC calendar days through today;
+explicit dates preserve historical searches, including older writing samples.
+Receipts retain the actual search window. Recent posts can still describe old
+events, so the post-date filter does not establish event freshness.
 The same primitive supports discussion research, public writing samples, source
 lookup and tweet drafting. Claude remains chief and can delegate synthesis to a
 subscription worker; eligible workers receive the same scoped search tool.
@@ -200,3 +204,17 @@ search is not a tool failure: all query terms must match, so broaden the query o
 list recent preferences. Claims about failed tools require actual failure receipts;
 unattempted tools must not be described as unavailable. These drafting instructions
 supplement source and action checks; they do not guarantee a subjective voice match.
+
+
+### Topical source briefs
+
+For current-news drafts, briefs and recommendations, build a source brief before
+writing: the named development, what changed, original event date, source date,
+source URL and relevance. Start with the latest 72 hours, widen to seven days if
+needed, and disclose older material. Use social discussion and primary news sources
+when both are requested. Each draft should have one concrete, supported angle with
+dated source links beside it. Prefer fewer substantiated drafts over generic filler.
+A fresh repost does not make an old announcement new, and a search sample is not
+proof that a topic is trending. Evergreen and historical requests can explicitly
+use a different time frame. The search adapter enforces date bounds; selection and
+semantic freshness still require chief review against the original sources.

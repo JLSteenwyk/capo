@@ -119,3 +119,19 @@ class SocialTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=4) as pool:
             results=list(pool.map(reserve,range(4)))
         self.assertEqual(sum(r is not None for r in results),1)
+
+    def test_empty_dates_bound_search_and_receipt_to_recent_days(self):
+        from datetime import datetime, timezone, timedelta
+        now=datetime.now(timezone.utc).date()
+        with patch('capo.social_tools.request_search',return_value=response()) as api:
+            result=self.tools.search('latest research announcements',[],'','')
+            spec=api.call_args.args[0]['tools'][0]
+            self.assertEqual(spec['from_date'],(now-timedelta(days=3)).isoformat())
+            self.assertEqual(spec['to_date'],now.isoformat())
+            self.assertEqual(result['search_window'],{'from_date':spec['from_date'],'to_date':spec['to_date']})
+
+    def test_historical_voice_sample_retains_explicit_dates(self):
+        with patch('capo.social_tools.request_search',return_value=response()) as api:
+            self.tools.search('writing examples',['example'],'2025-01-01','2025-02-01')
+            self.assertEqual(api.call_args.args[0]['tools'][0]['from_date'],'2025-01-01')
+            self.assertEqual(api.call_args.args[0]['tools'][0]['to_date'],'2025-02-01')
