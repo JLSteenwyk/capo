@@ -53,6 +53,8 @@ def shared_tools(home,config,documents,request=None):
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
     from .personal_memory import PersonalMemory
     tools.extend(PersonalMemory(home,owner_key(config),(request or {}).get('owner_request')).tools())
+    from .request_memory import RequestMemory
+    tools.extend(RequestMemory(home,owner_key(config),'').experience_tools())
     from .updater import status as update_status
     tools.append(ReadTool('updates.status','Read the deployment supervisor status and deployed revision. Updates require merged code, passing checks, an idle service and startup health; this tool cannot bypass approval or trigger a restart.',object_schema({}),lambda:update_status(home)))
     from .team_status import TeamStatus

@@ -1,9 +1,57 @@
+from json import loads as json_load
 import tempfile
 import unittest
 from capo.request_memory import RequestMemory
 
 
 class RequestMemoryTests(unittest.TestCase):
+    def test_experience_pages_across_threads_without_crossing_owners(self):
+        with tempfile.TemporaryDirectory() as home:
+            for i in range(11):
+                RequestMemory(home,'owner','thread'+str(i%2)).record(str(i),'owner',{'message':str(i)})
+            other=RequestMemory(home,'other','thread')
+            other.record('private','owner',{'message':'Other owner data'})
+            memory=RequestMemory(home,'owner','review')
+            first=memory.recent('');second=memory.recent(first['cursor'])
+            self.assertEqual(len(first['entries']),8)
+            self.assertEqual(len(second['entries']),3)
+            self.assertEqual(second['cursor'],'')
+            self.assertEqual(len({e['thread'] for e in first['entries']}),2)
+            self.assertNotIn('Other owner data',str(first)+str(second))
+            self.assertEqual(json_load(memory.evidence(first['entries'][0]['id'])['excerpt'])['message'],'10')
+            self.assertEqual(len(other.recent('')['entries']),1)
+
+    def test_experience_limits_large_evidence_and_validates_references(self):
+        with tempfile.TemporaryDirectory() as home:
+            memory=RequestMemory(home,'owner','thread')
+            memory.record('event','receipt',{'body':'x'*20000})
+            entry=memory.recent('')['entries'][0]
+            self.assertTrue(entry['truncated']);self.assertEqual(len(entry['excerpt']),2000)
+            full=memory.evidence(entry['id'])
+            self.assertTrue(full['truncated']);self.assertEqual(len(full['excerpt']),12000)
+            for bad in ('-1','x','1 OR 1=1','9'*19):
+                with self.assertRaises(ValueError):memory.recent(bad)
+                with self.assertRaises(ValueError):memory.evidence(bad)
+            with self.assertRaises(ValueError):memory.evidence('900')
+            self.assertTrue(all(not t.mutates for t in memory.experience_tools()))
+
+    def test_review_document_can_be_recalled_with_its_original_evidence(self):
+        from capo.capabilities import Documents, shared_tools, owner_key
+        with tempfile.TemporaryDirectory() as home:
+            owner=owner_key({})
+            RequestMemory(home,owner,'original').record('event','owner',{'message':'Use primary sources'})
+            docs=Documents(home,owner)
+            registry=shared_tools(home,{},docs)
+            entry=registry.tools['experience.history'].execute('')['entries'][0]
+            document_id=docs.save('review',{'document_title':'Learning review',
+                'document':'Check primary sources. Evidence '+entry['id']+'. Proposed; not tested.'})
+            later=shared_tools(home,{},Documents(home,owner))
+            review=later.tools['documents.read'].execute(document_id)
+            evidence=later.tools['experience.read'].execute(entry['id'])
+            self.assertIn('not tested',review['content'])
+            self.assertIn('Use primary sources',evidence['excerpt'])
+            self.assertEqual(Documents(home,'different-owner').list()['documents'],[])
+
     def test_original_survives_long_thread_restart_and_duplicates(self):
         with tempfile.TemporaryDirectory() as home:
             memory=RequestMemory(home,'owner','thread')

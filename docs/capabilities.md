@@ -218,3 +218,27 @@ A fresh repost does not make an old announcement new, and a search sample is not
 proof that a topic is trending. Evergreen and historical requests can explicitly
 use a different time frame. The search adapter enforces date bounds; selection and
 semantic freshness still require chief review against the original sources.
+
+### Learning from experience
+
+`experience.history` pages through saved requests, corrections, assistant outcomes,
+working notes and action receipts across the configured owner's conversations.
+`experience.read` expands a returned evidence ID. Both are read-only, owner-scoped,
+bounded tools usable for retrospectives, troubleshooting and follow-through; they
+never search another owner's records. This is saved Capo history, not a complete
+Slack archive. IDs are not dates; undated records and truncated evidence remain
+explicit coverage gaps.
+
+A recurring request can combine these tools with `team.status`, `memory.search`
+and saved documents to review recent work. Its learning report is saved privately
+through the existing document mechanism. Future research is instructed to consult
+relevant reviews for recurring or previously corrected work. Reviews should cite
+evidence IDs, retain a bounded set of useful earlier lessons, compare proposed
+changes against later outcomes, and state which improvements remain untested.
+
+This supports persistent procedural guidance, not model retraining or automatic
+proof of improvement. Generated lessons never become owner-stated preferences or
+authority. Reflection does not bypass permissions, edit code, increase budgets or
+change schedules. Code improvements still use the existing development, testing
+and deployment workflow. Like other scheduled research, review depth is limited
+by the tool-call/evidence budget and must be reported honestly.
