@@ -66,6 +66,8 @@ class SocialTests(unittest.TestCase):
             with self.assertRaisesRegex(WebError,'daily'):SocialTools(self.home,policy).search('b',[],'','')
             self.assertEqual(api.call_count,1)
         self.assertEqual(SocialTools(self.home,policy).status()['requests_remaining'],0)
+        self.assertTrue(SocialTools(self.home,policy).research_limit('social.search'))
+        self.assertFalse(SocialTools(self.home,policy).research_limit('social.status'))
         with closing(sqlite3.connect(self.home/'social-research/usage.sqlite3')) as db:
             self.assertEqual(db.execute('SELECT status FROM requests').fetchone()[0],'failed_or_unconfirmed')
 

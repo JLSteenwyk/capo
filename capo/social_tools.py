@@ -90,7 +90,9 @@ class SocialTools:
         self.cache = {}
 
     def research_limit(self, name):
-        return 'Social search allowance exhausted. Use the saved evidence.' if name == 'social.search' and self.calls >= 2 else ''
+        if name == 'social.search' and (self.calls >= 2 or self.status()['requests_remaining'] == 0):
+            return 'Social search allowance exhausted. Use the saved evidence.'
+        return ''
 
     def research_state(self):
         return {'calls': self.calls, 'cache': self.cache}
