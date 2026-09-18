@@ -95,6 +95,10 @@ class DigestManager:
                 evidence=collect(config,p,objectives,now,self.service.store.home)
                 _write(attempt/'evidence.json',evidence)
                 payload=compose(evidence,p,seen,attempt)
+                from .digest_briefings import collect as collect_briefings
+                briefings=collect_briefings(self.service.store.home,config,directory/'briefings',seen)
+                payload['briefing_findings']=briefings['findings']
+                if briefings['text']:payload['text']+='\n\n'+briefings['text']
                 if len(payload['text'])>10000:raise ValueError('Digest too long')
                 run.update(status='ready',payload=payload)
             except Exception:

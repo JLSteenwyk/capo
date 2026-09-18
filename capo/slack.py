@@ -152,6 +152,8 @@ def validate_config(config):
     repos = config.get("repositories")
     if not isinstance(repos, dict) or not repos:
         raise ValueError("Configure at least one named repository")
+    from .digest_briefings import settings as briefing_settings
+    briefing_settings(config)
     from .imessage import settings as imessage_settings
     imessage_settings(config)
     from .github_profile import settings as github_profile_settings

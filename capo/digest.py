@@ -100,7 +100,7 @@ class DigestStore:
         with self.db:
             self.db.execute('UPDATE runs SET status=?,data=?,updated=? WHERE key=?',
                             ('sent', json.dumps(run), now.timestamp(), run['key']))
-            for item in run['payload']['news']:
+            for item in run['payload']['news']+run['payload'].get('briefing_findings',[]):
                 self.db.execute('INSERT OR REPLACE INTO seen VALUES(?,?,?)',
                                 (run['scope'], item['id'], json.dumps(item)))
 

@@ -37,7 +37,9 @@ class DigestTests(unittest.TestCase):
         self.db.save(run,self.now);return run
 
     def test_daily_delivery_is_unique_and_restart_keeps_receipt(self):
+        self.payload['briefing_findings']=[{'id':'briefing:example:one','briefing_key':'example','summary':'Verified event.'}]
         self.run_record()
+        self.assertNotIn('briefing:example:one',self.db.history(self.owner))
         self.manager.tick(self.now)
         self.manager.tick(self.now+timedelta(minutes=1))
         restarted=DigestManager(self.service)
@@ -47,6 +49,7 @@ class DigestTests(unittest.TestCase):
         self.assertTrue(known_thread(self.home,self.config,'123.4'))
         self.assertFalse(known_thread(self.home,dict(self.config,owner_user_id='UOTHER'),'123.4'))
         self.assertIn('news1',self.db.history(self.owner))
+        self.assertIn('briefing:example:one',self.db.history(self.owner))
 
     def test_stale_second_manager_cannot_repeat_a_delivered_run(self):
         run=self.run_record()

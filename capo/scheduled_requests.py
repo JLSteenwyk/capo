@@ -98,7 +98,7 @@ class ScheduledManager(DigestManager):
                         instructions=f'You are {role[0]}, managed by Capo. {role[1]} '
                         'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
                         'report verified actionable findings, essential access/coverage blockers, and what was actually checked. '
-                        'Use specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
+                        'Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)
                     run.update(status='ready',payload={'text':result['reply'],'news':[]},
                                checked_at=datetime.now(timezone.utc).isoformat())
