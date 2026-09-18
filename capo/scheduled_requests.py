@@ -87,15 +87,18 @@ class ScheduledManager(DigestManager):
                     role=ROLES.get(s.get('agent'), ('Capo' if s.get('agent', 'capo')=='capo' else 'Coding Agent',
                         'Use the shared tools to complete the assigned inspection.'))
                     registry=shared_tools(self.service.store.home,config,docs,request)
-                    report=AssignmentReport(directory/'execution')
                     prefixes=tuple(s.get('tool_prefixes', []))
+                    from .personalization import snapshot, GUIDANCE
+                    interests=snapshot(self.service.store.home,config,directory/'execution') if not prefixes or 'memory.' in prefixes else {'interests':[]}
+                    request['interest_context']=interests
+                    report=AssignmentReport(directory/'execution',interests['interests'])
                     selected=[t for t in registry.tools.values() if not t.mutates and (not prefixes or t.name.startswith(prefixes))]
                     if s.get('delivery')=='changes': selected.append(report.tool())
                     readonly=ReadTools(selected)
                     attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
                     result=research(Providers(timeout=90),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
-                        instructions=f'You are {role[0]}, managed by Capo. {role[1]} '
+                        instructions=GUIDANCE+f'You are {role[0]}, managed by Capo. {role[1]} '
                         'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
                         'report verified actionable findings, essential access/coverage blockers, and what was actually checked. '
                         'Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')

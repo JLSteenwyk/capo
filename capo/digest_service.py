@@ -93,6 +93,8 @@ class DigestManager:
             try:
                 attempt=directory/str(run['attempts']);attempt.mkdir(mode=0o700,exist_ok=True)
                 evidence=collect(config,p,objectives,now,self.service.store.home)
+                from .personalization import snapshot
+                evidence['interest_context']=snapshot(self.service.store.home,config,directory)
                 _write(attempt/'evidence.json',evidence)
                 payload=compose(evidence,p,seen,attempt)
                 from .digest_briefings import collect as collect_briefings

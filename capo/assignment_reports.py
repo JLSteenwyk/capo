@@ -13,19 +13,30 @@ REPORT = object_schema({'findings': {'type': 'array', 'items': FINDING},
 
 
 class AssignmentReport:
-    def __init__(self, directory):
+    def __init__(self, directory, interests=None):
+        self.interests = {v['key'] for v in (interests or [])}
+        self.schema = REPORT
+        if self.interests:
+            finding = object_schema({**FINDING['properties'], 'interest_key': TEXT,
+                'relationship': {'type':'string','enum':['none','direct','related']}, 'why': TEXT})
+            self.schema = object_schema({**REPORT['properties'], 'findings':{'type':'array','items':finding}})
         self.path = directory / 'assignment-report.json'
 
     def record(self, operation_id=None, **report):
-        validate(report, REPORT)
+        validate(report, self.schema)
         if (len(report['findings']) > 10 or len(report['blockers']) > 5
                 or not report['coverage'].strip() or len(json.dumps(report)) > 12000):
             raise ValueError('Use a bounded report with coverage, up to ten findings and five blockers')
         keys = set()
         for item in report['findings']:
-            if any(not value.strip() or len(value) > 1200 for value in item.values()) or item['key'] in keys:
+            if any(not item[k].strip() or len(item[k]) > 1200 for k in ('key','version','summary','source')) or item['key'] in keys:
                 raise ValueError('Findings need unique stable keys, versions, summaries and evidence sources')
             keys.add(item['key'])
+            if self.interests:
+                if item['relationship']=='none':
+                    if item['interest_key'] or item['why']:raise ValueError('Unpersonalized findings must leave interest_key and why empty')
+                elif item['interest_key'] not in self.interests or not item['why'].strip() or len(item['why'])>160:
+                    raise ValueError('Personalized findings need a supplied interest_key and a short grounded explanation')
             if re.fullmatch(r'receipt(?:_index| indexes?|s)?[\s:#\d,]+', item['source'], re.I):
                 raise ValueError('Finding sources must be reviewable: copy the relevant html_url from the inspected result, '
                                  'not receipt numbers. For private sources without a browser link, use the actual source identifier.')
@@ -44,8 +55,10 @@ class AssignmentReport:
             'Reuse prior keys/versions if facts did not change. Empty findings means nothing actionable in checked sources. '
             'Missing access or incomplete essential checks belong in blockers; never treat failures as a clean check. '
             'Ordinary page/window limits belong in coverage, not blockers, unless they prevent the requested check. '
-            'Do not request bank access or other integrations that the assignment does not require.',
-            REPORT, self.record, mutates=True)
+            'Do not request bank access or other integrations that the assignment does not require. '
+            'When relationship fields are present, use direct for a supported match, related for a suggested connection, '
+            'and none with empty interest_key/why when preferences are irrelevant. Cite a supplied interest key and explain relevance in at most 160 characters.',
+            self.schema, self.record, mutates=True)
 
     def read(self):
         if not self.path.exists():
@@ -83,7 +96,8 @@ def finish(run, report, previous):
             link=item['source'] if source.scheme in ('https', 'http') and source.netloc and not source.username else ''
         except ValueError:
             link=''
-        lines.append('- ' + item['summary'] + (' (' + link + ')' if link else ''))
+        from .personalization import finding_text
+        lines.append('- ' + finding_text(item) + (' (' + link + ')' if link else ''))
     if len(new) > 3:
         lines.append(f'{len(new)-3} more findings saved. Ask Capo for the full check.')
     lines.extend('- Needs attention: ' + item for item in blockers[:2])

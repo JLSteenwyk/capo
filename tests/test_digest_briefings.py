@@ -10,15 +10,21 @@ class BriefingTests(unittest.TestCase):
         config={'digest_briefings':[{'key':'local-events','title':'Local events','request':'Find matching events.'}]}
         finding=dict(key='example/show',version='2030-03-10',summary='Example show, March 10.',source='https://example.org/show')
         def run(provider,tools,request,directory,**kwargs):
+            self.assertEqual(request['interest_context']['interests'][0]['statement'],'I like Example Trio.')
             self.assertIn('memory.search',tools.tools)
             self.assertIn('web.search',tools.tools)
             self.assertTrue(all(not t.mutates for n,t in tools.tools.items() if n!='monitor.report'))
-            tools.call('monitor.report',dict(findings=[finding],blockers=[],coverage='Official event page inspected.'),operation_id='report')
+            personalized=dict(finding,interest_key='memory:music.example',relationship='related',why='Related to Example Trio.')
+            tools.call('monitor.report',dict(findings=[personalized],blockers=[],coverage='Official event page inspected.'),operation_id='report')
             return {'status':'reported_complete'}
         with tempfile.TemporaryDirectory() as tmp,patch('capo.digest_briefings.research',side_effect=run):
             home=Path(tmp)
+            from capo.personal_memory import PersonalMemory
+            from capo.capabilities import owner_key
+            PersonalMemory(home,owner_key(config),{'text':'I like Example Trio.'}).save('music.example','','I like Example Trio.','owner')
             first=collect(home,config,home/'one',{},provider=object())
             self.assertIn('https://example.org/show',first['text'])
+            self.assertIn('You might like:',first['text'])
             seen={f['id']:f for f in first['findings']}
             second=collect(home,config,home/'two',seen,provider=object())
             self.assertEqual(second,{'text':'','findings':[]})
