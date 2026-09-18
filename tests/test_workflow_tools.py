@@ -121,10 +121,6 @@ class WorkflowTests(unittest.TestCase):
         row=self.store.get(id);row['slack']['thread_ts']='999.999';self.store.save(row,'fixture')
         with self.assertRaisesRegex(ValueError,'objective thread'):self.tools.prepare(id,'wrong-thread')
 
-
-if __name__ == '__main__':
-    unittest.main()
-
     def test_policy_exposes_effective_standing_authority_without_private_config(self):
         settings = self.config['repositories']['project']
         settings.update(allow_publication=True, auto_publish_routine=True,
@@ -137,11 +133,11 @@ if __name__ == '__main__':
         self.assertNotIn('PRIVATE_FIXTURE', json.dumps(result))
         self.assertNotIn(settings['path'], json.dumps(result))
         self.assertEqual(self.store.list(), [])
-        settings['allow_publication'] = False
+        settings.update(allow_publication=False, auto_publish_routine=False, merge_after_approval=False)
         row = self.tools.policy()['repositories'][0]
         self.assertFalse(row['automatic_routine_merge'])
         self.assertFalse(row['automatic_routine_publication'])
-        settings.update(allow_publication=True, auto_publish_routine=False)
+        settings.update(allow_publication=True, auto_publish_routine=False, merge_after_approval=True)
         row = self.tools.policy()['repositories'][0]
         self.assertFalse(row['automatic_routine_merge'])
         self.assertTrue(row['merge_after_owner_approval'])
@@ -150,3 +146,7 @@ if __name__ == '__main__':
         invalid = dict(self.request, request_thread='other-thread')
         with self.assertRaises(PermissionError):
             WorkflowTools(self.home, self.config, invalid).policy()
+
+
+if __name__ == '__main__':
+    unittest.main()
