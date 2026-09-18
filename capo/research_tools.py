@@ -19,6 +19,7 @@ class ReadTool:
     mutates: bool = False
     verifies: bool = False
     handoff: bool = False
+    finalizes: bool = False
 
 
 class ReadTools:
@@ -26,6 +27,26 @@ class ReadTools:
         self.tools = {tool.name: tool for tool in tools}
         if len(self.tools) != len(tools):
             raise ValueError('Duplicate tool name')
+
+    def adapters(self):
+        return {t.name: getattr(t.execute, "__self__", None) for t in self.tools.values()}
+
+    def snapshot(self):
+        snapshots, seen = {}, set()
+        for name, adapter in self.adapters().items():
+            if id(adapter) not in seen and callable(getattr(type(adapter), 'research_state', None)):
+                snapshots[name] = adapter.research_state()
+                seen.add(id(adapter))
+        return snapshots
+
+    def restore(self, snapshots, continuation=False):
+        for name, adapter in self.adapters().items():
+            if name in snapshots and callable(getattr(type(adapter), "restore_research_state", None)):
+                adapter.restore_research_state(snapshots[name], continuation=continuation)
+
+    def unavailable(self):
+        return {name: adapter.research_limit(name) for name, adapter in self.adapters().items()
+                if callable(getattr(type(adapter), "research_limit", None)) and adapter.research_limit(name)}
 
     def catalog(self):
         return [{'name': t.name, 'description': t.description, 'arguments': t.arguments}
@@ -124,6 +145,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
     _write(checkpoint, state)
     if (directory/'cancelled.json').exists():
         raise RecoveryStopped('Research was cancelled')
+    tools.restore(state.get('tool_state', {}))
     if 'result' in state:
         return state['result']
     if state.get('stopped'):
@@ -163,6 +185,13 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         updated=superseded()
         if updated is not None:return updated
         remaining = max_calls - step
+        unavailable = tools.unavailable()
+        finalizers = {name for name, tool in tools.tools.items() if tool.finalizes}
+        reported = any(r.get('tool') in finalizers and (r.get('result') or {}).get('saved') for r in receipts)
+        report_reserve = min(16000, evidence_limit // 4) if finalizers and not reported else 0
+        reporting = bool(finalizers and not reported and (remaining <= 2 or evidence_size >= evidence_limit - report_reserve))
+        catalog = [t for t in tools.catalog() if t['name'] not in unavailable
+                   and (not reporting or t['name'] in finalizers)]
         now = datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat()
         prompt = (
             f'Current local time: {now}. Complete the owner request using the registered tools. Choose your next tool '
@@ -214,7 +243,10 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'Never claim an action succeeded without a successful mutation receipt. '
 
             + instructions + '\n' + json.dumps({
-                'request': request, 'tools': tools.catalog(),
+                'request': request, 'tools': catalog,
+                'unavailable_tools': unavailable,
+                'report_required': reporting,
+                'report_instruction': 'Save an honest partial report now, using successful receipts only. Explain unchecked sources; do not claim a complete scan.' if reporting else '',
                 'receipts': [{**r, 'receipt_index': str(i)} for i,r in enumerate(receipts)],
                 'request_started_at': state['now'],
                 'remaining_tool_calls': remaining,
@@ -243,6 +275,11 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             state['result']=completed
             _write(checkpoint,state)
             return completed
+        if result['action'] == 'finish' and finalizers and not reported and remaining:
+            receipts.append({'tool':'', 'error':'Save the monitoring report before finishing. Use partial coverage and explicit gaps when needed.'})
+            _write(checkpoint,state)
+            _write(directory/'receipts.json', receipts)
+            continue
         if result['action'] == 'finish':
             from .request_outcomes import assess,pending_text,OutcomeError,completion_failure_reply
             try:
@@ -294,6 +331,11 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             arguments = json.loads(result['arguments_json'])
             action_key = hashlib.sha256(json.dumps([result['tool'], arguments], sort_keys=True).encode()).hexdigest()
             chosen = tools.tools.get(result['tool'])
+            if result['tool'] in unavailable or (reporting and result['tool'] not in finalizers):
+                receipts.append({'tool':result['tool'], 'error':'This tool is unavailable for this step. Save the partial monitoring report or finish from existing evidence.'})
+                _write(checkpoint,state)
+                _write(directory/'receipts.json', receipts)
+                continue
             prior = next((r for r in reversed(receipts) if r['tool'] == result['tool']
                           and r.get('arguments') == arguments), None)
             if chosen is not None and chosen.mutates and prior and prior.get('uncertain'):
@@ -307,7 +349,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             if updated is not None:return updated
             evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+action_key)
             size = len(json.dumps(evidence))
-            if size > evidence_limit - evidence_size:
+            ceiling = evidence_limit if result['tool'] in finalizers else evidence_limit - report_reserve
+            if size > ceiling - evidence_size:
                 # The tool has already run: retain its actual result, especially
                 # a write receipt, rather than misreporting the action as failed.
                 artifact='evidence-'+str(step)+'.json'
@@ -315,7 +358,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 evidence={'coverage':'Partial: evidence limit reached. Full tool result is preserved in the private run artifact.',
                           'artifact':artifact,'truncated':True,'tool_returned':True,
                           'instruction':'Do not repeat this action; its full result requires inspection before further work.'}
-                evidence_size=evidence_limit
+                evidence_size=ceiling
             else:evidence_size += size
             receipts.append({'tool': result['tool'], 'arguments': arguments, 'result': evidence})
         except RecoveryStopped:
@@ -329,6 +372,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 receipts.append({'tool':result['tool'], 'arguments':arguments,
                                  'error':failure_summary(exc), 'uncertain':bool(attempted and attempted.mutates)})
                 state['pending'] = None
+                state['tool_state'] = tools.snapshot()
                 if isinstance(exc, (AuthenticationError, PermissionError)):
                     state['stopped'] = failure_summary(exc)
                 else:
@@ -347,6 +391,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             receipts.append({'tool': result['tool'], 'error':
                              safe_error})
         state['pending'] = None
+        state['tool_state']=tools.snapshot()
         state['evidence_chars_used']=evidence_size
         _write(checkpoint, state)
         _write(directory/'receipts.json',receipts)

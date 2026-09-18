@@ -58,7 +58,7 @@ class AssignmentReport:
             'Do not request bank access or other integrations that the assignment does not require. '
             'When relationship fields are present, use direct for a supported match, related for a suggested connection, '
             'and none with empty interest_key/why when preferences are irrelevant. Cite a supplied interest key and explain relevance in at most 160 characters.',
-            self.schema, self.record, mutates=True)
+            self.schema, self.record, mutates=True, finalizes=True)
 
     def read(self):
         if not self.path.exists():

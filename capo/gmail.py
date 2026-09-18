@@ -146,6 +146,8 @@ class GmailReadTools(ReadTools):
         self.known_threads = set()
         self.read_attempts = 0
         self.characters = 0
+        self.inspected_ids = set()
+        self.search_pages = []
         from .mail_attachments import MailAttachments
         self.attachments = MailAttachments(client, self.known_ids)
         super().__init__(self.attachments.tools() + [
@@ -165,6 +167,39 @@ class GmailReadTools(ReadTools):
             ReadTool('mail.thread', 'Read a thread ID returned by mail.search, including correspondence context. Bounded by the shared 50-message budget.',
                      object_schema({'id': TEXT}), self.thread),
         ])
+
+    def next_scan_state(self):
+        pending = self.known_ids - self.inspected_ids
+        latest = {page['query']: page for page in self.search_pages}
+        pages = [dict(page, ids=[i for i in page['ids'] if i in pending])
+                 for page in latest.values() if page['next_page_token'] or any(i in pending for i in page['ids'])]
+        if not pending and not pages:
+            return {}
+        return {'known_ids': sorted(pending), 'known_threads': [],
+                'cursors': {p['next_page_token']: p['query'] for p in pages if p['next_page_token']},
+                'search_pages': pages, 'inspected_ids': [], 'read_attempts': 0, 'characters': 0}
+
+    def research_limit(self, name):
+        if name in ('mail.read', 'mail.thread') and (self.read_attempts >= 50 or self.characters >= 120000):
+            return 'Mail read allowance exhausted for this request. Report partial findings; resume unread IDs in a later scheduled check.'
+        return ''
+
+    def research_state(self):
+        return {'known_ids': sorted(self.known_ids), 'known_threads': sorted(self.known_threads),
+                'cursors': self.cursors, 'search_pages': self.search_pages,
+                'inspected_ids': sorted(self.inspected_ids), 'read_attempts': self.read_attempts,
+                'characters': self.characters}
+
+    def restore_research_state(self, state, continuation=False):
+        # Called only with host-owned private checkpoints, never model arguments.
+        self.known_ids.update(state.get('known_ids', []))
+        self.known_threads.update(state.get('known_threads', []))
+        self.cursors.update(state.get('cursors', {}))
+        self.search_pages = state.get('search_pages', [])
+        self.inspected_ids.update(state.get('inspected_ids', []))
+        if not continuation:
+            self.read_attempts = max(self.read_attempts, state.get('read_attempts', 0))
+            self.characters = max(self.characters, state.get('characters', 0))
 
     def thread(self,id):
         if id not in self.known_threads:raise ValueError('Search the thread first')
@@ -200,6 +235,7 @@ class GmailReadTools(ReadTools):
         cursor = page.get('nextPageToken', '')
         if cursor:
             self.cursors[cursor] = query
+        self.search_pages.append({'query': query, 'page_token': page_token, 'next_page_token': cursor, 'ids': [r['id'] for r in rows]})
         return {'messages': rows, 'next_page_token': cursor, 'more_available': bool(cursor),
                 'coverage': 'One search page; identifiers only. Read bodies before analyzing prose.'}
 
@@ -226,6 +262,7 @@ class GmailReadTools(ReadTools):
                 limit = min(6000, 120000-self.characters)
                 excerpt = text[:limit]
                 self.characters += len(excerpt)
+                self.inspected_ids.add(message_id)
                 rows.append({'id': message_id, 'thread_id': message.get('threadId', ''),
                     'from': headers.get('from', ''), 'to': headers.get('to', ''),
                     'subject': headers.get('subject', ''), 'date': headers.get('date', ''),

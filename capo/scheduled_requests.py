@@ -17,6 +17,7 @@ from .research_tools import ReadTools,research
 from .schedules import Schedules,due_slot
 from .assignment_reports import AssignmentReport, previous_report, finish
 from .team import ROLES
+from .monitoring_progress import continuation, incomplete_report
 
 
 class ScheduledManager(DigestManager):
@@ -95,12 +96,15 @@ class ScheduledManager(DigestManager):
                     selected=[t for t in registry.tools.values() if not t.mutates and (not prefixes or t.name.startswith(prefixes))]
                     if s.get('delivery')=='changes': selected.append(report.tool())
                     readonly=ReadTools(selected)
+                    progress = previous.get('continuation', {})
+                    readonly.restore(progress.get('state', {}), continuation=True)
                     attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
                     result=research(Providers(timeout=90),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
                         instructions=GUIDANCE+f'You are {role[0]}, managed by Capo. {role[1]} '
                         'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
                         'report verified actionable findings, essential access/coverage blockers, and what was actually checked. '
+                        'Previous-check continuation contains host-saved pending source IDs and pagination cursors. Resume those reads/pages first without rereading inspected bodies, then inspect newer sources if budget permits. Recheck stale cursors with a fresh bounded search. Report exactly which windows remain unchecked. Never infer that an inspected excerpt means its full message or attachment was read. '
                         'Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)
                     run.update(status='ready',payload={'text':result['reply'],'news':[]},
@@ -108,8 +112,7 @@ class ScheduledManager(DigestManager):
                     if s.get('delivery')=='changes':
                         try: recorded=report.read()
                         except ValueError:
-                            recorded={'findings': [], 'blockers': ['The check did not produce a verified monitoring report.'],
-                                      'coverage': 'Check incomplete; no clean result established.'}
+                            recorded=incomplete_report(result.get('receipts', []))
                         if result.get('status')=='partial':
                             recorded['blockers'].append('The check reached its limits before completing all requested work.')
                         reads=[r for r in result.get('receipts', []) if r.get('result') is not None
@@ -119,6 +122,10 @@ class ScheduledManager(DigestManager):
                             if source.get('tool','').startswith('web.') and source.get('result') is not None]
                         if not reads and not delegated_reads and not recorded['blockers']:
                             recorded['blockers'].append('No source inspection was recorded for this check.')
+                        progress = continuation(readonly)
+                        if progress['state'] or progress['gap']:recorded['continuation'] = progress
+                        if progress['gap']:
+                            recorded['blockers'].append(progress['gap'])
                         run.pop('error_summary', None)
                         finish(run, recorded, previous)
                 except Exception as exc:
@@ -130,9 +137,13 @@ class ScheduledManager(DigestManager):
                         run.update(status='queued', retry_at=datetime.now(timezone.utc).timestamp()+60, error_summary=failure_summary(exc))
                         # A final provider-formatting failure must not discard an already
                         # persisted monitoring report. Surface it as incomplete, not clean.
-                        if s.get('delivery')=='changes' and report is not None and report.path.exists():
-                            recorded=report.read()
-                            recorded['blockers'].append('Findings were saved, but the check could not finish verification.')
+                        if s.get('delivery')=='changes' and report is not None and (report.path.exists() or (directory/'execution/checkpoint.json').exists()):
+                            if report.path.exists():recorded=report.read()
+                            else:
+                                saved=json.loads((directory/'execution/checkpoint.json').read_text())
+                                recorded=incomplete_report(saved.get('receipts', []))
+                            recorded['continuation'] = continuation(readonly)
+                            recorded['blockers'].append('The check could not finish verification; saved evidence is preserved.')
                             run['checked_at']=datetime.now(timezone.utc).isoformat()
                             finish(run,recorded,previous)
                 finally:

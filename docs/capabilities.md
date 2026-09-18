@@ -121,3 +121,28 @@ use the same mechanism. Schedules with restricted `tool_prefixes` must explicitl
 include `workers.` to enable delegation; the worker still inherits only the read
 primitives allowed by that schedule. Existing action permissions and repository
 implementation/review workflows are unchanged.
+
+
+### Bounded monitoring and scan continuation
+
+Monitoring uses the shared research loop. Host code removes exhausted adapters from
+its offered tools and rejects further calls to them. Monitoring reserves the last
+two tool attempts and part of the existing evidence allowance for `monitor.report`;
+it does not increase the request budget. Partial findings must describe unchecked
+sources. If reporting fails, the scheduler retains an explicit incomplete report
+with evidence counts rather than claiming a clean check.
+
+Adapters can expose `research_limit`, `research_state`, and
+`restore_research_state`. Request checkpoints restore consumed allowances across
+restarts. For recurring checks, `next_scan_state` can supply a bounded continuation
+with fresh per-occurrence allowances. Gmail implements this with unread message
+IDs and query-bound pagination cursors. Successful reads represent excerpts, not
+complete messages or attachments. Later checks resume that backlog, then inspect
+newer sources when capacity permits. Expired provider cursors still require a fresh
+search; resumption does not guarantee a complete mailbox scan in one occurrence.
+
+Continuation data stays in private runtime storage, scoped by owner, assignment,
+and revision. Reports carry at most 32 KB of continuation state. Larger positions
+produce an explicit gap instead of silently losing coverage. Source artifacts and
+already saved findings survive report-formatting failures. No extra Slack delivery
+is triggered solely by saving a continuation.
