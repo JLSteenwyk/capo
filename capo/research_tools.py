@@ -18,6 +18,7 @@ class ReadTool:
     execute: object
     mutates: bool = False
     verifies: bool = False
+    handoff: bool = False
 
 
 class ReadTools:
@@ -65,7 +66,7 @@ def complete_reply(result):
     return reply + '\n\n' + content
 
 
-def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None):
+def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude'):
     """Serialize the entire reasoning/tool loop, including external tool calls."""
     import fcntl
     import os
@@ -78,12 +79,18 @@ def research(provider, tools, request, directory, instructions='', max_calls=6, 
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RetryLater(time.time() + 5, 'This request is already running') from None
-        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update)
+        if reasoning_provider not in ('claude','codex','grok'):raise ValueError('Invalid reasoning worker')
+        if reasoning_provider == 'claude':
+            from .worker_delegation import bind, GUIDANCE
+            tools = bind(tools, provider, directory, request, owner_update)
+            if 'workers.delegate' in tools.tools:instructions = GUIDANCE + instructions
+        elif 'workers.delegate' in tools.tools:raise ValueError('Recursive delegation is prohibited')
+        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update, reasoning_provider)
     finally:
         os.close(fd)
 
 
-def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None):
+def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude'):
     """Compose tools without a task-type enum; return evidence receipts and a document.
 
     max_calls counts tool attempts, including invalid calls. A final provider turn
@@ -108,6 +115,9 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         from .execution_limits import pinned
         budget=pinned(state,request,limits)
         max_calls=budget['max_calls'];evidence_limit=budget['evidence_chars']
+    if state.get('reasoning_provider', reasoning_provider) != reasoning_provider:
+        raise RecoveryStopped('Research worker changed')
+    state['reasoning_provider'] = reasoning_provider
     if 'fingerprint' not in state:
         state['fingerprint']=hashlib.sha256(json.dumps([request, tools.catalog(), instructions, max_calls], sort_keys=True).encode()).hexdigest()
     bind(state, request, tools.catalog(), instructions, max_calls, directory, STEP)
@@ -212,8 +222,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 'must_finish': remaining == 0 or evidence_size >= evidence_limit,
             })
         )
-        prompt = provider_prompt(directory/f'step-{step}', prompt, STEP)
-        result = provider.call('claude', prompt, STEP, directory/'cwd', directory/f'step-{step}')
+        prompt = provider_prompt(directory/f'step-{step}', prompt, STEP, reasoning_provider)
+        result = provider.call(reasoning_provider, prompt, STEP, directory/'cwd', directory/f'step-{step}')
         validate(result, STEP)
         if (directory/'cancelled.json').exists():
             raise RecoveryStopped('Research was cancelled')

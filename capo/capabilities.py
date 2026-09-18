@@ -57,6 +57,8 @@ def shared_tools(home,config,documents,request=None):
     tools.append(ReadTool('updates.status','Read the deployment supervisor status and deployed revision. Updates require merged code, passing checks, an idle service and startup health; this tool cannot bypass approval or trigger a restart.',object_schema({}),lambda:update_status(home)))
     from .team_status import TeamStatus
     tools.extend(TeamStatus(home, config).tools())
+    from .worker_delegation import WorkerTools
+    tools.extend(WorkerTools(home,owner_key(config)).tools())
     from .capacity import Capacity
     tools.extend(Capacity(home).tools())
     from .specialist_tools import SpecialistTools

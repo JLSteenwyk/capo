@@ -77,3 +77,47 @@ Optional `digest_briefings` in private configuration adds up to three reusable m
 Automations now receive a bounded interest context before reasoning: active shared memory, followed artists, exclusions and topic feedback. The main digest uses this context to choose relevance; personalized research and eligible scheduled assignments use it to search and explain discoveries. A snapshot is private and fixed during retries; subsequent runs load corrections and forgotten preferences afresh. Restricted assignments only receive this context when their allowed capabilities include `memory.`; ordinary unrestricted assignments receive it automatically.
 
 Personalized monitoring findings cite a supplied interest key, describe their relationship (`direct`, `related`, or `none`) and give a short reason. The host validates the reference and labels related discoveries “You might like.” The model still judges semantic relevance, and external claims require inspected sources. Suggestions cannot write preferences during automation runs. Explicit owner feedback can update or remove a preference through the shared memory tools; silence and delivered suggestions do not establish tastes. These rules apply across domains such as music, shopping and style, while avoiding forced personalization of unrelated operational updates.
+
+## Subscription worker delegation
+
+`workers.delegate` lets Capo give a focused research, comparison, synthesis, or
+review assignment to Grok or Codex. Roles such as Shopping Assistant remain roles;
+they do not need separate Grok schedules. Claude remains the chief and receives
+the worker's report and evidence for review before answering or taking action.
+
+`auto` prefers Grok and ranks eligible workers using current quota headroom and
+recent assignment completion outcomes. Two recent failed assignments pause an
+automatic worker choice for fifteen minutes. An explicit `grok` or `codex` choice
+stays pinned. Exhausted workers and known invalid logins are excluded; unknown
+quota is not treated as a full balance. These completion statistics are a modest
+reliability signal, not a measurement of factual correctness or model intelligence.
+
+The caller supplies an objective, necessary context, and acceptance criteria.
+Workers receive that focused input, not the whole conversation or access to
+private accounts. They can use only `web.search`, `web.read`, `clock.now`,
+`dates.describe`, and `dates.shift`, intersected with the caller's actual allowed
+registry. No mutations, recursive delegation, or arbitrary host tools are exposed.
+Native worker isolation remains enforced by the existing provider adapters.
+Public web search currently uses Claude's subscription; Grok handles delegated
+reasoning and synthesis. Selecting Grok does not convert the search backend.
+
+Each parent request permits two distinct assignments. Each assignment permits
+three host read-tool calls and up to four reasoning calls (including its final
+report). These bounded worker budgets are additional to the chief's existing
+budget. Identical assignments reuse their saved report, including failures;
+worker selection is pinned for interrupted work. Cancellation or a superseding
+owner message stops the worker at the next orchestration boundary. An already
+running native model call can finish before cancellation is observed.
+
+`workers.activity` reports recent assignments, actual providers, status, duration,
+and native reasoning-call counts. Private metadata lives under
+`CAPO_HOME/worker-delegations/<owner hash>`; task inputs, reports and source
+receipts remain in the parent request's private execution directory. A status of
+`reported_complete` means the worker reported completion, not that its answer
+has independently passed review. The chief must evaluate its evidence.
+
+The shared conversation, specialist, scheduled-request and digest research loops
+use the same mechanism. Schedules with restricted `tool_prefixes` must explicitly
+include `workers.` to enable delegation; the worker still inherits only the read
+primitives allowed by that schedule. Existing action permissions and repository
+implementation/review workflows are unchanged.

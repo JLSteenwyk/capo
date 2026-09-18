@@ -20,10 +20,13 @@ def successful_action(receipt, tools, kind='action'):
         return False
     tool = tools.tools.get(receipt.get('tool'))
     value = receipt.get('result')
-    if tool is None or not (tool.mutates or tool.verifies) or not isinstance(value, dict):
+    if tool is None or not isinstance(value, dict):
         return False
     if value.get('truncated') or value.get('confirmed') is False or value.get('verified') is False:
         return False
+    if kind == 'handoff' and tool.handoff and value.get('handoff_completed') is True:
+        return True
+    if not (tool.mutates or tool.verifies):return False
     if kind == 'action' and (value.get('completed') is False or value.get('status') in ('queued','running','pending')):
         return False
     return any(value.get(key) is True for key in
@@ -79,7 +82,7 @@ def assess(encoded,receipts,tools):
                                 for index in item['evidence']) or 'none'
                 candidates=', '.join(str(index)+' ('+r['tool']+')' for index,r in enumerate(receipts)
                                      if successful_action(r,tools,item['kind'])) or 'none'
-                raise OutcomeError('Completed actions need a successful matching host mutation receipt. '
+                raise OutcomeError('Completed actions need a successful matching host mutation receipt; handoffs need a confirmed host handoff receipt. '
                     'Cited: '+cited+'. Eligible receipt indexes: '+candidates+
                     '. Use an eligible receipt only if its result establishes this specific outcome; do not repeat the write.')
     unfinished=[item for item in report['outcomes'] if item['status']!='complete']

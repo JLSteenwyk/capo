@@ -10,7 +10,7 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def legacy_prompt(directory, schema):
+def legacy_prompt(directory, schema, provider='claude'):
     """Recover only a provider input authenticated by its saved recovery identity."""
     path = directory/'recovery.json'
     if not path.exists():
@@ -24,7 +24,7 @@ def legacy_prompt(directory, schema):
         if start < 0:
             continue
         prompt = text[start:]
-        if digest(['claude', prompt, schema, None]) == identity:
+        if digest([provider, prompt, schema, None]) == identity:
             return prompt
     raise RecoveryStopped('Saved provider input could not be verified; receipts are preserved')
 
@@ -59,15 +59,15 @@ def bind(state, request, catalog, instructions, max_calls, directory, schema):
     state['capability_identity'] = digest([catalog, instructions])
 
 
-def provider_prompt(directory, proposed, schema):
+def provider_prompt(directory, proposed, schema, provider='claude'):
     """A deferred provider call must keep its exact input and recovery directory."""
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = directory/'input.json'
     if path.exists():
         saved = json.loads(path.read_text())
-        if saved['identity'] != digest(['claude', saved['prompt'], schema, None]):
+        if saved['identity'] != digest([provider, saved['prompt'], schema, None]):
             raise RecoveryStopped('Saved research provider input changed')
         return saved['prompt']
-    prompt = legacy_prompt(directory, schema) or proposed
-    _write(path, {'prompt': prompt, 'identity': digest(['claude', prompt, schema, None])})
+    prompt = legacy_prompt(directory, schema, provider) or proposed
+    _write(path, {'prompt': prompt, 'identity': digest([provider, prompt, schema, None])})
     return prompt

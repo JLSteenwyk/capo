@@ -28,7 +28,7 @@ def collect(home, config, directory, seen, provider=None):
             interests=snapshot(home,config,path)
             report=AssignmentReport(path,interests['interests'])
             registry=shared_tools(home,config,Documents(home,owner_key(config)))
-            tools=ReadTools([t for t in registry.tools.values() if not t.mutates and t.name.startswith(('memory.','digest.','clock.','dates.','web.'))]+[report.tool()])
+            tools=ReadTools([t for t in registry.tools.values() if not t.mutates and t.name.startswith(('memory.','digest.','clock.','dates.','web.','workers.'))]+[report.tool()])
             result=research(provider or Providers(timeout=90),tools,{'message':item['request'],'previous_findings':previous,'interest_context':interests},path,
                 instructions=GUIDANCE+'Create a concise personalized briefing using shared read tools. Recall memory.search and digest.read preferences. '
                 'Search current sources and inspect authoritative pages before reporting dates, locations or availability. '
