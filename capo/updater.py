@@ -39,7 +39,7 @@ def write_private_bytes(path, data):
 def command(args, *, cwd=None, timeout=60, env=None):
     result=subprocess.run(args,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                           text=True,timeout=timeout)
-    if result.returncode:raise UpdateError('External command failed; current release is retained')
+    if result.returncode:raise UpdateError('External deployment command failed')
     return result.stdout.strip()
 
 
@@ -90,7 +90,12 @@ class MacService:
     def restart(self):
         result=subprocess.run(['launchctl','bootout',self.domain+'/'+self.label],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         if result.returncode and self.pid():raise UpdateError('Could not stop service')
-        command(['launchctl','bootstrap',self.domain,str(self.path)])
+        # launchd unload completes asynchronously even after bootout returns.
+        for attempt in range(10):
+            result=subprocess.run(['launchctl','bootstrap',self.domain,str(self.path)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            if result.returncode==0:return
+            time.sleep(1)
+        raise UpdateError('Service bootstrap failed after waiting for launchd')
 
     def switch(self, release, sha):
         value=plistlib.loads(self.path.read_bytes());args=value['ProgramArguments']
@@ -189,7 +194,10 @@ class Updater:
         backup=self.root/'previous.plist'
         if not backup.exists():raise UpdateError('Rollback backup is missing')
         # Keep the candidate paused until the old launch configuration is restored.
-        self.service.restore(backup)
+        try:self.service.restore(backup)
+        except Exception:
+            self.save(phase='recovery_pending',pending=True,message='Restoring the previous service; supervisor will retry')
+            return False
         self.clear_handoff()
         expected=self.state.get('previous_release')
         ok=self.wait(lambda:self.receipt(expected),60)
@@ -259,9 +267,7 @@ def install_watchdog(config, config_path, bootstrap):
     for key in ('StandardOutPath','StandardErrorPath'):
         log=Path(value[key]);log.touch(exist_ok=True);log.chmod(0o600)
     write_private_bytes(path,plistlib.dumps(value))
-    domain='gui/'+str(os.getuid())
-    subprocess.run(['launchctl','bootout',domain+'/org.capo.updater'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    command(['launchctl','bootstrap',domain,str(path)])
+    MacService(dict(config,service_plist=str(path)),root).restart()
 
 
 def main():

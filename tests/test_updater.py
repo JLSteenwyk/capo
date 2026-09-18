@@ -77,6 +77,25 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(self.service.restores,1)
         self.assertFalse(self.u.state['pending'])
 
+    def test_failed_restore_is_retried_on_next_supervisor_run(self):
+        (self.u.root/'previous.plist').write_bytes(b'original launch')
+        self.u.save(pending=True,target=NEW,previous_release=OLD)
+        with patch.object(self.service,'restore',side_effect=UpdateError('Temporary launchd failure')):
+            self.u.run()
+        self.assertEqual(self.u.state['phase'],'recovery_pending')
+        self.assertTrue(self.u.state['pending'])
+        self.u.run()
+        self.assertEqual(self.u.state['phase'],'rolled_back')
+        self.assertFalse(self.u.state['pending'])
+
+    def test_launchd_bootstrap_retries_asynchronous_unload(self):
+        self.path.write_bytes(plistlib.dumps({'Label':'test.capo'}))
+        service=MacService(self.config,self.u.root)
+        with patch('capo.updater.subprocess.run',side_effect=[Mock(returncode=0),Mock(returncode=5),Mock(returncode=0)]) as run,patch('capo.updater.time.sleep'):
+            service.restart()
+        self.assertEqual(run.call_count,3)
+        self.assertEqual(run.call_args_list[-1].args[0][1],'bootstrap')
+
     def test_crash_after_promotion_releases_probation_on_next_run(self):
         self.u.save(phase='active',active_revision=NEW,pending=False)
         (self.u.root/'probation.json').write_text(json.dumps({'release':NEW}))
