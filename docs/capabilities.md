@@ -146,3 +146,39 @@ and revision. Reports carry at most 32 KB of continuation state. Larger position
 produce an explicit gap instead of silently losing coverage. Source artifacts and
 already saved findings survive report-formatting failures. No extra Slack delivery
 is triggered solely by saving a continuation.
+
+### Public social research and drafting
+
+Opt-in `social.search` supplies public X evidence through Grok's metered X Search
+API. It accepts a public query, up to five account handles, and optional date bounds.
+The same primitive supports discussion research, public writing samples, source
+lookup and tweet drafting. Claude remains chief and can delegate synthesis to a
+subscription worker; eligible workers receive the same scoped search tool.
+
+Enable `social_research` with `enabled: true` and `daily_requests: 5` in private
+Slack configuration. Put `{"api_key":"YOUR_XAI_API_KEY"}` in
+`~/.config/capo/xai.json`, owned by the service user with mode 0600. The key is read
+only by the HTTP adapter, never included in prompts or receipts. Requests go only
+to the fixed xAI endpoint; redirects are rejected. No X bearer token is required.
+
+The host permits two searches per research request and a configurable daily cap
+of 1–20 attempts across the installation, resetting at midnight UTC. Reservations
+are durable and include failed/interrupted requests. Each API request permits one
+X search tool invocation. Identical successful queries reuse request-local cached
+evidence; restart checkpoints preserve that cache and allowance. `social.status`
+reports the local allowance without a paid lookup. These are request limits, not a
+guaranteed dollar ceiling; xAI API usage is separate from subscriptions. Provider
+usage metadata is saved privately under `CAPO_HOME/social-research`.
+
+Search results include a bounded provider-generated summary, post links, retrieval
+time, usage and coverage limits. A confirmed X search is required; incomplete API
+responses cannot establish current evidence. A sample does not prove a topic is
+trending, and scientific claims should be checked against primary sources. Queries
+must not include private email, secrets or unpublished research. Private likes,
+bookmarks, account analytics and posting are not exposed.
+
+For personalized drafts, compose `memory.search`, the existing writing-guide
+`documents` tools, `social.search`, and optional `workers.delegate`. Save explicit
+owner topic/handle preferences in private memory; treat observations from public
+posts as sample evidence, not inferred owner instructions. Drafts return through
+Slack, with no posting action and no new schedule unless the owner requests one.

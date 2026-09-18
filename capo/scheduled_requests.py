@@ -116,10 +116,11 @@ class ScheduledManager(DigestManager):
                         if result.get('status')=='partial':
                             recorded['blockers'].append('The check reached its limits before completing all requested work.')
                         reads=[r for r in result.get('receipts', []) if r.get('result') is not None
-                               and r.get('tool', '').startswith(('mail.', 'github.', 'calendar.', 'web.', 'documents.', 'tasks.'))]
+                               and (r.get('tool', '').startswith(('mail.', 'github.', 'calendar.', 'web.', 'documents.', 'tasks.'))
+                                    or r.get('tool') == 'social.search')]
                         delegated_reads=[source for r in result.get('receipts',[]) if r.get('tool')=='workers.delegate'
                             for source in (r.get('result') or {}).get('receipts',[])
-                            if source.get('tool','').startswith('web.') and source.get('result') is not None]
+                            if (source.get('tool','').startswith('web.') or source.get('tool') == 'social.search') and source.get('result') is not None]
                         if not reads and not delegated_reads and not recorded['blockers']:
                             recorded['blockers'].append('No source inspection was recorded for this check.')
                         progress = continuation(readonly)

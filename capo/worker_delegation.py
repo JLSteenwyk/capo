@@ -10,7 +10,7 @@ from .research_tools import ReadTool, ReadTools
 
 # Exact primitives, intersected with the caller's final registry. No mail,
 # credentials, files, mutations, browser control, or recursive delegation.
-READ_PRIMITIVES = frozenset({'web.search', 'web.read', 'clock.now', 'dates.describe', 'dates.shift'})
+READ_PRIMITIVES = frozenset({'web.search', 'web.read', 'social.search', 'clock.now', 'dates.describe', 'dates.shift'})
 GUIDANCE = (
     'Claude is Capo, the chief. Specialist names are roles, not model providers. '
     'Use workers.delegate for substantial bounded research, comparison, synthesis or independent review; '
@@ -48,7 +48,7 @@ class WorkerTools:
             'Use auto to prefer spare Grok capacity, or an explicit provider for task fit. '
             'Provide objective, necessary context and acceptance criteria. At most two assignments per request, '
             'three read-tool calls per assignment. No recursive agents, private account access or external writes. '
-            'Public web search currently uses Claude; delegated reasoning uses the reported worker. '
+            'Public web search uses Claude; when enabled, social.search uses the separately metered Grok X Search API. Delegated reasoning uses the reported subscription worker. '
             'Reuse completed reports; do not repeat failed assignments in this request.',
             object_schema({'objective':TEXT,'context':TEXT,'acceptance_criteria':TEXT,
                            'provider':{'type':'string','enum':['auto','grok','codex']}}), self.unbound, handoff=True),

@@ -223,6 +223,8 @@ def validate_config(config):
             raise ValueError("Invalid GitHub authentication mode")
         if type(settings.get("allow_self_improvement", False)) is not bool:
             raise ValueError("allow_self_improvement must be true or false")
+    from .social_tools import settings as social_settings
+    social_settings(config)
     return config
 
 

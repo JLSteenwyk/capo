@@ -71,6 +71,9 @@ def shared_tools(home,config,documents,request=None):
         tools.extend(WorkflowTools(home, config, request).tools())
     from .web_tools import WebTools
     tools.extend(WebTools(home).tools())
+    from .social_tools import SocialTools, settings as social_settings
+    social_policy = social_settings(config)
+    if social_policy["enabled"]:tools.extend(SocialTools(home, social_policy).tools())
     if request and request.get("request_thread"):
         from .request_memory import RequestMemory
         tools.extend(RequestMemory(home,owner_key(config),request["request_thread"]).tools(request.get("request_event", "local")))
