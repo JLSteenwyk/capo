@@ -182,3 +182,21 @@ For personalized drafts, compose `memory.search`, the existing writing-guide
 owner topic/handle preferences in private memory; treat observations from public
 posts as sample evidence, not inferred owner instructions. Drafts return through
 Slack, with no posting action and no new schedule unless the owner requests one.
+
+
+### Default drafting voice
+
+The private owner-approved writing guide is injected into every subscription
+provider, including delegated workers. Requested text on the owner's behalf uses
+that voice by default; the owner need not repeat “in my voice.” An explicit request
+for another style takes precedence. Adapt conventions to the medium: social posts
+do not inherit email greetings, signatures, private details or unrelated opinions.
+Use owner-authored samples as limited calibration evidence, not as a source of
+invented first-person experiences. Revise stock promotional language into specific,
+measured prose before returning drafts.
+
+Current-discussion drafts still require current source evidence. An empty memory
+search is not a tool failure: all query terms must match, so broaden the query or
+list recent preferences. Claims about failed tools require actual failure receipts;
+unattempted tools must not be described as unavailable. These drafting instructions
+supplement source and action checks; they do not guarantee a subjective voice match.
