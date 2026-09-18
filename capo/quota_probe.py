@@ -8,8 +8,9 @@ import tempfile
 import time
 
 
-def codex_quota(timeout=8, popen=subprocess.Popen):
+def codex_quota(timeout=25, popen=subprocess.Popen):
     from .capacity import codex_windows
+    from .subscription_auth import LoginRequired, is_auth_error
     with tempfile.TemporaryDirectory(prefix='capo-quota-') as cwd:
         process = popen(['codex', 'app-server', '--listen', 'stdio://'], cwd=cwd,
                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -29,6 +30,7 @@ def codex_quota(timeout=8, popen=subprocess.Popen):
                         value = json.loads(line)
                         if value.get('id') == id:
                             if 'error' in value or 'result' not in value:
+                                if is_auth_error(value.get('error')):raise LoginRequired()
                                 raise ValueError('Quota RPC unavailable')
                             return value['result']
                     remaining = deadline-time.monotonic()
@@ -45,8 +47,21 @@ def codex_quota(timeout=8, popen=subprocess.Popen):
                 'clientInfo': {'name': 'capo_quota', 'version': '1.0.0'}}})
             receive(1)
             send({'method': 'initialized', 'params': {}})
-            send({'id': 2, 'method': 'account/rateLimits/read'})
-            return codex_windows(receive(2))
+            def account(id, refresh):
+                send({'id': id, 'method': 'account/read', 'params': {'refreshToken': refresh}})
+                value = receive(id).get('account')
+                if not value:raise LoginRequired()
+                if value.get('type') != 'chatgpt':
+                    raise ValueError('Subscription quota needs a ChatGPT account')
+            try:
+                account(2, False)
+                send({'id': 3, 'method': 'account/rateLimits/read'})
+                return codex_windows(receive(3))
+            except LoginRequired:
+                # Codex owns token rotation and persistence, including its locks.
+                account(4, True)
+                send({'id': 5, 'method': 'account/rateLimits/read'})
+                return codex_windows(receive(5))
         finally:
             selector.close()
             # This is our own child/process group, never a PID from saved state.

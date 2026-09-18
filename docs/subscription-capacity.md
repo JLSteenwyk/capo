@@ -30,9 +30,9 @@ The most constrained active measured window determines available headroom. A
 provider's context window and session token use cannot establish subscription
 capacity. Model-specific buckets do not automatically describe the default model.
 
-Codex probes have an eight-second deadline and bounded output. They use local
+Codex probes have a 25-second deadline and bounded output. They use local
 stdio, do not expose a network listener, and always terminate their child process.
-They do not buy credits, consume earned resets, switch authentication, or invoke a
+They do not buy credits, consume earned resets, switch accounts, or invoke a
 paid API. No API key or new subscription is needed. Provider configuration may
 already permit overages; Capo does not modify those settings.
 
@@ -139,3 +139,44 @@ stored by the probe or exposed to the model.
 
 - [Anthropic SDK usage request and response types](https://app.unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.211/files/sdk.d.ts)
 - [Protocol Buffers JSON default values](https://protobuf.dev/programming-guides/json/#presence-and-default-values)
+
+
+## Automatic login renewal
+
+Quota checks reuse each provider's native credential manager. They do not copy
+refresh tokens into Capo's state, initiate browser login, submit model prompts,
+or buy API credits. This covers ChatGPT subscriptions **through Codex**, Claude
+subscriptions through Claude Code, and Grok Build; it does not manage browser
+cookies for those products.
+
+- **Codex:** reads the managed ChatGPT account and its quota. An authentication
+  rejection triggers `account/read` with `refreshToken: true`, followed by one
+  quota retry. Codex handles credential storage and rotation. Non-ChatGPT account
+  modes are not substituted for subscription usage.
+- **Claude:** the native `get_usage` implementation refreshes OAuth credentials
+  and retries authentication failures. Capo allows one fresh CLI process after
+  an explicit authentication error or an unavailable usage payload, letting it
+  pick up credentials renewed by another process. Network errors do not trigger
+  repeated launches. A missing profile scope still requires a normal account
+  login; a setup token cannot acquire extra permissions by refreshing.
+- **Grok:** a billing HTTP 401 triggers the metadata-only `grok models` command
+  with closed stdin and discarded output, in a temporary directory on the same
+  worker. The native CLI renews and persists its credentials. Capo rereads them,
+  verifies the account identity is unchanged, then retries billing once. The
+  billing response, rather than the helper's exit status, confirms recovery.
+  Missing refresh credentials or a second 401 require sign-in. HTTP 403, rate
+  limits, server errors, and transport failures do not trigger credential renewal.
+  The worker probe has a 50-second outer deadline (55 seconds on the host).
+
+Known authentication failures return `login_required` and a short sign-in hint,
+with a five-minute shared backoff. Other failures remain `quota_probe_unavailable`;
+Capo does not assume every outage is a revoked login. Results include
+`next_check_at`, and the tool tells agents not to repeat unchanged failed checks
+within the same request. A successful subsequent check clears the sign-in hint.
+Provider error bodies, credentials, and account details are never saved in quota
+observations or returned to the agent. Existing task authentication and worker
+selection pins are unchanged.
+
+References: [Codex account controls](https://developers.openai.com/codex/app-server),
+[Claude authentication](https://code.claude.com/docs/en/authentication), and
+[Grok authentication](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).

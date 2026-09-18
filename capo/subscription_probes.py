@@ -1,4 +1,4 @@
-"""Read-only CLI control requests; no prompts, sessions, tools or credit changes."""
+"""Quota controls with native credential renewal; no model prompts or credit changes."""
 import json
 import os
 import selectors
@@ -6,6 +6,7 @@ import signal
 import subprocess
 import tempfile
 import time
+from .subscription_auth import LoginRequired, is_auth_error
 from contextlib import contextmanager
 
 
@@ -64,7 +65,7 @@ def claude_usage():
     # normal CLI login for usage; leave task execution authentication unchanged.
     env.pop('CLAUDE_CODE_OAUTH_TOKEN', None)
     env.pop('ANTHROPIC_API_KEY', None)
-    with channel(argv, env=env) as request:
+    with channel(argv, env=env, timeout=25) as request:
         request({'type': 'control_request', 'request_id': 'init',
                  'request': {'subtype': 'initialize'}},
                 lambda v: v.get('type') == 'control_response'
@@ -74,6 +75,7 @@ def claude_usage():
                            lambda v: v.get('type') == 'control_response'
                            and v.get('response', {}).get('request_id') == 'quota')['response']
         if response.get('subtype') != 'success':
+            if is_auth_error(response.get('error')):raise LoginRequired()
             raise ValueError('Claude quota unavailable')
         return response['response']
 
@@ -82,7 +84,17 @@ def claude_usage():
 def claude_quota():
     from datetime import datetime
     from .capacity import windows
-    value = claude_usage()
+    # get_usage itself performs OAuth refresh + retry in Claude Code. A fresh
+    # child can pick up credentials renewed by another running CLI process.
+    for attempt in range(2):
+        try:
+            value = claude_usage()
+        except LoginRequired:
+            if attempt:raise
+            continue
+        if value.get('rate_limits_available') and value.get('rate_limits') is None and not attempt:
+            continue
+        break
     if not value.get('rate_limits_available') or not isinstance(value.get('rate_limits'), dict):
         raise ValueError('Claude quota requires a normal account login')
     result = []
@@ -107,15 +119,18 @@ def grok_quota(config=None):
     config = load_config() if config is None else validate_config(config)
     worker = config.get('grok', {})
     if worker.get('transport') != 'lima':
-        return adapter.fetch()
+        try:return adapter.fetch()
+        except adapter.GrokLoginRequired as exc:raise LoginRequired() from exc
     # Credentials stay in the VM used for actual work. The fixed script reads
     # only quota; it cannot execute prompts or change billing settings.
     import base64
     encoded = base64.b64encode(Path(adapter.__file__).read_bytes()).decode('ascii')
-    bootstrap = 'import base64;exec(base64.b64decode('+repr(encoded)+'))'
+    bootstrap = 'import base64;GROK_BINARY='+repr(worker.get('binary','~/.grok/bin/grok'))+';exec(base64.b64decode('+repr(encoded)+'))'
     result = subprocess.run(['limactl', 'shell', '--workdir=/tmp', worker['vm'],
-                             'timeout', '12s', 'python3', '-c', bootstrap],
-                            capture_output=True, timeout=15)
+                             'timeout', '50s', 'python3', '-c', bootstrap],
+                            capture_output=True, timeout=55)
+    if len(result.stdout) <= 10000 and result.stdout.strip() == b'{"error":"login_required"}':
+        raise LoginRequired()
     if result.returncode or len(result.stdout) > 10000:
         raise ValueError('Grok worker quota unavailable')
     return windows(json.loads(result.stdout))

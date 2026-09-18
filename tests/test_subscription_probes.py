@@ -84,8 +84,8 @@ class SubscriptionTests(unittest.TestCase):
              patch('capo.grok_quota.fetch') as local:
             self.assertEqual(grok_quota({'grok': {'transport': 'lima', 'vm': 'synthetic-vm'}}), [row])
         argv = run.call_args.args[0]
-        self.assertEqual(argv[:7], ['limactl', 'shell', '--workdir=/tmp', 'synthetic-vm', 'timeout', '12s', 'python3'])
-        self.assertEqual(run.call_args.kwargs['timeout'], 15)
+        self.assertEqual(argv[:7], ['limactl', 'shell', '--workdir=/tmp', 'synthetic-vm', 'timeout', '50s', 'python3'])
+        self.assertEqual(run.call_args.kwargs['timeout'], 55)
         local.assert_not_called()
 
     def test_grok_vm_failure_never_reads_another_local_account(self):

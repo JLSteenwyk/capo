@@ -11,9 +11,12 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from .subscription_auth import LoginRequired
+
 PROVIDERS = ('claude', 'codex', 'grok')
 FRESH_SECONDS = 300
 PROBE_SECONDS = 60
+AUTH_BACKOFF_SECONDS = 300
 
 
 def default_home():
@@ -123,13 +126,17 @@ class Capacity:
             try:
                 with self._lock(provider+'-probe.lock', blocking=False):
                     now = self.clock()
-                    if now - self._read().get(provider, {}).get('checked_at', -PROBE_SECONDS) < PROBE_SECONDS:
+                    previous = self._read().get(provider, {})
+                    delay = AUTH_BACKOFF_SECONDS if previous.get('probe_error') == 'login_required' else PROBE_SECONDS
+                    if now - previous.get('checked_at', -delay) < delay:
                         continue
                     try:
                         value = self.probes[provider]()
                         source = {'codex': 'codex_app_server', 'claude': 'claude_usage', 'grok': 'grok_billing'}[provider]
                         self.observe(provider, value, source, now)
                         error = None
+                    except LoginRequired:
+                        error = 'login_required'
                     except Exception:
                         # Never persist provider diagnostics, account IDs or credentials.
                         error = 'quota_probe_unavailable'
@@ -148,7 +155,7 @@ class Capacity:
         for provider in providers:
             row = saved.get(provider, {})
             age = now - row.get('observed_at', 0)
-            fresh = 0 <= age <= FRESH_SECONDS and 'observed_at' in row
+            fresh = 0 <= age <= FRESH_SECONDS and 'observed_at' in row and row.get('probe_error') != 'login_required'
             current = [w for w in row.get('windows', []) if w['reset_at'] > now]
             blocked = [w['reset_at'] for w in current if w['used_percent'] >= 100]
             if row.get('cooldown_until', 0) > now:
@@ -159,7 +166,9 @@ class Capacity:
                 remaining_percent=0 if blocked else remaining,
                 retry_at=max(blocked) if blocked else None,
                 observed_at=row.get('observed_at'), source=row.get('source', 'no_quota_interface'),
-                fresh=fresh, windows=current if fresh else [], probe_error=row.get('probe_error'))
+                fresh=fresh, windows=current if fresh else [], probe_error=row.get('probe_error'),
+                next_check_at=row.get('checked_at', 0)+(AUTH_BACKOFF_SECONDS if row.get('probe_error') == 'login_required' else PROBE_SECONDS),
+                action_required='Sign in again to this provider on its configured worker.' if row.get('probe_error') == 'login_required' else None)
         return result
 
     def choose(self, preferred, allowed, refresh=True):
@@ -190,5 +199,6 @@ class Capacity:
         return [ReadTool('workers.capacity',
             'Read subscription capacity before delegation or explain worker availability. '
             'Quota percentages are provider windows, not token counts or guarantees. '
+            'Native login renewal is automatic. Do not repeat this tool in the same request when a probe fails; report the error and action_required. Cached results cannot change before next_check_at. '
             'Unknown means no fresh measurement. Claude remains chief; routing cannot expand permissions.',
             object_schema({}), lambda: self.snapshot(refresh=True))]

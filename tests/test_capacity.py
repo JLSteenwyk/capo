@@ -192,12 +192,14 @@ class CapacityTests(unittest.TestCase):
 
 
 class QuotaProbeTests(unittest.TestCase):
-    def test_protocol_uses_only_initialize_and_quota_read(self):
+    def test_protocol_uses_only_account_and_quota_controls(self):
         from capo.quota_probe import codex_quota
         script = '''import json, sys
 v=json.loads(sys.stdin.readline()); assert v['method']=='initialize'
 print(json.dumps({'id':v['id'],'result':{}}),flush=True)
 v=json.loads(sys.stdin.readline()); assert v['method']=='initialized'
+v=json.loads(sys.stdin.readline()); assert v['method']=='account/read' and not v['params']['refreshToken']
+print(json.dumps({'id':v['id'],'result':{'account':{'type':'chatgpt'}}}),flush=True)
 v=json.loads(sys.stdin.readline()); assert v['method']=='account/rateLimits/read'
 print(json.dumps({'id':v['id'],'result':{'rateLimits':{'primary':{'usedPercent':12,'resetsAt':1000}}}}),flush=True)
 sys.stdin.read()

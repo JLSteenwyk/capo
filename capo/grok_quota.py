@@ -7,6 +7,11 @@ import math
 from datetime import datetime
 from pathlib import Path
 import urllib.request
+import urllib.error
+import subprocess
+import tempfile
+import os
+import signal
 
 URL = 'https://cli-chat-proxy.grok.com/v1/billing?format=credits'
 
@@ -34,9 +39,17 @@ def normalize(value):
     return [{'name': 'primary', 'used_percent': used, 'reset_at': reset.timestamp()}]
 
 
-def fetch():
+class GrokLoginRequired(ValueError):
+    pass
+
+
+def credentials():
     path = Path.home()/'.grok/auth.json'
-    with path.open() as stream:
+    try:
+        stream = path.open()
+    except FileNotFoundError:
+        raise GrokLoginRequired('Grok login required') from None
+    with stream:
         raw = stream.read(1000001)
     if len(raw) > 1000000:
         raise ValueError('Grok authentication file too large')
@@ -44,8 +57,11 @@ def fetch():
     eligible = [v for v in entries.values() if isinstance(v, dict)
                 and v.get('oidc_issuer') == 'https://auth.x.ai' and v.get('key')]
     if len(eligible) != 1:
-        raise ValueError('Grok login needs attention')
-    auth = eligible[0]
+        raise GrokLoginRequired('Grok login required')
+    return eligible[0]
+
+
+def billing(auth):
     headers = {'Authorization': 'Bearer '+auth['key'], 'Accept': 'application/json',
                'x-xai-token-auth': 'xai-grok-cli'}
     if auth.get('user_id'):
@@ -58,9 +74,56 @@ def fetch():
     return normalize(json.loads(payload))
 
 
+def renew(binary):
+    # A metadata-only native CLI command loads the OAuth refresh manager. The
+    # CLI owns refresh-token rotation and its credential-file locking. Never
+    # launch interactive login, submit a prompt, or copy tokens to the host.
+    env = os.environ.copy()
+    env.pop('XAI_API_KEY', None)
+    env['GROK_DISABLE_AUTOUPDATER'] = '1'
+    with tempfile.TemporaryDirectory(prefix='capo-grok-auth-') as cwd:
+        process = subprocess.Popen([str(Path(binary).expanduser()), 'models'],
+            cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True)
+        try:
+            process.wait(timeout=25)
+        finally:
+            try:os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:pass
+            try:process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=1)
+    # Some CLI builds exit badly after persisting renewed credentials. Only
+    # the subsequent authenticated billing response proves recovery succeeded.
+
+
+def fetch(binary='~/.grok/bin/grok'):
+    auth = credentials()
+    try:
+        return billing(auth)
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        if exc.code != 401:raise
+    if not auth.get('refresh_token'):raise GrokLoginRequired('Grok login required')
+    renew(binary)
+    renewed = credentials()
+    if (renewed.get('user_id'), renewed.get('oidc_issuer')) != (auth.get('user_id'), auth.get('oidc_issuer')):
+        raise GrokLoginRequired('Grok account changed during refresh')
+    try:
+        return billing(renewed)
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        if exc.code == 401:raise GrokLoginRequired('Grok login required') from None
+        raise
+
+
 if __name__ == '__main__':
     try:
-        print(json.dumps(fetch()))
+        print(json.dumps(fetch(globals().get('GROK_BINARY', '~/.grok/bin/grok'))))
+    except GrokLoginRequired:
+        print('{"error":"login_required"}')
+        raise SystemExit(1)
     except Exception:
         # Do not expose HTTP errors, headers or credential parser diagnostics.
         print('{"error":"grok_quota_unavailable"}')
