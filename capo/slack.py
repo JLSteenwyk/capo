@@ -991,9 +991,16 @@ def serve(home, config_path):
         signal.signal(signal.SIGTERM, stop)
         try:
             handler.connect()
+            from .update_runtime import health
+            release=os.environ.get('CAPO_RELEASE','development')
+            cycle_completed=False
             while True:
+                if health(store.home,handler.client.is_connected(),release,cycle_completed):
+                    time.sleep(1)
+                    continue
                 try:
                     service.tick()
+                    cycle_completed=True
                 except (SlackApiError, SlackClientError):
                     print("Slack request failed; retrying after a short delay.", file=sys.stderr)
                     time.sleep(5)
