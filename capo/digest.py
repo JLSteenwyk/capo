@@ -12,6 +12,7 @@ from .contracts import TEXT, object_schema, validate
 from .providers import Providers
 
 DEFAULTS = dict(enabled=False, time='07:00', timezone='America/Los_Angeles', window_minutes=120,
+                weekdays=['0','1','2','3','4','5','6'],
                 topics=['world news', 'music', 'AI', 'scientific software', 'biotech'],
                 artists=[], excluded=[], weights={}, work_start='09:00', work_end='17:00')
 
@@ -25,6 +26,7 @@ def scope(config):
 
 
 def check_preferences(p):
+    weekdays(p)
     ZoneInfo(p['timezone'])
     for key in ('time', 'work_start', 'work_end'):
         datetime.strptime(p[key], '%H:%M')
@@ -38,6 +40,17 @@ def check_preferences(p):
     if len(p['artists']) > 100 or len(p['weights']) > 100:
         raise ValueError('Too many preferences')
     return p
+
+
+def weekdays(p):
+    days=p.get('weekdays',list('0123456'))
+    if not isinstance(days,list) or not days or any(type(d) is not str or d not in '0123456' or len(d)!=1 for d in days) or len(set(days))!=len(days):
+        raise ValueError('Choose unique weekdays 0 Monday through 6 Sunday')
+    return days
+
+
+def allowed_day(now,p):
+    return str(now.astimezone(ZoneInfo(p['timezone'])).weekday()) in weekdays(p)
 
 
 class DigestStore:
@@ -126,10 +139,10 @@ def slot(now, p):
 
 
 def next_delivery(now, p):
-    day, due, _ = slot(now, p)
-    if due <= now:
-        due = wall(datetime.fromisoformat(day).date()+timedelta(days=1), p['time'], p['timezone'])
-    return due.astimezone(ZoneInfo(p['timezone']))
+    day=now.astimezone(ZoneInfo(p['timezone'])).date()
+    for offset in range(8):
+        due=wall(day+timedelta(days=offset),p['time'],p['timezone'])
+        if due>now and allowed_day(due,p):return due
 
 
 def candidates(items, p, seen):

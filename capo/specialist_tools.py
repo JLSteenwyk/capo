@@ -10,17 +10,19 @@ from .team import ROLES
 
 
 class SpecialistTools:
-    def __init__(self, home, owner):
+    def __init__(self, home, owner, config=None):
+        from .team import active_roles
+        self.roles=active_roles(config or {})
         self.root = Path(home)/'team'/hashlib.sha256(owner.encode()).hexdigest()
 
     def path(self, role):
-        if role not in ROLES:
+        if role not in self.roles:
             raise ValueError('Unknown specialist role')
         return self.root/role/'conversation'/'memory.sqlite3'
 
     def list(self):
         return {'specialists': [{'role': role, 'name': name, 'expertise': job}
-                               for role, (name, job) in ROLES.items()]}
+                               for role, (name, job) in self.roles.items()]}
 
     def read(self, role):
         path = self.path(role)
@@ -53,7 +55,8 @@ class SpecialistTools:
         return {'saved': True, 'role': role}
 
     def tools(self, writable=False):
-        role = {'type': 'string', 'enum': list(ROLES)}
+        if not self.roles:return []
+        role = {'type': 'string', 'enum': list(self.roles)}
         result = [ReadTool('specialists.list', 'Discover specialist expertise. Specialists share Capo’s tools and execution; use their expertise and preferences for relevant requests.', object_schema({}), self.list),
                   ReadTool('specialists.read', 'Read a specialist’s expertise and existing owner preferences. Apply them while continuing the same shared tool loop.', object_schema({'role': role}), self.read)]
         if writable:

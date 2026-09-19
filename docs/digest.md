@@ -50,3 +50,10 @@ For persistent operation on macOS, run `capo slack-daemon --config PRIVATE_CONFI
 Scheduled digest generation does not edit calendar events, repositories, or tasks. Its external write is the authorized Slack digest. Replies in that thread use Capo’s shared tools: an explicit new owner request can inspect or act on connected resources under their normal permissions. Reading a digest or discussing a story grants no additional action permission.
 
 Shared `digest.read` returns current settings, the delivered digest for this thread, and ten recent feedback receipts. `digest.change` requires an inspected settings revision and a host operation receipt. Preference updates, replay identity and acknowledgment commit together in the local ledger. A concurrent preference change requires a new read; repeating a committed operation after restart does not change its weight again. The old digest-only classifier is retained solely for already-started legacy feedback requests.
+
+The saved digest preferences support `weekdays`: a nonempty list of unique
+strings from `"0"` (Monday) through `"6"` (Sunday). Use
+`["0","1","2","3","4"]` for weekday delivery. Existing preferences without
+this field retain daily delivery. The scheduler skips generation and automatic
+delivery on excluded local days; the next-delivery calculation skips those days
+as well. Explicitly requested previews remain available.

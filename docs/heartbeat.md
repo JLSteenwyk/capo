@@ -13,3 +13,8 @@ Each check reads unread messages among up to 20 inbox entries (headers/snippets 
 Claude selects at most three actionable items. No actionable item means no Slack message. Identical selected items are suppressed for the rest of that local day; changed content may alert again. Only delivered alerts are marked seen. A private per-hour receipt and bounded generation attempts prevent repeated work after ordinary restarts. The existing durable delivery mechanism reconciles uncertain Slack posts before retrying. Alerts that miss their ten-minute delivery window are not posted late.
 
 This is a read-only attention check, not authorization to send email, modify calendars, purchase items, or start arbitrary coding tasks. The model currently runs on Claude Code. Evidence, preferences and delivery records remain private under CAPO_HOME/heartbeat. Replies in an alert thread are accepted from the configured owner without an @mention.
+
+Optional `heartbeat.weekdays` limits checks to local weekdays (`"0"` Monday
+through `"6"` Sunday). For weekdays only, use `["0","1","2","3","4"]`.
+Omitting it preserves daily checks. Excluded days do not generate or deliver
+hourly alerts, including pending deliveries. Interactive Slack requests still work.

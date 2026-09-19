@@ -36,6 +36,8 @@ class DigestManager:
             if now.timestamp()>=old['deadline']:
                 old['status']='expired';self.db.save(old,now)
         if not p['enabled']:return
+        from .digest import allowed_day
+        if not allowed_day(now,p):return
         day,due,deadline=slot(now,p)
         # Finish uncertain delivery receipts even after their morning window.
         rows=self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status='sending'",(self.owner,)).fetchall()

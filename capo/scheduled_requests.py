@@ -32,6 +32,10 @@ class ScheduledManager(DigestManager):
             if time.monotonic()-self.last_tick<15:return
             self.last_tick=time.monotonic();now=datetime.now(timezone.utc)
         schedules={s['id']:s for s in self.schedules.list()['schedules']}
+        from .team import active_roles
+        retired=set(ROLES)-set(active_roles(self.service.config))
+        for s in schedules.values():
+            if s.get('agent') in retired:s['enabled']=False
         for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('queued','building')",(self.owner,)).fetchall():
             old=json.loads(row[0]);worker=self.workers.get(old['key'])
             if now.timestamp()>=old['deadline'] and not (worker and worker.is_alive()):

@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from .calendar import GoogleCalendar
 from .conversation import _write
 from .contracts import TEXT, object_schema, validate
-from .digest import DigestStore, identity, scope
+from .digest import DigestStore, identity, scope, weekdays, allowed_day
 from .digest_service import DigestManager
 from .gmail import Gmail
 from .providers import Providers
@@ -25,12 +25,12 @@ def settings(config):
         raise ValueError('Invalid heartbeat hours')
     zone=p.get('timezone',config.get('calendar',{}).get('timezone','America/Los_Angeles'))
     ZoneInfo(zone)
-    return dict(enabled=p.get('enabled',False),start_hour=first,end_hour=last,timezone=zone)
+    return dict(enabled=p.get('enabled',False),start_hour=first,end_hour=last,timezone=zone,weekdays=weekdays(p))
 
 
 def due_slot(now,p):
     local=now.astimezone(ZoneInfo(p['timezone']))
-    if not p['enabled'] or not p['start_hour']<=local.hour<=p['end_hour'] or local.minute>=10:
+    if not p['enabled'] or not allowed_day(now,p) or not p['start_hour']<=local.hour<=p['end_hour'] or local.minute>=10:
         return None
     return local.replace(minute=0,second=0,microsecond=0)
 
@@ -145,6 +145,7 @@ class HeartbeatManager(DigestManager):
         now=now or datetime.now(timezone.utc)
         p=settings(self.service.config)
         if not p['enabled']:return
+        if not allowed_day(now,p):return
         for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('queued','building','ready')",(self.owner,)).fetchall():
             old=json.loads(row[0])
             if now.timestamp()>=old['deadline'] and not (self.workers.get(old['key']) and self.workers[old['key']].is_alive()):

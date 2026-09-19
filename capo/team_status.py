@@ -36,6 +36,9 @@ class TeamStatus:
         schedules = Schedules(self.home, owner_key(self.config)).list()['schedules']
         names = {'capo': 'Capo', **{key: value[0] for key, value in ROLES.items()}, 'coding': 'Coding Agent'}
         teams = {key: {'agent': key, 'name': name, 'assignments': []} for key, name in names.items()}
+        from .team import active_roles
+        active=active_roles(self.config)
+        for key in teams:teams[key]['retired']=key in ROLES and key not in active
         path = self.home / 'scheduled/digest/digest.sqlite3'
         db = sqlite3.connect(f'file:{path}?mode=ro', uri=True) if path.exists() else None
         try:
@@ -59,8 +62,15 @@ class TeamStatus:
                 teams[schedule.get('agent', 'capo')]['assignments'].append(item)
         finally:
             if db: db.close()
+        from .digest import DigestStore, next_delivery, weekdays
+        digest_db=DigestStore(self.home)
+        try:preferences=digest_db.preferences(scope(self.config))
+        finally:digest_db.close()
+        digest_settings={key:preferences[key] for key in ('enabled','time','timezone')}
+        digest_settings.update(weekdays=weekdays(preferences),next_delivery=next_delivery(now,preferences).isoformat() if preferences['enabled'] else None)
         return {'agents': list(teams.values()), 'heartbeat': {
-            key: self.config.get('heartbeat', {}).get(key) for key in ('enabled', 'start_hour', 'end_hour', 'timezone')},
+            key: self.config.get('heartbeat', {}).get(key) for key in ('enabled', 'start_hour', 'end_hour', 'timezone','weekdays')},
+            'morning_digest':digest_settings,
             'coverage': 'Standing assignments and their latest run receipts. not_run is not a successful check; quiet means no new alerts in the reported coverage. An agent without assignments is available on demand. Other interactive coding jobs are tracked separately by development tools. Historical reports may predate an assignment edit.'}
 
     def tools(self):

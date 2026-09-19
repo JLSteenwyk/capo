@@ -17,10 +17,17 @@ ROLES = {
 SCHEMA = object_schema({'reply': TEXT, 'remember': TEXT})
 
 
+def active_roles(config):
+    disabled=config.get('disabled_specialists',[])
+    if not isinstance(disabled,list) or any(not isinstance(r,str) or r not in ROLES for r in disabled):
+        raise ValueError('Unknown disabled specialist')
+    return {key:value for key,value in ROLES.items() if key not in disabled}
+
+
 def roster(config):
     return {
         'chief': 'Capo: delegates, manages personal tasks/reminders, plans days/weeks, and manages connected calendar, email drafts and morning digest.',
-        'specialists': {key: name for key, (name, _) in ROLES.items()},
+        'specialists': {key: name for key, (name, _) in active_roles(config).items()},
         'coding': 'Coding Agent: existing repository issue, implementation, review and publication workflows.',
         'connections': {'calendar': bool(config.get('calendar', {}).get('enabled')),
                         'repositories': list(config.get('repositories', {})),
@@ -40,7 +47,7 @@ class Specialist(ConversationRouter):
 
     def __init__(self, home, role, owner, config=None):
         import hashlib
-        if role not in ROLES: raise ValueError('Unknown specialist')
+        if role not in active_roles(config or {}): raise ValueError('Unknown or retired specialist')
         self.role = role
         self.home = home
         self.config = json.loads(json.dumps(config or {}))

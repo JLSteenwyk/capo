@@ -58,3 +58,12 @@ Configured exclusions are host policy, not model instructions. Organization name
 This is read-only GitHub coverage: it does not mark notifications read, clone repositories, expand publication permissions, or authorize fixes and merges in newly discovered projects. Generic shared capabilities and the existing standing-assignment scheduler remain the execution path. Connection-specific settings, scope exclusions, cursor state and real findings stay private.
 
 Assignments can optionally set `tool_prefixes` (for example `["github.", "clock."]`) to narrow their read-only tool catalog. The profile watch uses this scope so it cannot switch to email or arbitrary web tools to bypass GitHub exclusions. Local `monitor.report` bookkeeping remains available. An omitted value preserves the existing scope on edits; an explicit empty list restores the normal shared read-only catalog. This only narrows capabilities and does not grant external write authority.
+
+To retire specialists for an installation, set `disabled_specialists` in private
+Slack configuration to their role IDs, for example
+`["shopping_assistant", "style_assistant"]`. They disappear from the active
+roster and specialist tools; direct specialist calls are rejected, and scheduled
+jobs assigned to those roles cannot run. Disable their saved schedules as well
+so the schedule ledger records the owner's intent. Historical notes are retained
+privately. `team.status` marks retired roles and also includes the separate
+morning-digest and hourly-check settings, so automation inventories include them.
