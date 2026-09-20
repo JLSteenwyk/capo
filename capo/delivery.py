@@ -1,4 +1,4 @@
-"""Owner-configured automatic draft PR delivery for bounded, accepted work."""
+"""Owner-configured automatic draft PR delivery for verified, accepted work."""
 import re
 from pathlib import Path
 
@@ -25,7 +25,7 @@ def deliver_routine(store, identifier, settings, gateway=None):
                     and all(row.get('passed') is True for row in verification['checks'])
                     and all(row.get('approved') is True for row in verification['reviews'])
                     and verification.get('decision', {}).get('accepted') is True)
-        result = assess(objective) if evidence else {
+        result = assess(objective,settings.get('automatic_change_scope','routine')) if evidence else {
             'eligible': False, 'reason': 'Verification or independent acceptance is incomplete.'}
         with store.db:
             store.db.execute('BEGIN IMMEDIATE')
@@ -41,7 +41,8 @@ def deliver_routine(store, identifier, settings, gateway=None):
         repository = remote_repository(git(objective['repo'], 'remote', 'get-url', 'origin'))
         # Public metadata comes from the matching public issue, never transcripts,
         # worker summaries, shell commands, or private local configuration.
-        title = 'Update existing behavior and regression coverage'
+        title = ('Implement verified feature and regression coverage' if settings.get('automatic_change_scope')=='features'
+                 else 'Update existing behavior and regression coverage')
         source = objective.get('source', '')
         match = re.fullmatch(r'https://github.com/([^/]+/[^/]+)/issues/([1-9][0-9]*)', source)
         if match and match[1].lower() == repository.lower():

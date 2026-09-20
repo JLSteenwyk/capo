@@ -133,6 +133,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_FIXTURE', json.dumps(result))
         self.assertNotIn(settings['path'], json.dumps(result))
         self.assertEqual(self.store.list(), [])
+        self.assertFalse(row['automatic_feature_merge'])
+        settings['automatic_change_scope']='features'
+        row=self.tools.policy()['repositories'][0]
+        self.assertTrue(row['automatic_feature_merge'])
+        self.assertIn('public',row['public_repository_rule'])
         settings.update(allow_publication=False, auto_publish_routine=False, merge_after_approval=False)
         row = self.tools.policy()['repositories'][0]
         self.assertFalse(row['automatic_routine_merge'])

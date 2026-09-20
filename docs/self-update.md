@@ -67,3 +67,33 @@ new source interfaces, and protected enforcement changes remain outside routine
 eligibility. `development.policy` reports effective permissions per repository
 and the last deployment-supervisor status without exposing private configuration.
 A question about capabilities does not itself queue development work.
+
+### Broader feature authority
+
+A repository may opt into `automatic_change_scope: "features"` alongside
+`allow_self_improvement`, `allow_publication`, `auto_publish_routine`, and
+`merge_after_approval`. The existing flag name `auto_publish_routine` enables the
+publication pipeline; `automatic_change_scope` chooses its eligibility policy.
+Without the new setting, the original conservative routine policy remains.
+
+Feature scope allows new Python modules, functions, classes, interfaces and
+imports, with no three-file or changed-line eligibility cap. Markdown and tests
+are also supported. This does not increase execution budgets or guarantee an
+arbitrarily large task will finish in one objective. Source snapshots and the
+existing implementation limits still apply.
+
+Protected enforcement modules, sensitive configuration, dependencies, recognized
+migration paths, deleted files, executable/nonregular files and other file formats
+still require review. Independent reviewers must flag irreversible migrations
+wherever implemented; path matching alone cannot establish migration safety.
+Frozen baseline tests, candidate tests, independent review, final acceptance,
+exact-tree publication, GitHub checks, merge reconciliation and deployment health
+checks remain mandatory. The updater's manual-rollout boundaries are unchanged.
+
+Development instructions explicitly treat repository content and PR metadata as
+public. Private conversations, mail/calendar records, personal preferences, local
+configuration and runtime artifacts belong outside Git; examples must be synthetic.
+PR preparation and publication both check recognizable secret/identity markers,
+local home paths and private artifact paths. Automatic PR text does not copy the
+owner's private request or agent summaries. Pattern checks supplement independent
+privacy review; they cannot recognize every sensitive fact in free-form prose.

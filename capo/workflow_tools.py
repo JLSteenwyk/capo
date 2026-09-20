@@ -48,8 +48,12 @@ class WorkflowTools:
                     'self_improvement_enabled': bool(settings.get('allow_self_improvement')),
                     'automatic_routine_publication': routine,
                     'automatic_routine_merge': routine and merge,
+                    'automatic_change_scope':settings.get('automatic_change_scope','routine'),
+                    'automatic_feature_publication':routine and settings.get('automatic_change_scope')=='features',
+                    'automatic_feature_merge':routine and merge and settings.get('automatic_change_scope')=='features',
                     'merge_after_owner_approval': merge,
-                    'routine_scope': 'Up to three Python/Markdown files; bounded changes to existing function bodies, tests or prose. No new source interfaces, imports, sensitive configuration or core enforcement changes.',
+                    'routine_scope': ('Python/Markdown feature changes may add source files, functions, classes, interfaces and imports without the routine file-count or changed-line limits. Sensitive configuration, protected enforcement modules, dependencies, migrations, deletions and nonregular files still need review.' if settings.get('automatic_change_scope')=='features' else 'Up to three Python/Markdown files; bounded changes to existing function bodies, tests or prose. No new source interfaces, imports, sensitive configuration or core enforcement changes.'),
+                    'public_repository_rule':'Treat code and PR metadata as public. Never publish private conversations, mail, calendar records, personal preferences, credentials, local paths or runtime artifacts. Use synthetic examples. Private-data checks and independent review remain required.',
                     'requirements': 'Passing configured checks, independent review, final acceptance, and verification of the exact candidate. Merge waits for passing GitHub checks and a clean matching PR; then removes the unchanged work branch.',
                     'outside_routine_scope': 'Owner review is required. Core enforcement changes need review outside autonomous apply.',
                 })

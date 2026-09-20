@@ -91,3 +91,46 @@ class DeliveryCase(unittest.TestCase):
         self.assertLess(len(text.split()), 40)
         self.assertNotIn('src/', text)
         self.assertNotIn('candidate', text)
+
+    def test_feature_scope_publishes_new_functions_with_existing_checks(self):
+        self.settings['automatic_change_scope']='features'
+        with (self.repo/'parser.py').open('a') as f:f.write('\ndef feature():\n    return 1\n')
+        git(self.repo,'add','.')
+        self.objective['accepted_tree']=git(self.repo,'write-tree')
+        self.store.save(self.objective,'feature')
+        result=self.deliver()
+        self.assertEqual(result['publication']['status'],'published')
+        self.assertNotIn('PRIVATE',result['publication']['payload']['body'])
+
+    def test_feature_scope_never_bypasses_failed_review(self):
+        self.settings['automatic_change_scope']='features'
+        self.objective['verification']['reviews'][0]['approved']=False
+        self.store.save(self.objective,'failed_review')
+        self.assertEqual(self.deliver()['routine_delivery']['status'],'review')
+        self.assertEqual(self.gateway.pushes,0)
+
+    def test_publication_rechecks_metadata_even_after_preparation(self):
+        from capo.github import prepare,publish,payload_digest
+        prepared=prepare(self.store,self.objective['id'],'owner/project','main',title='Safe title',body='Safe body')
+        row=self.store.get(self.objective['id'])
+        marker='xapp-'+'synthetic-not-real'
+        row['publication']['payload']['body']=marker
+        row['publication']['digest']=payload_digest(row['publication']['payload'])
+        self.store.save(row,'unsafe_metadata_fixture')
+        with self.assertRaisesRegex(ValueError,'private information'):
+            publish(self.store,row['id'],row['publication']['digest'],self.gateway)
+        self.assertEqual(self.gateway.pushes,0)
+
+    def test_preparation_rejects_private_content_and_runtime_files(self):
+        from capo.github import prepare
+        marker='xapp-'+'synthetic-not-real'
+        with self.assertRaisesRegex(ValueError,'private information'):
+            prepare(self.store,self.objective['id'],'owner/project','main',title='Safe',body=marker)
+        (self.repo/'transcripts').mkdir()
+        (self.repo/'transcripts/private.md').write_text('Synthetic private record')
+        git(self.repo,'add','.')
+        self.objective['accepted_tree']=git(self.repo,'write-tree')
+        self.store.save(self.objective,'private_file')
+        with self.assertRaisesRegex(ValueError,'runtime artifacts'):
+            prepare(self.store,self.objective['id'],'owner/project','main',title='Safe',body='Safe')
+        self.assertEqual(self.gateway.pushes,0)

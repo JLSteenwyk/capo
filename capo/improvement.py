@@ -88,6 +88,7 @@ def add_improvement(store, args):
 
 
 CORE_ENFORCEMENT = frozenset({
+    "capo/public_safety.py",
     "capo/updater.py", "capo/update_runtime.py", "capo/social_tools.py",
     "capo/runtime.py", "capo/repository.py", "capo/improvement.py", "capo/providers.py",
     "capo/process.py", "capo/watchdog.py", "capo/transport.py", "capo/guest.py",

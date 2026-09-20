@@ -24,7 +24,7 @@ class RoutineCase(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def accepted(self, changes):
+    def accepted(self, changes, change_scope="routine"):
         for name, content in changes.items():
             path = self.repo / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -34,7 +34,7 @@ class RoutineCase(unittest.TestCase):
                 path.write_text(content)
         git(self.repo, 'add', '-A')
         self.objective['accepted_tree'] = git(self.repo, 'write-tree')
-        return assess(self.objective)
+        return assess(self.objective, change_scope)
 
     def test_membership_and_docstring_with_new_tests(self):
         result = self.accepted({'parser.py': self.original.replace('Parse a boolean.', 'Parse true or yes spellings.').replace('"1")', '"1", "yes", "y")'), 'tests/test_new.py': 'def test_yes():\n    assert "yes".lower() == "yes"\n'})
@@ -95,3 +95,25 @@ class RoutineCase(unittest.TestCase):
 
     def test_test_line_limit(self):
         self.assertFalse(self.accepted({'tests/test_large.py': '\n'.join('# comment' for _ in range(251))})['eligible'])
+
+    def test_feature_scope_allows_new_modules_interfaces_imports_and_large_changes(self):
+        changes={f'module_{n}.py':'import math\n\nclass Feature:\n    def value(self, x):\n        return math.sqrt(x)\n'+('# explanation\n'*100) for n in range(5)}
+        result=self.accepted(changes,'features')
+        self.assertTrue(result['eligible'],result)
+        self.assertFalse(assess(self.objective)['eligible'])
+
+    def test_feature_scope_keeps_protection_and_acceptance_gates(self):
+        self.assertFalse(self.accepted({'settings.py':'flag = True\n'},'features')['eligible'])
+        (self.repo/'settings.py').unlink()
+        self.assertFalse(self.accepted({'migrations/upgrade.py':'value = 1\n'},'features')['eligible'])
+        (self.repo/'migrations/upgrade.py').unlink()
+        self.objective['kind']='self_improvement'
+        self.assertFalse(self.accepted({'capo/runtime.py':'value = 1\n'},'features')['eligible'])
+        (self.repo/'capo/runtime.py').unlink()
+        marker='xapp-'+'synthetic-secret'
+        self.assertFalse(self.accepted({'new.py':'# '+marker+'\n'},'features')['eligible'])
+        (self.repo/'new.py').unlink()
+        self.assertTrue(self.accepted({'parser.py':self.original+'\ndef feature():\n    return 2\n'},'features')['eligible'])
+        (self.repo/'parser.py').write_text('changed after acceptance')
+        self.assertFalse(assess(self.objective,'features')['eligible'])
+        self.assertFalse(assess(self.objective,'unknown')['eligible'])

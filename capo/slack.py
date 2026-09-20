@@ -213,6 +213,8 @@ def validate_config(config):
             raise ValueError("allow_publication must be true or false")
         if type(settings.get("auto_publish_routine", False)) is not bool:
             raise ValueError("auto_publish_routine must be true or false")
+        if settings.get('automatic_change_scope','routine') not in ('routine','features'):
+            raise ValueError('automatic_change_scope must be routine or features')
         if type(settings.get("merge_after_approval", False)) is not bool:
             raise ValueError("merge_after_approval must be true or false")
         if settings.get("merge_after_approval") and not settings.get("allow_publication"):

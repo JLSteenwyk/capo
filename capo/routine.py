@@ -1,7 +1,7 @@
-"""Conservative eligibility for automatic draft delivery, never merge authority.
+"""Configured eligibility for automatic draft delivery, never merge authority.
 
 This structural heuristic supplements verified checks and independent acceptance;
-it does not prove that a small change is semantically safe.
+neither routine nor feature eligibility proves semantic safety.
 """
 
 import ast
@@ -13,6 +13,7 @@ from pathlib import Path
 from .github import verified_workspace
 from .improvement import verify_governance_changes
 from .repository import git, safe_path
+from .public_safety import check_candidate
 
 
 _SENSITIVE = re.compile(
@@ -59,15 +60,19 @@ def _delta(before, after):
     return sum(line[:2] in ('+ ', '- ') for line in lines), '\n'.join(line[2:] for line in lines if line.startswith('+ '))
 
 
-def assess(objective):
+def assess(objective, change_scope='routine'):
     """Return eligible/reason without revealing private content in refusals."""
     def refuse(reason):
         return {'eligible': False, 'reason': reason}
     try:
-        workspace, _ = verified_workspace(objective)
+        if change_scope not in ('routine','features'):
+            return refuse('Unknown automatic change scope.')
+        features=change_scope=='features'
+        workspace, diff = verified_workspace(objective)
+        check_candidate(objective,diff)
         names = git(workspace, 'diff', '--name-only', '-z', objective['base'], objective['accepted_tree'], raw=True).split('\0')
         names = [name for name in names if name]
-        if not names or len(names) > 3:
+        if not names or (not features and len(names) > 3):
             return refuse('Routine delivery is limited to three changed files.')
         verify_governance_changes(objective, [{'path': name} for name in names])
         source_lines = test_lines = doc_lines = 0
@@ -75,6 +80,8 @@ def assess(objective):
             path = safe_path(name)
             if any(part.startswith('.') for part in path.parts) or _RESTRICTED.search(name.lower()):
                 return refuse('Configuration or sensitive component changes need owner review.')
+            if features and re.search(r'(?:^|[/_.-])migrations?(?:$|[/_.-])',name.lower()):
+                return refuse('Data migrations need owner review.')
             if path.name.lower() in {'agents.md', 'claude.md', 'grok.md', 'pyproject.toml', '__init__.py', '__main__.py'}:
                 return refuse('Configuration or package entry changes need owner review.')
             is_test = path.suffix == '.py' and (any(p in ('tests', 'test') for p in path.parts[:-1]) or path.name.startswith('test_'))
@@ -84,7 +91,7 @@ def assess(objective):
             new_entry = git(workspace, 'ls-tree', objective['accepted_tree'], '--', name)
             if not new_entry or new_entry.split()[0] != '100644' or (old_entry and old_entry.split()[0] != '100644'):
                 return refuse('Deleted, executable, or nonregular files need owner review.')
-            if not old_entry and path.suffix == '.py' and not is_test:
+            if not features and not old_entry and path.suffix == '.py' and not is_test:
                 return refuse('New source files need owner review.')
             old = git(workspace, 'show', objective['base'] + ':' + name, raw=True) if old_entry else ''
             new = git(workspace, 'show', objective['accepted_tree'] + ':' + name, raw=True)
@@ -97,11 +104,13 @@ def assess(objective):
             elif path.suffix == '.md':
                 doc_lines += count
             else:
-                if _structure(old) != _structure(new):
+                ast.parse(new)
+                if not features and _structure(old) != _structure(new):
                     return refuse('New functions, interfaces, imports, or module behavior need owner review.')
                 source_lines += count
-        if source_lines > 80 or test_lines > 250 or doc_lines > 80:
+        if not features and (source_lines > 80 or test_lines > 250 or doc_lines > 80):
             return refuse('The change exceeds routine delivery size limits.')
+        if features:return {'eligible':True,'reason':'Verified feature change within standing publication authority; protected components still require review.'}
         return {'eligible': True, 'reason': 'Small verified change with unchanged source interfaces; eligible for draft delivery.'}
     except (ValueError, KeyError, SyntaxError, OSError, TypeError):
         return refuse('The accepted candidate could not be verified for routine delivery.')

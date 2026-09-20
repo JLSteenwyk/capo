@@ -144,6 +144,10 @@ def prepare(store, objective_id, repo, base_branch, title=None, body=None):
     with exclusive(store.home):
         objective = store.get(objective_id)
         workspace, diff = verified_workspace(objective)
+        from .public_safety import check_candidate, check_text
+        check_candidate(objective,diff)
+        if title is not None:check_text(title)
+        if body is not None:check_text(body)
         source = remote_repository(git(objective["repo"], "remote", "get-url", "origin"))
         if source.lower() != repo.lower():
             raise ValueError("Publication repository must match the source origin")
@@ -151,6 +155,7 @@ def prepare(store, objective_id, repo, base_branch, title=None, body=None):
         if objective.get("publication"):
             publication = objective["publication"]
             old = publication["payload"]
+            check_text(old['title']);check_text(old['body'])
             if (old["repository"].lower() != repo.lower() or old["base_branch"] != base_branch
                     or title is not None and old["title"] != title):
                 raise ValueError("A different publication is already prepared for this objective")
@@ -174,6 +179,7 @@ def prepare(store, objective_id, repo, base_branch, title=None, body=None):
             default_body += f"\nRelated issue: {objective['source']}\n"
         if body is None:
             body = default_body
+        check_text(title);check_text(body)
         branch = f"capo/{objective_id}-{objective['accepted_tree'][:12]}"
         ref = f"refs/heads/{branch}"
         existing = git(workspace, "for-each-ref", "--format=%(objectname)", ref)
@@ -206,7 +212,10 @@ def publish(store, objective_id, digest, gateway=None):
         payload = publication["payload"]
         if digest != publication["digest"] or digest != payload_digest(payload):
             raise ValueError("Publication digest does not match the prepared content")
-        workspace, _ = verified_workspace(objective)
+        workspace, diff = verified_workspace(objective)
+        from .public_safety import check_candidate, check_text
+        check_candidate(objective,diff)
+        check_text(payload['title']);check_text(payload['body'])
         if git(workspace, "rev-parse", f"{payload['commit']}^{{tree}}") != objective["accepted_tree"]:
             raise ValueError("Prepared commit differs from the verified tree")
         if publication["status"] == "published":

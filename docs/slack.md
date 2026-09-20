@@ -115,3 +115,11 @@ In the Slack app settings, add `message.channels` under **Event Subscriptions â†
 Messages are recorded durably, so clarification threads work even before an objective exists. Tagged messages that arrive through both event subscriptions are deduplicated. Owner/workspace/channel checks are repeated at intake and execution; bots, edits, other users, and messages outside the configured channel are ignored. New top-level messages and replies in any thread within that channel are accepted without a mention. Capo does not fetch channel history for this feature. Slack nonetheless grants channel-wide event visibility through its history scope; Capo filters events before retaining them. See Slack's [message event](https://docs.slack.dev/reference/events/message/) and [public-channel history scope](https://docs.slack.dev/reference/scopes/channels.history/) documentation.
 
 Generated replies use a shared plain-text formatter before delivery is split into chunks. It removes Markdown heading/emphasis markers and stray trailing model protocol tags, while preserving fenced/inline code and URLs. HTTP(S) sources render as clickable domain labels using Slackâ€™s explicit link syntax; URLs are kept intact across new reply chunks. Code examples and mentions remain escaped. Scheduled delivery retains the exact formatted text and formatting mode for crash reconciliation; formatting changes cannot justify blindly reposting a message.
+
+Repository aliases can opt into `automatic_change_scope: "features"` for broader
+automatic publication and merging through the same verified pipeline. This allows
+new Python modules/functions/imports and removes the routine size/file-count caps;
+it does not bypass protected components or public-data checks. See
+[broader feature authority](self-update.md#broader-feature-authority) for remaining
+boundaries. `development.policy` reports the effective scope and public-repository
+rule so Capo can explain its permissions accurately.
