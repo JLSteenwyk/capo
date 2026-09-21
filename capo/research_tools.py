@@ -405,8 +405,11 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             if isinstance(exc,json.JSONDecodeError) and not arguments_parsed:
                 safe_error=f'Invalid JSON arguments: {exc.msg} at line {exc.lineno}, column {exc.colno}. Return a complete JSON object matching the tool schema. No tool was executed.'
             # Keep provider bodies, credentials, and arbitrary exception messages private.
-            receipts.append({'tool': result['tool'], 'error':
-                             safe_error})
+            failed={'tool':result['tool'],'error':safe_error}
+            if isinstance(exc,json.JSONDecodeError) and not arguments_parsed:
+                # Private, bounded repair context; never execute this string.
+                failed['invalid_arguments_json']=result['arguments_json']
+            receipts.append(failed)
         state['pending'] = None
         state['tool_state']=tools.snapshot()
         state['evidence_chars_used']=evidence_size

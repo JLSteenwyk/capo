@@ -172,6 +172,8 @@ class BackgroundRecoveryTests(unittest.TestCase):
             result=research(provider,tools,{},Path(tmp),max_calls=3)
         write.assert_called_once()
         self.assertIn('Invalid JSON arguments',result['receipts'][0]['error'])
+        self.assertEqual(result['receipts'][0]['invalid_arguments_json'],'{')
+        self.assertIn('invalid_arguments_json',provider.call.call_args_list[1].args[1])
         self.assertIn('No tool was executed',result['receipts'][0]['error'])
         self.assertEqual(result['status'],'reported_complete')
 
