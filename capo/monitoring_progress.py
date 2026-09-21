@@ -31,3 +31,14 @@ def incomplete_report(receipts):
     return {'findings': [],
             'blockers': [coverage + '. The scan is incomplete; no verified monitoring report was produced.'],
             'coverage': coverage + '; this is not a clean check. Resume saved unfinished work.'}
+
+
+def completion_gaps(result):
+    """Describe actual unfinished outcomes, not a guessed exhaustion cause."""
+    outcomes=result.get('outcome_report',{}).get('outcomes',[])
+    gaps=[]
+    for item in outcomes:
+        if item.get('status') in ('partial','needs_input'):
+            gap=item.get('next_step') or item.get('requirement')
+            if isinstance(gap,str) and gap.strip():gaps.append(gap[:1000])
+    return gaps[:3] or ['Some requested work remains unverified; saved results do not establish completion.']

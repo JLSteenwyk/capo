@@ -111,4 +111,4 @@ class Observations:
             'Completion requires explicit source evidence that the intended outcome occurred, not merely disappearance from a list.',
             object_schema({'id': TEXT, 'expected_revision': TEXT, 'fields': FIELDS,
                            'evidence_refs': {'type':'array','items':TEXT},
-                           'certainty': {'type':'string','enum':['explicit','inferred']}}), observe, mutates=True)]
+                           'certainty': {'type':'string','enum':['explicit','inferred']}}), observe, mutates=True, settles=True)]

@@ -63,7 +63,7 @@ class Monitor:
                 # Fit one commitment and all of its linked source updates in the
                 # bounded review. Unreviewed changes remain unacknowledged.
                 batch = ([item for item in linked if item['linked_task_id']==linked[0]['linked_task_id']]
-                         if linked else changed[:100])
+                         if linked else changed[:1])
                 if not batch:
                     return []
                 key = hashlib.sha256(json.dumps(batch, sort_keys=True).encode()).hexdigest()
@@ -88,6 +88,7 @@ class Monitor:
                     'A missing item from a limited list does not prove completion or cancellation. '
                     'Use commitments.observe only with actual supplied source references. Read-only worker delegation is available; no external mutations are authorized. '
                     'Ignore repetitive CI alerts, promotions and ordinary calendar entries unless they change an actual commitment. '
+                    'Resolve this small batch before exploring unrelated tasks. Reserve tool calls for commitments.observe: once source evidence and the current task are sufficient, save the update immediately rather than merely describing it. '
                     'Finish quietly when there is nothing to track; the host decides what merits an alert.')
                 if result.get('status') == 'partial':
                     state.update(status='failed',result=result,

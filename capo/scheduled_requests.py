@@ -39,7 +39,9 @@ class ScheduledManager(DigestManager):
         for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('queued','building')",(self.owner,)).fetchall():
             old=json.loads(row[0]);worker=self.workers.get(old['key'])
             if now.timestamp()>=old['deadline'] and not (worker and worker.is_alive()):
-                old['status']='expired';self.db.save(old,now)
+                old['status']='expired'
+                old['error_summary']='The check could not finish before its recovery window closed. Saved results remain available; the next scheduled check will try again.'
+                self.db.save(old,now)
         for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('ready','sending')",(self.owner,)).fetchall():
             run=json.loads(row[0]);s=schedules.get(run['schedule_id'])
             if not s or not s['enabled'] or s['revision']!=run['revision']:
@@ -47,16 +49,25 @@ class ScheduledManager(DigestManager):
                 run['deadline']=now.timestamp();self.db.save(run,now)
             self.deliver(run,now)
         for s in schedules.values():
-            slot=due_slot(s,now)
-            if slot is None:continue
-            due,deadline=slot
-            # Revisions don't create extra deliveries for the same scheduled occurrence.
-            key=self.owner+':scheduled:'+s['id']+':'+due.isoformat()
-            run=self.db.get(key)
-            if run is None:
-                run=self.db.create(dict(key=key,scope=self.owner,day=due.date().isoformat(),status='queued',
-                    created=now.timestamp(),deadline=deadline.timestamp(),identity=identity(self.service.config),
-                    schedule_id=s['id'],revision=s['revision'],request=s['request'],title=s['title'],attempts=0),now)
+            if not s['enabled']:continue
+            # Resume the same checkpoint after a temporary failure, including the
+            # bounded recovery window. Never create a second occurrence or reset
+            # its tool/provider budgets.
+            pending=self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('queued','building') "
+                "AND json_extract(data, '$.schedule_id')=? ORDER BY updated LIMIT 1",
+                (self.owner,s['id'])).fetchone()
+            if pending:
+                run=json.loads(pending[0]);key=run['key']
+            else:
+                slot=due_slot(s,now)
+                if slot is None:continue
+                due,deadline=slot
+                key=self.owner+':scheduled:'+s['id']+':'+due.isoformat()
+                run=self.db.get(key)
+                if run is None:
+                    run=self.db.create(dict(key=key,scope=self.owner,day=due.date().isoformat(),status='queued',
+                        created=now.timestamp(),deadline=deadline.timestamp(),identity=identity(self.service.config),
+                        schedule_id=s['id'],revision=s['revision'],request=s['request'],title=s['title'],attempts=0),now)
             if run['status'] not in ('queued','building') or now.timestamp()<run.get('retry_at',0):continue
             worker=self.workers.get(key)
             if worker and worker.is_alive():continue
@@ -104,13 +115,14 @@ class ScheduledManager(DigestManager):
                     readonly.restore(progress.get('state', {}), continuation=True)
                     attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
-                    result=research(Providers(timeout=90),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
+                    result=research(Providers(timeout=90,deadline=run['deadline']),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
                         instructions=GUIDANCE+f'You are {role[0]}, managed by Capo. {role[1]} '
                         'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
                         'report verified actionable findings, essential access/coverage blockers, and what was actually checked. '
                         'Previous-check continuation contains host-saved pending source IDs and pagination cursors. Resume those reads/pages first without rereading inspected bodies, then inspect newer sources if budget permits. Recheck stale cursors with a fresh bounded search. Report exactly which windows remain unchecked. Never infer that an inspected excerpt means its full message or attachment was read. '
                         'For a requested document, return the full document as your output; the host saves it after verification. Do not claim document saving as a completed external action. Use tasks.overview for loose ends and health.status for failed or missed checks when relevant. Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)
+                    run.pop('error_summary',None)
                     run.update(status='ready',payload={'text':result['reply'],'news':[]},outcome_status=result.get('status','complete'),
                                checked_at=datetime.now(timezone.utc).isoformat())
                     if s.get('delivery')=='changes':
@@ -118,7 +130,8 @@ class ScheduledManager(DigestManager):
                         except ValueError:
                             recorded=incomplete_report(result.get('receipts', []))
                         if result.get('status')=='partial':
-                            recorded['blockers'].append('The check reached its limits before completing all requested work.')
+                            from .monitoring_progress import completion_gaps
+                            recorded['blockers']=list(dict.fromkeys(recorded['blockers']+completion_gaps(result)))[:5]
                         reads=[r for r in result.get('receipts', []) if r.get('result') is not None
                                and (r.get('tool', '').startswith(('mail.', 'github.', 'calendar.', 'web.', 'documents.', 'tasks.'))
                                     or r.get('tool') == 'social.search')]
@@ -136,7 +149,10 @@ class ScheduledManager(DigestManager):
                 except Exception as exc:
                     from .recovery import RetryLater
                     if isinstance(exc, RetryLater):
-                        run.update(status='queued', retry_at=exc.retry_at, attempts=max(0, run['attempts']-1))
+                        scheduled_deadline=run.setdefault('scheduled_deadline',run['deadline'])
+                        run.update(status='queued', retry_at=exc.retry_at, attempts=max(0, run['attempts']-1),
+                                   deadline=scheduled_deadline+1800,
+                                   error_summary='The provider is temporarily unavailable. Capo will retry the saved work for up to 30 minutes after its scheduled window.')
                     else:
                         from .recovery import failure_summary
                         run.update(status='queued', retry_at=datetime.now(timezone.utc).timestamp()+60, error_summary=failure_summary(exc))

@@ -111,6 +111,7 @@ def main():
         os.close(gate_read)
     receipt = {"pid": worker.pid, "pgid": worker.pid, "cleanup_confirmed": False}
     deadline = time.monotonic() + timeout
+    wall_deadline = time.time() + timeout
     result = 125
     try:
         save_receipt(directory / "worker.json", receipt)
@@ -118,7 +119,7 @@ def main():
         os.close(gate_write)
         gate_write = None
         while worker.poll() is None:
-            if stopped or time.monotonic() >= deadline:
+            if stopped or time.monotonic() >= deadline or time.time() >= wall_deadline:
                 result = 124
                 break
             readable, _, _ = select.select([parent_fd], [], [], 0.05)

@@ -298,3 +298,22 @@ bounded pass and does not acknowledge unfinished reviews. Morning and interactiv
 summaries distinguish historical task status from current source evidence, and
 hourly alerts reload tasks after reconciliation rather than using an earlier list.
 Owner-paused and closed tasks remain protected by the existing update checks.
+
+### Background recovery and completion
+
+Temporary provider failures in scheduled requests resume the same occurrence and
+checkpoint for at most 30 minutes beyond the original catch-up window. This grace
+period is pinned once, survives restarts, and cannot expand with each retry.
+Existing tool budgets, provider retry limits, action receipts, schedule revisions
+and disabled-agent rules still apply. Partial results are not blindly restarted.
+Partial reports preserve the actual missing-source or completion reason rather
+than labeling every partial outcome as budget exhaustion. Health notices expose
+those specific blockers. Worker timeouts check both elapsed and wall-clock time
+so a suspended computer cannot silently extend a reasoning attempt on wake.
+
+Commitment reviews process one linked task (with its source evidence) or one
+unlinked observation per pass; remaining observations stay unacknowledged for
+later checks. The shared tool loop supports optional settlement tools, currently
+used for recording commitments: the last two tool calls are reserved for saving
+supported updates, without requiring a mutation when no update is warranted.
+This keeps exploratory reads from consuming the entire review budget.

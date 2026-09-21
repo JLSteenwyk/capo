@@ -20,6 +20,7 @@ class ReadTool:
     verifies: bool = False
     handoff: bool = False
     finalizes: bool = False
+    settles: bool = False
 
 
 class ReadTools:
@@ -190,8 +191,11 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         reported = any(r.get('tool') in finalizers and (r.get('result') or {}).get('saved') for r in receipts)
         report_reserve = min(16000, evidence_limit // 4) if finalizers and not reported else 0
         reporting = bool(finalizers and not reported and (remaining <= 2 or evidence_size >= evidence_limit - report_reserve))
+        settlers = {name for name, tool in tools.tools.items() if tool.settles}
+        settling = bool(settlers and remaining <= 2)
         catalog = [t for t in tools.catalog() if t['name'] not in unavailable
-                   and (not reporting or t['name'] in finalizers)]
+                   and (not reporting or t['name'] in finalizers)
+                   and (not settling or t['name'] in settlers or t['name'] in finalizers)]
         now = datetime.now(ZoneInfo(request.get('timezone','America/Los_Angeles'))).isoformat()
         prompt = (
             f'Current local time: {now}. Complete the owner request using the registered tools. Choose your next tool '
@@ -252,6 +256,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             + instructions + '\n' + json.dumps({
                 'request': request, 'tools': catalog,
                 'unavailable_tools': unavailable,
+                'settlement_instruction': 'Use the remaining calls to save supported updates now, or finish honestly if no update is warranted. Do not invent a change or act without sufficient evidence.' if settling else '',
                 'report_required': reporting,
                 'report_instruction': 'Save an honest partial report now, using successful receipts only. Explain unchecked sources; do not claim a complete scan.' if reporting else '',
                 'receipts': [{**r, 'receipt_index': str(i)} for i,r in enumerate(receipts)],
@@ -338,7 +343,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             arguments = json.loads(result['arguments_json'])
             action_key = hashlib.sha256(json.dumps([result['tool'], arguments], sort_keys=True).encode()).hexdigest()
             chosen = tools.tools.get(result['tool'])
-            if result['tool'] in unavailable or (reporting and result['tool'] not in finalizers):
+            if (result['tool'] in unavailable or (reporting and result['tool'] not in finalizers)
+                    or (settling and result['tool'] not in settlers | finalizers)):
                 receipts.append({'tool':result['tool'], 'error':'This tool is unavailable for this step. Save the partial monitoring report or finish from existing evidence.'})
                 _write(checkpoint,state)
                 _write(directory/'receipts.json', receipts)

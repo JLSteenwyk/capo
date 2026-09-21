@@ -102,7 +102,7 @@ def run_process(argv, cwd, directory, timeout, stdin=None):
             deadline = time.monotonic() + timeout
             pending_input = stdin
             while True:
-                remaining = deadline - time.monotonic()
+                remaining = min(deadline - time.monotonic(), started + timeout - time.time())
                 if remaining <= 0:
                     raise subprocess.TimeoutExpired(argv, timeout)
                 if sum((directory / name).stat().st_size for name in ("stdout.txt", "stderr.txt")) > 8_000_000:
@@ -144,6 +144,8 @@ def run_process(argv, cwd, directory, timeout, stdin=None):
     if (directory / "stdout.txt").stat().st_size > 4_000_000:
         raise WorkerError(f"Output exceeds 4 MB; inspect {directory}")
     output = (directory / "stdout.txt").read_text(errors="replace")
+    if process.returncode == 124:
+        raise subprocess.TimeoutExpired(argv, timeout)
     if process.returncode:
         raise WorkerError(f"{Path(argv[0]).name} exited {process.returncode}; inspect {directory}")
     return output

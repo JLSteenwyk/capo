@@ -84,10 +84,11 @@ def run_cli(provider, argv, cwd, directory, timeout, stdin=None):
 
 
 class Providers:
-    def __init__(self, timeout=900, config=None, capacity=None):
+    def __init__(self, timeout=900, config=None, capacity=None, deadline=None):
         from .transport import load_config, validate_config
         from .capacity import Capacity
         self.timeout = timeout
+        self.deadline = deadline
         self.config = load_config() if config is None else validate_config(config)
         self.capacity = Capacity(providers_config=self.config) if capacity is None else capacity
 
@@ -95,12 +96,21 @@ class Providers:
         from .recovery import RateLimited
         if self.capacity:
             self.capacity.check(provider)
+        import time
+        original_timeout = self.timeout
+        if self.deadline is not None:
+            remaining = self.deadline - time.time()
+            if remaining <= 0:
+                raise TimeoutError('The execution window has closed')
+            self.timeout = min(original_timeout, remaining)
         try:
             return self._call(provider, prompt, schema, cwd, directory, images)
         except RateLimited as exc:
             if self.capacity:
                 self.capacity.limited(provider, exc.reset_at)
             raise
+        finally:
+            self.timeout = original_timeout
 
     def _call(self, provider, prompt, schema, cwd, directory, images=None):
         if images and provider != "claude":

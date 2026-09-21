@@ -142,7 +142,8 @@ class Health:
             if state in ('failed','expired') or problems or outcome == 'partial': state = 'needs_attention'
             elif state not in ('sent','quiet','cancelled') and now.timestamp() > (run or {}).get('deadline', deadline): state = 'missed'
             results.append({'title': title, 'schedule_id': sid, 'due_at': latest.isoformat(), 'status': state,
-                            'next_action': 'Inspect saved progress and receipts before retrying; do not repeat unconfirmed actions.'
+                            'next_action': (' '.join(problems[:2]) or (run or {}).get('error_summary') or
+                                            'This check is incomplete. Capo needs to inspect its saved results before retrying.')
                                            if state in ('needs_attention','missed') else '',
                             'coverage': 'Current schedule; latest expected occurrence within 32 days, latest 500 saved runs.'})
         return results
