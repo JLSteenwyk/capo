@@ -55,7 +55,8 @@ def shared_tools(home,config,documents,request=None):
     feedback_context = {}
     if request and request.get('owner_request') and request.get('request_thread'):
         from .request_memory import RequestMemory
-        feedback_context = RequestMemory(home, owner_key(config), request['request_thread']).read()
+        feedback_context = {'saved_thread': RequestMemory(home, owner_key(config), request['request_thread']).read(),
+                            'recent_messages': request.get('recent_messages', [])}
     tools.extend(PersonalMemory(home,owner_key(config),(request or {}).get('owner_request'),feedback_context).tools())
     from .request_memory import RequestMemory
     tools.extend(RequestMemory(home,owner_key(config),'').experience_tools())

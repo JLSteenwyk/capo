@@ -76,10 +76,15 @@ class PersonalMemory:
         if direction not in ('more', 'less', 'avoid', 'correction'):
             raise ValueError('Invalid feedback direction')
         # Resolve “this” against host-provided conversation data, not a model invention.
-        evidence = json.dumps(self.context, ensure_ascii=False) + '\n' + str((self.origin or {}).get('text', ''))
+        def texts(value):
+            if isinstance(value, str): return [value]
+            if isinstance(value, dict): return [s for child in value.values() for s in texts(child)]
+            if isinstance(value, list): return [s for child in value for s in texts(child)]
+            return []
+        evidence = texts(self.context) + [str((self.origin or {}).get('text', ''))]
         if re.search(r'xox[baprs]-|xapp-|sk-ant-|gh[pousr]_|PRIVATE KEY',subject):
             raise ValueError('Do not store credentials in feedback')
-        if not subject.strip() or len(subject) > 800 or subject not in evidence:
+        if not subject.strip() or len(subject) > 800 or not any(subject in text for text in evidence):
             raise ValueError('Feedback needs an exact subject from this conversation or owner message. Ask if unclear.')
         return self.change(key, expected_revision, statement, operation_id,
                            feedback={'subject': subject, 'direction': direction,

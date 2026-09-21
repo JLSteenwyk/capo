@@ -80,6 +80,15 @@ class AssistantFollowThroughTests(unittest.TestCase):
         self.assertIn('health.status',registry.tools)
         self.assertNotIn('memory.feedback',shared_tools(self.home,self.config,Documents(self.home,self.owner)).tools)
 
+    def test_feedback_can_reference_a_host_loaded_scheduled_reply(self):
+        request={'request_thread':'scheduled','owner_request':{'text':'Less of this.'},
+                 'recent_messages':[{'capo':'New release: "Example Album"'}]}
+        registry=shared_tools(self.home,self.config,Documents(self.home,self.owner),request)
+        registry.call('memory.feedback',{'key':'music.release','expected_revision':'','statement':'Less of this.',
+            'subject':'"Example Album"','direction':'less'},operation_id='scheduled-feedback')
+        value=PersonalMemory(self.home,self.owner).search('')['memories'][0]
+        self.assertEqual(value['feedback']['subject'],'"Example Album"')
+
     def test_connection_probe_refresh_failure_recovery_and_staleness(self):
         config=dict(self.config,gmail={'enabled':True,'drafts':True})
         health=Health(self.home,config)
