@@ -280,3 +280,21 @@ alerts within a day; morning briefing evidence also includes missing/failed
 reports. Checks retry on subsequent configured runs, while existing bounded
 reasoning recovery handles transient provider failures. Expired grants still
 require owner sign-in, and uncertain external actions still require reconciliation.
+
+Task summaries now refresh linked email threads before presenting saved work as
+current. `tasks.refresh` exposes this source check separately so it can compose
+with other tools. It reads up to 20 source references per call, returns the latest
+eight thread snippets, and marks unavailable, unsupported, or budget-limited
+sources unverified. Gmail thread IDs found by these checks are registered with
+the request's mail reader so the agent can inspect full message excerpts through
+`mail.thread` within its existing limits. Drafts do not count as sent replies;
+later sent messages are evidence of a reply, not automatic proof of task completion.
+Other source types require their existing shared tools for verification.
+
+Hourly monitoring refreshes linked task threads independently of the recent sent
+mail sample, rotating by last inspection. Changed thread evidence reaches the
+existing commitment reviewer. It reviews one linked task's source changes per
+bounded pass and does not acknowledge unfinished reviews. Morning and interactive
+summaries distinguish historical task status from current source evidence, and
+hourly alerts reload tasks after reconciliation rather than using an earlier list.
+Owner-paused and closed tasks remain protected by the existing update checks.

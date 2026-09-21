@@ -93,7 +93,10 @@ def shared_tools(home,config,documents,request=None):
     policy = autonomy_settings(config)
     tasks = Tasks(home, owner_key(config), origin=(request or {}).get('owner_request'),
                   allowed_actions=[])
-    tools.extend(tasks.tools())
+    tools.extend(t for t in tasks.tools() if t.name != 'tasks.overview')
+    from .task_evidence import TaskEvidence
+    task_evidence=TaskEvidence(home, owner_key(config), config)
+    tools.extend(task_evidence.tools())
     if (request or {}).get('owner_request') and policy['enabled']:
         from .delegation import delegation_tool
         tools.append(delegation_tool(tasks, policy))
@@ -107,6 +110,7 @@ def shared_tools(home,config,documents,request=None):
                 if self.client is None:self.client=Gmail()
                 return self.client.get(*args,**kwargs)
         mail=GmailReadTools(LazyMail())
+        task_evidence.mail_reads=mail
         tools.extend(mail.tools.values())
         if config.get('gmail',{}).get('drafts',False):
             from .drafts import DraftTools
@@ -187,7 +191,7 @@ class CapabilityConversation(ConversationRouter):
                 'Do not substitute an unrelated inbox summary. Discover useful saved documents when relevant. '
                 'For a requested reusable document, return it for private storage. Never assume a connection '
                 'is unavailable because an earlier bot message said so; the current tool catalog is authoritative. '
-                'Use tasks.overview to find loose ends across conversations. Keep one task identity through follow-ups, save next actions and review dates, and close tasks only with evidence. For daily or weekly planning, combine active tasks, deadlines, dependencies, waiting items, calendar availability and relevant email evidence. '
+                'Use tasks.overview to find loose ends across conversations. Its groups are historical saved statuses; inspect fresh source_check evidence before saying a reply is still owed. Later SENT messages require review, not an offer to draft an already-sent reply. Use mail tools to read more when snippets are insufficient; unsupported or failed checks mean unverified. Update existing tasks when the owner requests a current reconciliation and fresh evidence clearly establishes completion. Keep one task identity through follow-ups, save next actions and review dates, and close tasks only with evidence. For daily or weekly planning, combine active tasks, deadlines, dependencies, waiting items, calendar availability and relevant email evidence. '
                 'Highlight conflicts, preparation and work windows; label assumptions about work hours and task duration. '
                 'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first. '
                 'For explicitly requested work that needs later follow-through, save its task and use tasks.delegate. '

@@ -171,7 +171,13 @@ def collect(config, preferences, objectives, now, home=None):
                   calendar='primary Google Calendar', timezone=preferences['timezone'])
     from .attention import personal_tasks
     try:
-        result['attention'].extend(personal_tasks(home,config,now))
+        task_items=personal_tasks(home,config,now)
+        if home is not None:
+            from .task_evidence import TaskEvidence
+            from .capabilities import owner_key
+            checks=TaskEvidence(home,owner_key(config),config).refresh([t['task_id'] for t in task_items[:20]])
+            TaskEvidence.annotate(task_items, checks)
+        result['attention'].extend(task_items)
         result['coverage'].append(dict(source='Personal tasks',status='ok',checked_at=now.isoformat()))
     except Exception:
         result['coverage'].append(dict(source='Personal tasks',status='unavailable',checked_at=now.isoformat()))

@@ -208,10 +208,21 @@ class HeartbeatManager(DigestManager):
             try:
                 attempt=directory/str(run['attempts']);(attempt/'cwd').mkdir(parents=True,mode=0o700,exist_ok=True)
                 items=evidence(config,objectives,now,self.service.store.home)
+                from .task_evidence import TaskEvidence
+                from .capabilities import owner_key
+                task_evidence=TaskEvidence(self.service.store.home, owner_key(config), config)
+                refreshed=task_evidence.background()
+                items.extend(task_evidence.observations(refreshed))
                 from .task_work import TaskWork
                 from .monitoring import Monitor
                 monitor = Monitor(self.service.store.home, config)
                 changes = monitor.tick(now, items)
+                # Monitoring can close or correct tasks. Do not alert from the pre-review list.
+                from .attention import personal_tasks
+                items=[item for item in items if item.get('kind')!='personal_task']
+                task_items=personal_tasks(self.service.store.home,config,now,horizon_days=1,heartbeat=True)
+                task_evidence.annotate(task_items, refreshed)
+                items.extend(task_items)
                 items.extend(monitor.notices())
                 items.extend(TaskWork(self.service.store.home, config).tick(now, items, seen, changes))
                 _write(attempt/'evidence.json',items)
