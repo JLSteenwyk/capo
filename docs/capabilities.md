@@ -317,3 +317,8 @@ later checks. The shared tool loop supports optional settlement tools, currently
 used for recording commitments: the last two tool calls are reserved for saving
 supported updates, without requiring a mutation when no update is warranted.
 This keeps exploratory reads from consuming the entire review budget.
+
+Routine scheduled inspections and commitment reviews explicitly use medium Claude
+reasoning effort to fit their short per-step deadlines. Interactive and coding
+work retains its existing defaults. Provider selection, evidence requirements
+and completion checks are unchanged.

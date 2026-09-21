@@ -84,11 +84,14 @@ def run_cli(provider, argv, cwd, directory, timeout, stdin=None):
 
 
 class Providers:
-    def __init__(self, timeout=900, config=None, capacity=None, deadline=None):
+    def __init__(self, timeout=900, config=None, capacity=None, deadline=None, effort=None):
         from .transport import load_config, validate_config
         from .capacity import Capacity
         self.timeout = timeout
         self.deadline = deadline
+        if effort not in (None, "low", "medium", "high", "xhigh", "max"):
+            raise ValueError("Invalid reasoning effort")
+        self.effort = effort
         self.config = load_config() if config is None else validate_config(config)
         self.capacity = Capacity(providers_config=self.config) if capacity is None else capacity
 
@@ -128,6 +131,8 @@ class Providers:
                     "--setting-sources", "", "--permission-mode", "dontAsk",
                     "--json-schema", json.dumps(schema), "--no-session-persistence",
                     "--settings", json.dumps({"autoMemoryEnabled": False, "disableAllHooks": True})]
+            if self.effort is not None:
+                argv += ["--effort", self.effort]
             input_text = prompt
             if images:
                 import base64

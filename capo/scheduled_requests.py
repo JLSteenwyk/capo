@@ -115,7 +115,7 @@ class ScheduledManager(DigestManager):
                     readonly.restore(progress.get('state', {}), continuation=True)
                     attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
-                    result=research(Providers(timeout=90,deadline=run['deadline']),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
+                    result=research(Providers(timeout=90,deadline=run['deadline'],effort='medium'),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
                         instructions=GUIDANCE+f'You are {role[0]}, managed by Capo. {role[1]} '
                         'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
                         'report verified actionable findings, essential access/coverage blockers, and what was actually checked. '

@@ -79,7 +79,7 @@ class Monitor:
             registry = shared_tools(self.home, self.config, docs, request)
             tools = ReadTools([t for t in registry.tools.values() if not t.mutates] + self.observations.tools(state['items']))
             try:
-                result = research(Providers(timeout=90), tools, request, self.root/state['key'],
+                result = research(Providers(timeout=90,effort='medium'), tools, request, self.root/state['key'],
                     max_calls=settings(self.config)['max_tool_calls'], recovery=self.config.get('recovery'),
                     instructions=GUIDANCE+'Read tasks referenced by linked_task_id and inspect fresh thread_evidence. Reconcile sent replies with the actual task outcome, even if the original email is older than the recent inbox window. For grouped tasks inspect all linked sources before completion. This is a monitoring review, not a grant to act. Search existing tasks before creating or updating commitments. '
                     'Explicit commitments can be tracked as open; uncertain possibilities remain candidates and must not create reminders. '

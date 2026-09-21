@@ -337,10 +337,12 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             return completed
         if any(result[key] for key in ('reply', 'document_title', 'document')):
             raise ValueError('Unexpected output during tool selection')
+        arguments_parsed = False
         try:
             if len(result['arguments_json']) > 12000:
                 raise ValueError('Arguments too large')
             arguments = json.loads(result['arguments_json'])
+            arguments_parsed = True
             action_key = hashlib.sha256(json.dumps([result['tool'], arguments], sort_keys=True).encode()).hexdigest()
             chosen = tools.tools.get(result['tool'])
             if (result['tool'] in unavailable or (reporting and result['tool'] not in finalizers)
@@ -400,6 +402,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             from .effects import UncertainEffect
             from .calendar import CalendarError
             safe_error = str(exc) if isinstance(exc, (WebError, UncertainEffect, CalendarError, GitHubReadError)) else 'Tool failed or arguments exceeded its limits. No result available.'
+            if isinstance(exc,json.JSONDecodeError) and not arguments_parsed:
+                safe_error=f'Invalid JSON arguments: {exc.msg} at line {exc.lineno}, column {exc.colno}. Return a complete JSON object matching the tool schema. No tool was executed.'
             # Keep provider bodies, credentials, and arbitrary exception messages private.
             receipts.append({'tool': result['tool'], 'error':
                              safe_error})

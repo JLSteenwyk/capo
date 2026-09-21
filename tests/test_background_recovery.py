@@ -149,3 +149,39 @@ class BackgroundRecoveryTests(unittest.TestCase):
                  patch('capo.process.os.write'),patch('capo.process.reconcile_local'):
                 with self.assertRaises(subprocess.TimeoutExpired):
                     run_process(['synthetic'],Path(tmp),Path(tmp)/'attempt',90)
+
+    def test_routine_effort_is_explicit_and_does_not_enable_native_tools(self):
+        from capo.providers import Providers
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            with patch('capo.providers.run_cli',return_value=json.dumps({'structured_output':{'reply':'ready'}})) as cli:
+                provider=Providers(config={},capacity=Mock(),effort='medium')
+                provider.call('claude','Check',object_schema({'reply':{'type':'string'}}),root,root/'attempt')
+                args=cli.call_args.args[1]
+                self.assertEqual(args[args.index('--effort')+1],'medium')
+                self.assertEqual(args[args.index('--tools')+1],'')
+                self.assertEqual(args[args.index('--permission-mode')+1],'dontAsk')
+
+    def test_malformed_arguments_can_be_repaired_without_repeating_a_write(self):
+        write=Mock(return_value={'saved':True})
+        tools=ReadTools([ReadTool('record.save','Save',object_schema({}),write,mutates=True)])
+        def step(args):return dict(action='tool',tool='record.save',arguments_json=args,reply='',document='',document_title='')
+        done=dict(action='finish',tool='',arguments_json=json.dumps({'outcomes':[dict(requirement='Save',kind='action',status='complete',evidence=['1'],next_step='')]}),reply='Saved.',document='',document_title='')
+        provider=Mock();provider.call.side_effect=[step('{'),step('{}'),done]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=research(provider,tools,{},Path(tmp),max_calls=3)
+        write.assert_called_once()
+        self.assertIn('Invalid JSON arguments',result['receipts'][0]['error'])
+        self.assertIn('No tool was executed',result['receipts'][0]['error'])
+        self.assertEqual(result['status'],'reported_complete')
+
+    def test_service_json_error_does_not_claim_tool_was_never_called(self):
+        read=Mock(side_effect=json.JSONDecodeError('Malformed response','',0))
+        tools=ReadTools([ReadTool('source.read','Read',object_schema({}),read)])
+        provider=Mock();provider.call.side_effect=[dict(action='tool',tool='source.read',arguments_json='{}',reply='',document='',document_title=''),
+            dict(action='finish',tool='',arguments_json=json.dumps({'outcomes':[dict(requirement='Read',kind='answer',status='partial',evidence=['0'],next_step='Investigate the service response.')]}),reply='Source unavailable.',document='',document_title='')]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=research(provider,tools,{},Path(tmp),max_calls=2)
+        read.assert_called_once()
+        self.assertNotIn('No tool was executed',result['receipts'][0]['error'])
+        self.assertNotIn('Malformed response',result['receipts'][0]['error'])
