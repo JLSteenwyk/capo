@@ -134,6 +134,36 @@ class Tasks:
                     break
         return {'tasks': matches[:100], 'cursor': matches[99]['id'] if len(matches) > 100 else ''}
 
+    def overview(self, now=None):
+        """A bounded cross-thread inventory, with explicit coverage."""
+        now = now or datetime.now(timezone.utc)
+        groups = {key: [] for key in ('overdue', 'due_soon', 'review_due', 'waiting', 'unscheduled')}
+        counts = {key: 0 for key in groups}
+        cursor = ''; inspected = 0
+        while inspected < 1000:
+            page = self.search(cursor=cursor)
+            for task in page['tasks']:
+                inspected += 1
+                due = datetime.fromisoformat(task['due_at']) if task['due_at'] else None
+                review = task.get('follow_through', {}).get('next_review_at')
+                if due and due < now: key = 'overdue'
+                elif due and due <= now + timedelta(days=7): key = 'due_soon'
+                elif review and datetime.fromisoformat(review) <= now: key = 'review_due'
+                elif task['waiting_on'] or task['blocked_by'] or task['status'] == 'waiting': key = 'waiting'
+                elif not due: key = 'unscheduled'
+                else: continue
+                counts[key] += 1
+                groups[key].append(task)
+            cursor = page['cursor']
+            if not cursor: break
+        for key, values in groups.items():
+            values.sort(key=lambda t: (t['priority'] != 'high', t['due_at'] or '9999', t['updated_at']))
+            groups[key] = values[:20]
+        return {'groups': groups, 'counts': counts, 'inspected': inspected,
+                'more_available': bool(cursor),
+                'coverage': 'Active saved tasks across conversations. Up to 1000 inspected, 20 per group. '
+                            'Not every conversation automatically creates a task. Notes are not completion evidence.'}
+
     def _validate(self, db, fields, id):
         from .contracts import validate
         validate(fields, FIELDS)
@@ -271,6 +301,7 @@ class Tasks:
 
     def tools(self):
         return [
+            ReadTool('tasks.overview', 'Review unfinished work across conversations: overdue, due soon, review due, waiting and unscheduled tasks. Read-only; use tasks.get before changing an item.', object_schema({}), self.overview),
             ReadTool('tasks.search', 'Find personal tasks and reminders; active includes open and waiting. Use returned cursor for more.',
                      object_schema({'query': TEXT, 'status': {'type':'string','enum':['active','all',*STATUSES]}, 'cursor': TEXT}), self.search),
             ReadTool('tasks.history', 'Read earlier decisions, corrections and task states; paginated by revision.',

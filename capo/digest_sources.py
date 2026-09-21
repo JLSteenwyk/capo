@@ -175,6 +175,15 @@ def collect(config, preferences, objectives, now, home=None):
         result['coverage'].append(dict(source='Personal tasks',status='ok',checked_at=now.isoformat()))
     except Exception:
         result['coverage'].append(dict(source='Personal tasks',status='unavailable',checked_at=now.isoformat()))
+    if home is not None:
+        from .health import Health
+        try:
+            for check in Health(home, config).automations(now):
+                if check['status'] in ('missed', 'needs_attention'):
+                    result['attention'].append({'id':'health:'+hashlib.sha256(json.dumps(check,sort_keys=True).encode()).hexdigest()[:20],
+                        'title':check['title'], 'status':check['status'], 'url':'', 'next_action':check['next_action']})
+        except Exception:
+            result['coverage'].append(dict(source='Automation health',status='unavailable',checked_at=now.isoformat()))
     superseded={o.get('continuation_of') for o in objectives if o.get('continuation_of')}
     for objective in objectives:
         if objective['id'] in superseded:continue

@@ -37,6 +37,13 @@ def due_slot(now,p):
 
 def evidence(config,objectives,now,home=None):
     items=[]
+    from .health import Health, diagnosis
+    health=Health(home,config) if home is not None else None
+    def connection(service, exc=None):
+        if health: health.record(service,exc,now)
+        if exc:
+            status, action=diagnosis(exc)
+            add('connection',{'title':service.title()+' check unavailable','status':status,'next_action':action})
     def add(kind,data):
         key=kind+':'+hashlib.sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()[:24]
         items.append(dict(id=key,kind=kind,**data))
@@ -53,7 +60,8 @@ def evidence(config,objectives,now,home=None):
                 if item['unread'] or item.get('sent_by_owner'):
                     add('email',{'title':item['subject'],'sender':item['from'],'snippet':item['snippet'],
                                  'message_id':item['id'],'date':item['date'],'sent_by_owner':item.get('sent_by_owner',False)})
-        except Exception:add('connection',{'title':'Gmail check unavailable'})
+            connection('gmail')
+        except Exception as exc:connection('gmail',exc)
     if config.get('calendar',{}).get('enabled'):
         try:
             events=GoogleCalendar().events(now.isoformat(),(now+timedelta(hours=24)).isoformat())
@@ -61,7 +69,8 @@ def evidence(config,objectives,now,home=None):
                 add('calendar',{'title':event.get('summary','Untitled event'),
                                 'start':event.get('start',{}),'end':event.get('end',{}),
                                 'event_id':event.get('id','')})
-        except Exception:add('connection',{'title':'Calendar check unavailable'})
+            connection('calendar')
+        except Exception as exc:connection('calendar',exc)
     for alias, repository in list(config.get('repositories', {}).items())[:10]:
         try:
             from .github import GitHub, remote_repository
@@ -89,6 +98,10 @@ def evidence(config,objectives,now,home=None):
                         'run_id':run['key']})
         finally:
             scheduled.close()
+    if health:
+        for check in health.automations(now):
+            if check['status'] in ('missed','needs_attention'):
+                add('connection',{'title':check['title'], 'status':check['status'], 'next_action':check['next_action']})
     superseded={o.get('continuation_of') for o in objectives}
     for objective in objectives:
         if objective['id'] in superseded:continue
@@ -107,6 +120,18 @@ def select(items,seen,now,directory,provider=None,assessments=None):
     candidates=[item for item in items if seen.get(item['id'],{}).get('day')!=day
                 and (assessments is None or not assessments.was_quiet(item, now))]
     if not candidates:return {'text':'','news':[]}
+    # Connection and delivery failures are host observations. Reporting them must
+    # not depend on the AI provider whose availability may itself be the problem.
+    operational=[]; titles=set()
+    for item in candidates:
+        if item.get('kind')=='connection' and item['title'] not in titles:
+            operational.append(item); titles.add(item['title'])
+    if operational:
+        selected=operational[:3]
+        return {'text':'Needs your attention:\n'+'\n'.join(
+                    '• '+item['title'][:120]+': '+str(item.get('next_action') or item.get('summary') or 'Check the saved service status before retrying.')[:220]
+                    for item in selected),
+                'news':[{'id':item['id'],'day':day} for item in selected], 'task_notices':[]}
     schema=object_schema({'alerts':{'type':'array','maxItems':3,'items':object_schema({'id':TEXT,'reason':TEXT})}})
     result=(provider or Providers(timeout=90)).call('claude',
         'You are Capo doing a quiet hourly check. Select at most three NEW items that genuinely need '

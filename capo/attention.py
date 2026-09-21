@@ -22,21 +22,34 @@ def personal_tasks(home,config,now,horizon_days=7,heartbeat=False):
     if not (root/'tasks.sqlite3').exists():return []
     zone=config.get('calendar',{}).get('timezone','America/Los_Angeles')
     day=now.astimezone(ZoneInfo(zone)).date().isoformat()
-    store=Tasks(home,owner);cursor='';items=[]
-    while len(items)<100:
+    store=Tasks(home,owner);cursor='';items=[];inspected=0
+    while inspected<1000:
         page=store.search(status='active',cursor=cursor)
         for t in page['tasks']:
+            inspected+=1
             # An explicitly timed reminder owns its alert; summaries may still
             # mention the commitment without replacing the requested reminder.
             if heartbeat and t['remind_at']:continue
             due=datetime.fromisoformat(t['due_at']) if t['due_at'] else None
             if due and due>now+timedelta(days=horizon_days):continue
-            if not due and t['status']!='waiting' and t['priority']!='high':continue
+            review=t.get('follow_through',{}).get('next_review_at')
+            review_due=bool(review and datetime.fromisoformat(review)<=now)
+            if not due and t['status']!='waiting' and t['priority']!='high' and not review_due:
+                # Morning briefings retain ordinary loose ends; hourly checks stay quiet.
+                if heartbeat:continue
             key=notice_id(t)
-            status='Waiting on '+t['waiting_on'] if t['status']=='waiting' else 'High priority' if not due else 'Due '+due.astimezone(ZoneInfo(zone)).strftime('%b %d, %-I:%M %p')
+            if t['status']=='waiting':
+                status='Waiting on '+t['waiting_on'] if t['waiting_on'] else 'Waiting for follow-up'
+            elif due:
+                status='Due '+due.astimezone(ZoneInfo(zone)).strftime('%b %d, %-I:%M %p')
+            elif review_due:status='Review due'
+            elif t['priority']=='high':status='High priority'
+            else:status='Unfinished; no deadline set'
             items.append({'id':key,'kind':'personal_task','title':t['title'],'status':status,'url':'',
                           'task_id':t['id'],'due_at':t['due_at'],'priority':t['priority'],
-                          'notice_day':day,'dependencies':t['dependencies']})
+                          'notice_day':day,'dependencies':t['dependencies'],
+                          'next_action':t.get('follow_through',{}).get('next_action',''),
+                          'sources':t['sources']})
         cursor=page['cursor']
         if not cursor:break
     items.sort(key=lambda t:(t['due_at'] or '9999',t['priority']!='high',t['task_id']))

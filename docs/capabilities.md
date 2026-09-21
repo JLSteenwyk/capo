@@ -242,3 +242,41 @@ authority. Reflection does not bypass permissions, edit code, increase budgets o
 change schedules. Code improvements still use the existing development, testing
 and deployment workflow. Like other scheduled research, review depth is limited
 by the tool-call/evidence budget and must be reported honestly.
+
+### Task inventory, contextual feedback, and service health
+
+`tasks.overview` groups saved active tasks across conversations into overdue,
+upcoming, review-due, waiting, and unscheduled work. It reports its coverage and
+returns at most 20 items per group after inspecting at most 1,000 tasks. Ordinary
+unfinished tasks now appear in morning briefing evidence; they do not generate
+hourly alerts unless a review is due, a deadline is near, or they are waiting or
+high priority. Existing receipts, task revisions, dependency checks, and delegated
+authority still control changes. Conversations are not automatically converted
+into tasks; the chief uses the shared task tools for requested follow-through.
+
+`memory.feedback` stores the owner's exact feedback together with an exact excerpt
+of its subject from the current message or host-loaded conversation. Directions
+are more, less, avoid, or correction. It rejects invented subjects and quotes,
+requires an owner request and action receipt, and uses the same revision checks,
+correction, and forgetting behavior as other shared memories. Future automation
+interest snapshots include this context. Existing run snapshots remain stable
+for retries. Feedback does not establish broader tastes or authorize actions.
+
+`health.status` reports saved connection checks, their freshness, and the latest
+expected occurrences of enabled assignments, morning digests, and hourly checks.
+It distinguishes missing, failed, partial, quiet, and delivered runs. Schedule
+inspection covers the last 32 days and up to 500 saved runs per scheduler; it
+excludes retired agents and disabled assignments. A quiet run is a completed
+check with no new alert, not a missing report. Pre-existing reports without a
+saved outcome status may not expose incomplete reasoning through this view.
+
+`health.check` performs one bounded read-only Gmail or Calendar probe, including
+normal token refresh. It never opens sign-in pages or retries external writes.
+Private observations live under `CAPO_HOME/health/<owner-hash>/checks.sqlite3`;
+fixed error categories keep raw service errors and credentials out of replies.
+Hourly collection updates these observations and reports operational failures
+without requiring an AI call. Existing notification receipts suppress repeated
+alerts within a day; morning briefing evidence also includes missing/failed
+reports. Checks retry on subsequent configured runs, while existing bounded
+reasoning recovery handles transient provider failures. Expired grants still
+require owner sign-in, and uncertain external actions still require reconciliation.

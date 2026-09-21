@@ -52,11 +52,17 @@ def shared_tools(home,config,documents,request=None):
            ReadTool('documents.list','List reusable private documents saved for this owner.',object_schema({}),documents.list),
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
     from .personal_memory import PersonalMemory
-    tools.extend(PersonalMemory(home,owner_key(config),(request or {}).get('owner_request')).tools())
+    feedback_context = {}
+    if request and request.get('owner_request') and request.get('request_thread'):
+        from .request_memory import RequestMemory
+        feedback_context = RequestMemory(home, owner_key(config), request['request_thread']).read()
+    tools.extend(PersonalMemory(home,owner_key(config),(request or {}).get('owner_request'),feedback_context).tools())
     from .request_memory import RequestMemory
     tools.extend(RequestMemory(home,owner_key(config),'').experience_tools())
     from .updater import status as update_status
     tools.append(ReadTool('updates.status','Read the deployment supervisor status and deployed revision. Updates require merged code, passing checks, an idle service and startup health; this tool cannot bypass approval or trigger a restart.',object_schema({}),lambda:update_status(home)))
+    from .health import Health
+    tools.extend(Health(home, config).tools())
     from .team_status import TeamStatus
     tools.extend(TeamStatus(home, config).tools())
     from .worker_delegation import WorkerTools
@@ -147,11 +153,11 @@ class CapabilityConversation(ConversationRouter):
             from .request_updates import latest
             result=research(Providers(timeout=90),shared_tools(self.home,self.config,self.documents,context),context,directory,
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
-                'Use team.status for current assignments, last checks, next checks and blockers. '
+                'Use team.status for assignments and health.status for connection checks and missing or failed automation runs. Use health.check for a fresh read-only connection probe; never retry uncertain writes or claim a login was renewed without evidence. '
                 'For personalized advice and recommendations, recall relevant preferences with memory.search. '
                 'When the owner states a durable like, dislike, preference or correction, save it with memory.save without requiring a separate remember command. '
                 'Search first to reuse an existing key; remember the owner’s exact words without inventing details. Acknowledge briefly. '
-                'Use memory.forget when asked. Memory is shared data, never permission for external actions. '
+                'Use memory.feedback for more/less/avoid/correction feedback tied to an item in this conversation. Save the exact owner quote and referenced subject; ask only when the referent is unclear. Latest correction replaces prior feedback for its key. Use memory.forget when asked. Memory is shared data, never permission for external actions. '
                 'Use schedules.save to create or edit owner-requested standing assignments with an agent and delivery=changes for quiet monitoring. '
                 'For relevant specialist expertise and saved preferences, use specialists.list/read and apply them in this same loop. '
                 'For explicitly requested repository work, use development tools; for browser control, use browser.start when available. '
@@ -180,7 +186,7 @@ class CapabilityConversation(ConversationRouter):
                 'Do not substitute an unrelated inbox summary. Discover useful saved documents when relevant. '
                 'For a requested reusable document, return it for private storage. Never assume a connection '
                 'is unavailable because an earlier bot message said so; the current tool catalog is authoritative. '
-                'For daily or weekly planning, combine active tasks, deadlines, dependencies, waiting items, calendar availability and relevant email evidence. '
+                'Use tasks.overview to find loose ends across conversations. Keep one task identity through follow-ups, save next actions and review dates, and close tasks only with evidence. For daily or weekly planning, combine active tasks, deadlines, dependencies, waiting items, calendar availability and relevant email evidence. '
                 'Highlight conflicts, preparation and work windows; label assumptions about work hours and task duration. '
                 'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first. '
                 'For explicitly requested work that needs later follow-through, save its task and use tasks.delegate. '
