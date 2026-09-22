@@ -4,6 +4,8 @@ New ordinary Slack requests go directly to one shared reasoning and tool loop, w
 
 Available primitives:
 
+Shared research also provides `work.track`, a request-local inventory for multi-item work. It preserves unfinished items across restarts and checks completion receipts; it grants no new action permissions.
+
 | Tool | Capability |
 | --- | --- |
 | clock.now / dates.describe / dates.shift | Current local time, verified weekdays and timezone conversion, and calendar-day arithmetic |

@@ -103,14 +103,16 @@ class DigestTests(unittest.TestCase):
         self.manager.tick(self.now+timedelta(minutes=2))
         self.service.client.chat_postMessage.assert_called_once()
 
-    def test_confirmed_absent_post_retries_same_marker(self):
+    def test_empty_history_does_not_prove_an_uncertain_post_failed(self):
         self.run_record();self.service.client.chat_postMessage.side_effect=[TimeoutError(),{'ok':True,'ts':'456'}]
         self.manager.tick(self.now)
         self.service.client.conversations_history.return_value={'ok':True,'messages':[]}
         self.manager.tick(self.now+timedelta(minutes=2))
         calls=self.service.client.chat_postMessage.call_args_list
-        self.assertEqual(len(calls),2)
-        self.assertEqual(calls[0].kwargs['client_msg_id'],calls[1].kwargs['client_msg_id'])
+        self.assertEqual(len(calls),1)
+        run=self.db.get(self.owner+':'+slot(self.now,self.p)[0])
+        self.assertEqual(run['status'],'sending')
+        self.assertEqual(run['delivery_error'],'unconfirmed')
 
     def test_no_late_delivery_or_replay_next_day(self):
         run=self.run_record()

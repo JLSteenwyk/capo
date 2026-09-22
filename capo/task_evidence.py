@@ -130,5 +130,5 @@ class TaskEvidence:
         return items
 
     def tools(self):
-        return [ReadTool('tasks.overview', 'Review saved unfinished tasks with freshly checked linked email threads. Groups are saved statuses, not proof of current obligations. Inspect source_check; use source tools for full content or unsupported references.',object_schema({}),self.overview),
-                ReadTool('tasks.refresh', 'Refresh current linked-source evidence for up to 20 task IDs before asserting work remains. Checks email threads directly, independent of recent inbox samples. Bounded snippets; no external writes or task status changes.',object_schema({'ids':TEXTS}),self.refresh)]
+        return [ReadTool('tasks.overview', 'Review saved unfinished tasks with freshly checked linked email threads. Groups are saved statuses, not proof of current obligations. Inspect source_check; use source tools for full content or unsupported references.',object_schema({}),self.overview,fresh_for=300),
+                ReadTool('tasks.refresh', 'Refresh current linked-source evidence for up to 20 task IDs before asserting work remains. Checks email threads directly, independent of recent inbox samples. Bounded snippets; no external writes or task status changes.',object_schema({'ids':TEXTS}),self.refresh,fresh_for=300)]

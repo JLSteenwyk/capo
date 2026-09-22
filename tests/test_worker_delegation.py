@@ -55,7 +55,7 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(result['receipts'][0]['tool'],'web.read')
         prompt=self.provider.call.call_args_list[0].args[1]
         catalog=json.loads(prompt.splitlines()[-1])['tools']
-        self.assertEqual([t['name'] for t in catalog],['web.read'])
+        self.assertEqual([t['name'] for t in catalog],['web.read','work.track'])
         self.mutation.assert_not_called()
 
     def test_schedule_prefix_filter_cannot_be_bypassed(self):

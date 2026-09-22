@@ -302,10 +302,15 @@ class SlackService:
     def reply(self, event, text):
         # Stay below Slack's truncation threshold, including escaped characters.
         from .message_format import slack_text, slack_chunks
-        for chunk in slack_chunks(text):
-            self.client.chat_postMessage(channel=self.config["channel_id"],
-                thread_ts=event.get("thread_ts", event["ts"]), text=slack_text(chunk),
-                mrkdwn=True, parse="none", link_names=False, unfurl_links=False, unfurl_media=False)
+        for index,chunk in enumerate(slack_chunks(text)):
+            payload=dict(channel=self.config["channel_id"],thread_ts=event.get("thread_ts",event["ts"]),
+                         text=slack_text(chunk),mrkdwn=True,parse="none",link_names=False,unfurl_links=False,unfurl_media=False)
+            if event.get('_delivery_key'):
+                from .slack_outbox import SlackOutbox
+                outbox=SlackOutbox(self.store.home,self.client,getattr(self,'bot_user_id',None))
+                if not outbox.post(event['_delivery_key']+':'+str(index),payload):return False
+            else:self.client.chat_postMessage(**payload)
+        return True
 
     def owns(self, objective):
         origin = objective.get("slack", {})
@@ -709,7 +714,9 @@ class SlackService:
         if clock and time.time() < clock[0]:
             return False
         try:
-            self.reply(event, text)
+            if self.reply(event, text) is False:
+                self.delivery_delay(5)
+                return False
         except Exception as exc:
             headers = getattr(getattr(exc, "response", None), "headers", {}) or {}
             delay = headers.get("Retry-After", headers.get("retry-after", 5))
@@ -793,7 +800,7 @@ class SlackService:
             # Reload after discovery: a queued follow-up supersedes this notice.
             if self.store.get(identifier) != objective:
                 continue
-            if self.send_chunk(objective["slack"], chunks[index]):
+            if self.send_chunk({**objective["slack"],"_delivery_key":"notice:"+checkpoint+":"+str(index)}, chunks[index]):
                 with self.store.db:
                     self.store.db.execute("UPDATE slack_notifications SET next_chunk=?,delivered=? WHERE checkpoint=?",
                                           (index + 1, int(index + 1 == len(chunks)), checkpoint))
@@ -811,7 +818,7 @@ class SlackService:
             if row[0]:
                 continue
             text = plan_message(objective)
-            if self.send_chunk(objective["slack"], text):
+            if self.send_chunk({**objective["slack"],"_delivery_key":checkpoint}, text):
                 with self.store.db:
                     self.store.db.execute("UPDATE slack_notifications SET delivered=1 WHERE checkpoint=?", (checkpoint,))
 
@@ -878,7 +885,7 @@ class SlackService:
                                           (json.dumps(data), event_id))
             chunks = data.get("chunks") or [data["text"][offset:offset + 2500] for offset in range(0, len(data["text"]), 2500)]
             if index < len(chunks):
-                if not self.send_chunk(body["event"], chunks[index]):
+                if not self.send_chunk({**body["event"],"_delivery_key":"reply:"+event_id+":"+str(index)}, chunks[index]):
                     continue
                 index += 1
                 with self.store.db:

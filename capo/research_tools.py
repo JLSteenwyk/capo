@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from .contracts import TEXT, object_schema, validate
 from .conversation import _write
+from .evidence_freshness import describe
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -32,6 +33,7 @@ class ReadTool:
     handoff: bool = False
     finalizes: bool = False
     settles: bool = False
+    fresh_for: int = 0
 
 
 class ReadTools:
@@ -153,6 +155,9 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         max_calls=budget['max_calls'];evidence_limit=budget['evidence_chars']
     if state.get('reasoning_provider', reasoning_provider) != reasoning_provider:
         raise RecoveryStopped('Research worker changed')
+    from .work_inventory import WorkInventory
+    inventory=WorkInventory(directory,state['receipts'])
+    tools=ReadTools(list(tools.tools.values())+[inventory.tool()])
     state['reasoning_provider'] = reasoning_provider
     state['require_source_inspection'] = state.get('require_source_inspection',False) or require_source_inspection
     if 'fingerprint' not in state:
@@ -250,6 +255,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'A completed action requires a successful host mutation receipt; a queued handoff proves only the handoff, '
             'not completion of the delegated work. Give each unfinished item a concrete next step or one necessary question. '
             'Continue using available tools for unfinished authorized work while budget remains. Never silently omit an unfinished part. '
+            'For multi-item requests use work.track after reading the source and before executing the set. '
+            'At finish provide item_id for every tracked item, including unfinished ones. '
             'For requests covering all items in a source, first identify the full set, then track each item separately. '
             'A successful action for one item does not complete the set. Continue with the remaining items, '
             'preserve anything the owner asked to keep, and report created, already-present, and unfinished items accurately. '
@@ -266,6 +273,9 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'request when no message timestamp is available, not evidence of an older source date. If the source '
             'date is unknown, inspect context or research the referenced event; ask only if that uncertainty '
             'still materially changes the action. Recheck time-sensitive facts after a delayed continuation. '
+            'Volatile read receipts marked stale or unknown must be refreshed before a completed factual answer cites them. '
+            'Historical mutation receipts prove that a past action happened; never repeat a write just to refresh evidence. '
+            'Use a current read to establish whether its result still exists. '
             'Never claim an action succeeded without a successful mutation receipt. '
 
             + instructions + '\n' + json.dumps({
@@ -274,7 +284,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 'settlement_instruction': 'Use the remaining calls to save supported updates now, or finish honestly if no update is warranted. Do not invent a change or act without sufficient evidence.' if settling else '',
                 'report_required': reporting,
                 'report_instruction': 'Save an honest partial report now, using successful receipts only. Explain unchecked sources; do not claim a complete scan.' if reporting else '',
-                'receipts': [{**r, 'receipt_index': str(i)} for i,r in enumerate(receipts)],
+                'receipts': describe(receipts,tools),
+                'work_inventory': inventory.read(),
                 'request_started_at': state['now'],
                 'remaining_tool_calls': remaining,
                 'remaining_evidence_chars':max(0,evidence_limit-evidence_size),
@@ -306,8 +317,9 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         try:
             unfinished=any(item.get('status') in ('partial','needs_input') for item in json.loads(result['arguments_json']).get('outcomes',[])) if result['action']=='finish' else False
         except (ValueError,TypeError,AttributeError):unfinished=False
-        if result['action']=='finish' and unfinished and state['require_source_inspection'] and not any(
-                r.get('tool') in tools.tools and r['tool']!='clock.now' and not tools.tools[r['tool']].finalizes
+        if (result['action']=='finish' and state['require_source_inspection']
+                and (unfinished or any(name not in ('clock.now','work.track') for name in tools.tools))) and not any(
+                r.get('tool') in tools.tools and r['tool'] not in ('clock.now','work.track') and not tools.tools[r['tool']].finalizes
                 and ('result' in r or r.get('attempted')) for r in receipts):
             feedback='No source tool has been attempted through the host. The catalog tools are available here, not as native CLI tools. Return action=tool with a catalog name and JSON arguments. Do not claim unavailable tools without host failure receipts.'
             prior_feedback=sum(bool(r.get('source_feedback')) for r in receipts)
@@ -335,7 +347,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                         or len(result['document_title']) > 200 or len(result['document']) > 12000
                         or bool(result['document_title'].strip()) != bool(result['document'].strip())):
                     raise ValueError('Invalid research response')
-                outcome=assess(result['arguments_json'],receipts,tools)
+                outcome=assess(result['arguments_json'],receipts,tools,inventory=inventory.read()['items'])
                 rendered=complete_reply(result)
                 unfinished=pending_text(outcome)
                 if unfinished:rendered+='\n\nStill to address:\n'+unfinished
@@ -409,7 +421,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                           'instruction':'Do not repeat this action; its full result requires inspection before further work.'}
                 evidence_size=ceiling
             else:evidence_size += size
-            receipts.append({'tool': result['tool'], 'arguments': arguments, 'result': evidence})
+            receipts.append({'tool': result['tool'], 'arguments': arguments, 'result': evidence,'observed_at':time.time()})
         except RecoveryStopped:
             raise
         except Exception as exc:
@@ -440,6 +452,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 safe_error=f'Invalid JSON arguments: {exc.msg} at line {exc.lineno}, column {exc.colno}. Return a complete JSON object matching the tool schema. No tool was executed.'
             # Keep provider bodies, credentials, and arbitrary exception messages private.
             failed={'tool':result['tool'],'error':safe_error,'attempted':tool_attempted and not isinstance(exc, ToolInputError)}
+            if arguments_parsed:failed['arguments']=arguments
+            if isinstance(exc,UncertainEffect):failed['uncertain']=True
             if isinstance(exc,json.JSONDecodeError) and not arguments_parsed:
                 # Private, bounded repair context; never execute this string.
                 failed['invalid_arguments_json']=result['arguments_json']

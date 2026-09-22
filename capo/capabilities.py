@@ -129,7 +129,7 @@ def shared_tools(home,config,documents,request=None):
         tools.extend(calendar_tools.tools())
         schema=object_schema({'start':TEXT,'end':TEXT,'work_start':TEXT,'work_end':TEXT,'weekdays':TEXTS,'minimum_minutes':TEXT})
         schema['properties']['calendar_ids']=TEXTS
-        tools.append(ReadTool('calendar.availability','Find free windows and conflicts across selected calendars. Optional calendar_ids overrides owner availability preferences; discover non-primary calendars first. Weekdays: 0 Monday through 6 Sunday. Supply owner preferences or label work-hour assumptions. Incomplete coverage yields no free windows. Read-only; never books time.',schema,calendar_tools.availability))
+        tools.append(ReadTool('calendar.availability','Find free windows and conflicts across selected calendars. Optional calendar_ids overrides owner availability preferences; discover non-primary calendars first. Weekdays: 0 Monday through 6 Sunday. Supply owner preferences or label work-hour assumptions. Incomplete coverage yields no free windows. Read-only; never books time.',schema,calendar_tools.availability,fresh_for=300))
         tools.extend(calendar_tools.action_tools(home,owner_key(config)))
     repositories=config.get('repositories',{})
     from .github_profile import GitHubProfile, settings as github_profile_settings

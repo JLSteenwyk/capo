@@ -649,7 +649,7 @@ class SlackCase(unittest.TestCase):
         self.store.save(objective, "clarification_requested")
         from types import SimpleNamespace
         failure = RuntimeError("synthetic rate limit")
-        failure.response = SimpleNamespace(headers={"Retry-After": "30"})
+        failure.response = SimpleNamespace(headers={"Retry-After": "30"},status_code=429)
         with patch("capo.slack.time.time", return_value=100):
             with patch.object(self.client, "chat_postMessage", side_effect=failure):
                 with self.assertRaises(RuntimeError):
@@ -852,7 +852,7 @@ class SlackCase(unittest.TestCase):
             self.service.pending_review = (identifier, digest)
             return preview
         class RateLimited(RuntimeError):
-            response = type("Response", (), {"headers": {"Retry-After": "30"}})()
+            response = type("Response", (), {"headers": {"Retry-After": "30"},"status_code":429})()
         with patch("capo.slack.time.time", return_value=100), \
              patch.object(self.service, "dispatch", side_effect=dispatch):
             self.service.process_messages()

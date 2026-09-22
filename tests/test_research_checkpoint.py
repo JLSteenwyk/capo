@@ -51,7 +51,7 @@ class CheckpointTests(unittest.TestCase):
         self.write.assert_not_called()
         self.assertIn('error', result['receipts'][0])
         data = json.loads(backend.call.call_args.args[1].splitlines()[-1])
-        self.assertEqual([t['name'] for t in data['tools']], ['items.inspect'])
+        self.assertEqual([t['name'] for t in data['tools']], ['items.inspect','work.track'])
 
     def test_legacy_checkpoint_is_migrated_only_with_verified_original_prompt(self):
         backend = Mock()

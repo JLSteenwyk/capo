@@ -301,14 +301,14 @@ class Tasks:
 
     def tools(self):
         return [
-            ReadTool('tasks.overview', 'Review unfinished work across conversations: overdue, due soon, review due, waiting and unscheduled tasks. Read-only; use tasks.get before changing an item.', object_schema({}), self.overview),
+            ReadTool('tasks.overview', 'Review unfinished work across conversations: overdue, due soon, review due, waiting and unscheduled tasks. Read-only; use tasks.get before changing an item.', object_schema({}), self.overview,fresh_for=300),
             ReadTool('tasks.search', 'Find personal tasks and reminders; active includes open and waiting. Use returned cursor for more.',
-                     object_schema({'query': TEXT, 'status': {'type':'string','enum':['active','all',*STATUSES]}, 'cursor': TEXT}), self.search),
+                     object_schema({'query': TEXT, 'status': {'type':'string','enum':['active','all',*STATUSES]}, 'cursor': TEXT}), self.search,fresh_for=300),
             ReadTool('tasks.history', 'Read earlier decisions, corrections and task states; paginated by revision.',
                      object_schema({'id': TEXT, 'cursor': TEXT}), self.history),
             ReadTool('tasks.follow_through', 'Update outcome, evidence, next action and review time on an existing task. These notes NEVER grant permission to act. Preserve prior decisions and original conversation. Empty values mean unset.',
                      object_schema({'id': TEXT, 'expected_revision': TEXT, 'details': FOLLOW_THROUGH}), self.follow_through, mutates=True),
-            ReadTool('tasks.get', 'Read a task and its current revision before editing.', object_schema({'id': TEXT}), self.get),
+            ReadTool('tasks.get', 'Read a task and its current revision before editing.', object_schema({'id': TEXT}), self.get,fresh_for=300),
             ReadTool('tasks.save', 'Create or edit an owner-requested personal task/reminder. Empty id/revision creates; edits require current revision as a string and all fields. Empty strings/lists mean unset. Dates require explicit local offset and timezone; ask when ambiguous. Use candidate for uncertain possibilities, paused to suspend, dismissed to ignore, and completed/cancelled to close. Candidates and paused/dismissed tasks never trigger reminders. Complete/cancel using status. Recurring completion advances dates while preserving ID. Sources link email, calendar or project evidence; never duplicate an existing linked task.',
                      object_schema({'id': TEXT, 'expected_revision': TEXT, 'fields': FIELDS}), self.save, mutates=True),
         ]

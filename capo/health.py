@@ -80,7 +80,9 @@ class Health:
         for check in checks.values():
             check['stale'] = bool(check.get('checked_at') and
                 now-datetime.fromisoformat(check['checked_at']) > timedelta(hours=2))
+        from .slack_outbox import pending
         return {'connections': list(checks.values()), 'automations': self.automations(now),
+                'unconfirmed_slack_replies':pending(self.home),
                 'coverage': 'Saved connection observations, not continuous monitoring. Stale or untested is not healthy. '
                             'Automation checks use saved receipts and current schedules; no writes are replayed. '
                             'Use health.check for a fresh Google connection probe. Other provider login status is available through capacity tools.'}
@@ -139,10 +141,11 @@ class Health:
             state = (run or {}).get('status', 'not_started')
             problems = (run or {}).get('report', {}).get('blockers', [])
             outcome = (run or {}).get('outcome_status')
-            if state in ('failed','expired') or problems or outcome == 'partial': state = 'needs_attention'
+            if state in ('failed','expired') or problems or outcome == 'partial' or (state=='sending' and (run or {}).get('delivery_error')=='unconfirmed'): state = 'needs_attention'
             elif state not in ('sent','quiet','cancelled') and now.timestamp() > (run or {}).get('deadline', deadline): state = 'missed'
             results.append({'title': title, 'schedule_id': sid, 'due_at': latest.isoformat(), 'status': state,
                             'next_action': (' '.join(problems[:2]) or (run or {}).get('error_summary') or
+                                            ('Slack delivery is unconfirmed. Reconcile the saved message; do not resend blindly.' if (run or {}).get('delivery_error')=='unconfirmed' else '') or
                                             'This check is incomplete. Capo needs to inspect its saved results before retrying.')
                                            if state in ('needs_attention','missed') else '',
                             'coverage': 'Current schedule; latest expected occurrence within 32 days, latest 500 saved runs.'})

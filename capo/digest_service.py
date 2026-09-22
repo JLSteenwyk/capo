@@ -159,7 +159,10 @@ class DigestManager:
                 run['retry_at']=now.timestamp()+60;self.db.save(run,now);return
             if ts:
                 self.db.delivered(run,ts,now);return
-            if now.timestamp()-run['sending_at']<60:return
+            # Empty or delayed history is not proof that Slack rejected the post.
+            # Preserve uncertainty instead of risking another message.
+            run.update(retry_at=now.timestamp()+60,delivery_error='unconfirmed')
+            self.db.save(run,now);return
         if now.timestamp()>=run['deadline']:
             run['status']='expired';self.db.save(run,now);return
         if 'wire_text' not in run:
@@ -182,6 +185,8 @@ class DigestManager:
             fatal={'invalid_auth','missing_scope','channel_not_found','not_in_channel','invalid_metadata','invalid_arguments','account_inactive'}
             run['delivery_error']=code if code in fatal|{'ratelimited'} else 'unconfirmed'
             if code in fatal:run['status']='failed'
+            elif code=='ratelimited' or getattr(response,'status_code',None)==429:
+                run['status']='ready'  # Explicit rejection: safe to retry the same marker.
             self.db.save(run,now)
             # An unconfirmed post may have succeeded; reconcile before retrying.
             return

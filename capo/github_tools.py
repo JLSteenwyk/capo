@@ -228,7 +228,7 @@ class GitHubTools:
         def tool(name, description, fields, callback):
             schema=object_schema(dict(repository=repo, **fields))
             if name=='issues':schema['required']=['repository']
-            return ReadTool('github.'+name, description, schema, callback)
+            return ReadTool('github.'+name, description, schema, callback, fresh_for=900)
         return [
             tool('issues','Read a page of open issues. Use a configured alias or profile-discovered owner/repository; page starts at 1.', {'page':TEXT},self.issues),
             tool('pull_requests','Find PRs in a configured repository, including closed/merged history. Page starts at 1.', {'state':{'type':'string','enum':['open','closed','all']},'page':TEXT},self.pull_requests),

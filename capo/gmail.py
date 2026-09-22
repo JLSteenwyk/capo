@@ -162,7 +162,7 @@ class GmailReadTools(ReadTools):
                 'page_token initially; reuse returned next_page_token with the SAME query. '
                 'page_size is a string integer 1–50.',
                 object_schema({'query': TEXT, 'page_size': {'type': 'string',
-                    'enum': [str(n) for n in range(1, 51)]}, 'page_token': TEXT}), self.search),
+                    'enum': [str(n) for n in range(1, 51)]}, 'page_token': TEXT}), self.search,fresh_for=300),
             ReadTool('mail.metadata','Triage up to 50 IDs returned by mail.search using sender, subject, date and short snippets before selecting full body excerpts. No bodies or attachments; not proof an entire message was read. At most 100 metadata reads per request.', object_schema({'ids':TEXTS}),self.metadata),
             ReadTool('mail.read',
                 'Read up to 25 IDs returned by mail.search. Returns headers, labels and bounded '
@@ -171,7 +171,7 @@ class GmailReadTools(ReadTools):
                 'when correspondence context matters. Retains truncation and source metadata.',
                 object_schema({'ids': TEXTS, 'strip_quotes': {'type': 'boolean'}}), self.read),
             ReadTool('mail.thread', 'Read a thread ID returned by mail.search, including correspondence context. Bounded by the shared 50-message budget.',
-                     object_schema({'id': TEXT}), self.thread),
+                     object_schema({'id': TEXT}), self.thread,fresh_for=300),
         ])
 
     def next_scan_state(self):

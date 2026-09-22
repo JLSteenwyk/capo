@@ -35,7 +35,7 @@ def _prose(text):
     # Repair double-escaped paragraph/list separators, not arbitrary backslash
     # sequences (paths, regexes and examples can legitimately contain them).
     # Code has already been separated; URLs must also remain byte-for-byte.
-    separators = r'https?://[^\s<>]+|(?<!\\)(?:\\r\\n|\\n){2,}|(?<!\\)(?:\\r\\n|\\n)(?= *(?:[-*] |[0-9]+[.)] |#{1,6} ))'
+    separators = r'https?://[^\s<>]+|(?<!\\)(?:\\r\\n|\\n){2,}|(?<!\\)(?:\\r\\n|\\n)(?= *(?:[-*] |[0-9]+[.)] |#{1,6} |\[[^\]\n]+\]\(https?://))'
     # A backslash cannot be part of an HTTP URL. Separate escaped paragraph
     # breaks followed by prose, while leaving literal examples untouched.
     text = re.sub(r'(https?://[^\s<>`]*?)(?:\\n){2,}(?=[A-Za-z])', lambda m:m[1]+'\n\n', text)
