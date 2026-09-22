@@ -25,7 +25,7 @@ Available primitives:
 | calendar.search / calendar.event | Find events in a selected calendar and inspect details and edit restrictions |
 | github.issues | Read open issues for a configured repository |
 | github.pull_requests / github.pull_request / github.reviews | Discover and inspect current PRs and review history |
-| github.workflow_runs / github.workflow_run / github.checks / github.job_log | Inspect workflow attempts, jobs, commit checks and bounded logs |
+| github.workflow_runs / github.workflow_run / github.checks / github.check_annotations / github.job_log | Inspect workflow attempts, jobs, commit checks, annotations (including jobs that never started), and bounded logs |
 | documents.list / documents.read | Discover and reuse private documents for this owner |
 | preferences.remember | Specialists save explicit preferences to their own notes |
 
@@ -369,3 +369,5 @@ answer-only validation failures do not imply a failed external change.
 Historical blocker prose is retained for host delivery comparison but excluded
 from the next model request. The next check receives historical findings and
 pending-source continuation, and must establish its own current failures.
+
+Mail body extraction uses the readable HTML alternative when a sender supplies only a short plain-text stub. Existing message and character limits still apply; attachments are separate. GitHub annotations are available only after discovering a job or check in the same repository. Historical billing annotations describe that attempt, not current account status.

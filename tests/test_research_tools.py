@@ -176,6 +176,26 @@ class ResearchToolsTests(unittest.TestCase):
             tools.read(['a'], False)
         self.assertEqual(client.get.call_count, 1)
 
+    def test_subject_only_plain_alternative_uses_rich_body_with_shared_bounds(self):
+        def part(kind,text,**extra):
+            return dict(mimeType=kind,body={'data':base64.urlsafe_b64encode(text.encode()).decode()},**extra)
+        rich='<style>hidden-style</style><script>hidden-script</script><p>Plan renewal $42 on October 1.</p>'+('<p>Invoice details.</p>'*70)
+        payload={'mimeType':'multipart/alternative','parts':[
+            part('text/plain','Your invoice'),part('text/html',rich),
+            part('text/plain','private attachment',filename='invoice.txt')]}
+        text=body_text(payload)
+        self.assertIn('Plan renewal $42 on October 1.',text)
+        for hidden in ('hidden-style','hidden-script','private attachment'):
+            self.assertNotIn(hidden,text)
+        client=Mock();client.get.return_value={'payload':payload}
+        tools=GmailReadTools(client);tools.known_ids={'a'};tools.characters=119980
+        result=tools.read(['a'],False)
+        self.assertEqual(len(result['messages'][0]['body']),20)
+        self.assertTrue(result['messages'][0]['truncated'])
+        self.assertEqual(tools.characters,120000)
+        payload['parts'][0]=part('text/plain','Detailed plain invoice. '*20)
+        self.assertEqual(body_text(payload),'Detailed plain invoice. '*20)
+
     def test_html_quotes_can_be_preserved_for_other_tasks(self):
         part = {'mimeType': 'text/html', 'body': {'data': base64.urlsafe_b64encode(
             b'<p>Own prose</p><blockquote>Previous message</blockquote>').decode()}}

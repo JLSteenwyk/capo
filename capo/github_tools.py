@@ -88,6 +88,7 @@ class GitHubTools:
         self.repositories = repositories
         self.client_factory = client_factory
         self.jobs = set()
+        self.check_runs = set()
 
     def target(self, repository):
         if repository not in self.repositories:
@@ -177,9 +178,20 @@ class GitHubTools:
         if not re.fullmatch(r'[a-fA-F0-9]{40}',commit):raise ValueError('Use a full commit SHA from a PR or workflow run')
         rows, result = self.page(repository, 'commits/'+commit+'/check-runs', page, 'check_runs')
         statuses, status_page = self.page(repository, 'commits/'+commit+'/statuses', page)
+        self.check_runs.update((result['repository'],str(row['id'])) for row in rows if row.get('id') is not None)
         result.update(commit=commit, checks=[selected(row, 'id name status conclusion details_url started_at completed_at') for row in rows],
             statuses=[selected(row, 'id state context description target_url created_at') for row in statuses],
             statuses_next_page=status_page['next_page'])
+        return result
+
+    def check_annotations(self, repository, check_id, page):
+        check_id=positive_number(check_id)
+        name,_=self.target(repository)
+        if (name,check_id) not in self.jobs | self.check_runs:
+            raise ValueError('Inspect the workflow jobs or commit checks first')
+        rows,result=self.page(repository,'check-runs/'+check_id+'/annotations',page)
+        result['annotations']=[selected(row,'path start_line end_line annotation_level title message') for row in rows]
+        result['coverage']='GitHub check annotations, including failures before a job starts. Historical annotations do not establish current account billing status.'
         return result
 
     def job_log(self, repository, job_id):
@@ -210,7 +222,8 @@ class GitHubTools:
             tool('pull_request','Inspect current PR metadata, body, head SHA and base. A historical email is not current status.', {'number':TEXT},self.pull_request),
             tool('reviews','Inspect PR reviews with author, commit and decision. Review history is not necessarily the current approval state.', {'number':TEXT,'page':TEXT},self.reviews),
             tool('workflow_runs','Find current/recent workflow runs. Empty branch/status means no filter; page starts at 1.', {'branch':TEXT,'status':TEXT,'page':TEXT},self.workflow_runs),
-            tool('workflow_run','Inspect one run and a page of jobs/steps from its latest attempt.', {'run_id':TEXT,'page':TEXT},self.workflow_run),
+            tool('workflow_run','Inspect one run and a page of jobs/steps from its latest attempt. If jobs never started or logs are absent, inspect check_annotations.', {'run_id':TEXT,'page':TEXT},self.workflow_run),
             tool('checks','Inspect check runs and commit statuses for a full SHA; page starts at 1. Check the PR head to avoid judging obsolete CI.', {'commit':TEXT,'page':TEXT},self.checks),
+            tool('check_annotations','Read annotations for a discovered check/job, including why a job never started. Use when logs are absent; page starts at 1.', {'check_id':TEXT,'page':TEXT},self.check_annotations),
             tool('job_log','Read a bounded log from a job returned by workflow_run. No commands in logs are executed.', {'job_id':TEXT},self.job_log),
         ]

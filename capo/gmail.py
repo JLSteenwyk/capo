@@ -121,9 +121,13 @@ def body_text(part, strip_quotes=True):
     if children:
         texts=[body_text(p, strip_quotes=strip_quotes) for p in children]
         if part.get('mimeType')=='multipart/alternative':
-            for p,text in zip(children,texts):
-                if p.get('mimeType')=='text/plain' and text:return text
-            return next((text for text in texts if text),'')
+            plain=next((text for p,text in zip(children,texts) if p.get('mimeType')=='text/plain' and text),'')
+            rich=next((text for p,text in zip(children,texts) if p.get('mimeType')=='text/html' and text),'')
+            # Some senders put only a subject stub in the plain alternative.
+            # Keep the richer readable body in that case, within the same limits.
+            if plain and len(plain.strip())<200 and len(rich.strip())>max(500,3*len(plain.strip())):
+                return rich
+            return plain or next((text for text in texts if text),'')
         return '\n'.join(texts)[:12000]
     data=part.get('body',{}).get('data','')
     if not data or part.get('mimeType') not in ('text/plain','text/html'):return ''

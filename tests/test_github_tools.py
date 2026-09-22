@@ -84,3 +84,27 @@ class GitHubToolTests(unittest.TestCase):
         endpoint=self.client.get.call_args.args[0]
         self.assertIn('branch=feature%2Fa%26status%3Dsuccess',endpoint)
         self.assertIn('&status=failure',endpoint)
+
+    def test_annotations_explain_jobs_without_logs_and_allow_discovered_checks(self):
+        self.responds({'id':50}, {'jobs':[{'id':70,'conclusion':'failure','steps':[]}]},
+            [{'annotation_level':'failure','message':'Job was not started: spending limit.'}],
+            {'check_runs':[{'id':80}]}, [], [{'message':'Compiler failure','path':'example.py'}])
+        run=self.adapter.workflow_run('project','50','1')
+        self.assertEqual(run['jobs'][0]['steps'],[])
+        result=self.registry.call('github.check_annotations',{'repository':'project','check_id':'70','page':'1'})
+        self.assertIn('spending limit',result['annotations'][0]['message'])
+        self.assertIn('Historical',result['coverage'])
+        self.adapter.checks('project','a'*40,'1')
+        self.assertEqual(self.adapter.check_annotations('project','80','1')['annotations'][0]['path'],'example.py')
+        self.assertIn('check-runs/80/annotations',self.client.get.call_args.args[0])
+
+    def test_annotations_preserve_discovery_repository_and_pagination_boundaries(self):
+        self.adapter.jobs.add(('example/project','70'))
+        for repo,number,page in [('other','70','1'),('project','80','1'),
+                ('project','../secret','1'),('project','70','101')]:
+            with self.assertRaises(ValueError):self.adapter.check_annotations(repo,number,page)
+        self.client.get.assert_not_called()
+        self.responds([{'message':'Finding'}]*20,[])
+        first=self.adapter.check_annotations('project','70','1')
+        self.assertEqual(first['next_page'],'2')
+        self.assertEqual(self.adapter.check_annotations('project','70','2')['next_page'],'')
