@@ -365,3 +365,7 @@ If that read fails, PR state is explicitly unknown; a saved open/draft value is 
 presented as current. Workflow state remains local and does not authorize replay.
 Completion corrections distinguish conversational evidence from action receipts;
 answer-only validation failures do not imply a failed external change.
+
+Historical blocker prose is retained for host delivery comparison but excluded
+from the next model request. The next check receives historical findings and
+pending-source continuation, and must establish its own current failures.

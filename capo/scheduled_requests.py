@@ -15,7 +15,7 @@ from .digest_service import DigestManager
 from .providers import Providers
 from .research_tools import ReadTools,research
 from .schedules import Schedules,due_slot
-from .assignment_reports import AssignmentReport, previous_report, finish
+from .assignment_reports import AssignmentReport, previous_report, finish, research_context
 from .team import ROLES
 from .monitoring_progress import continuation, incomplete_report
 
@@ -101,7 +101,7 @@ class ScheduledManager(DigestManager):
                         _write(baseline, previous_report(db, self.owner, s['id'], s['revision'], run['created']))
                     previous=json.loads(baseline.read_text())
                     request={'message':run['request'],'timezone':s['timezone'],
-                             'agent':s.get('agent', 'capo'), 'previous_check':previous,
+                             'agent':s.get('agent', 'capo'), 'previous_check':research_context(previous),
                              'recovery_of':bool(run.get('recovery_of')),
                              'recovery_instruction':'This is one bounded follow-up of an incomplete check. Inspect the missing sources and current state; do not repeat old claims without evidence.' if run.get('recovery_of') else ''}
                     role=ROLES.get(s.get('agent'), ('Capo' if s.get('agent', 'capo')=='capo' else 'Coding Agent',

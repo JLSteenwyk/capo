@@ -69,3 +69,25 @@ class FollowupRepairs(unittest.TestCase):
         self.assertEqual(slack_text('Facts (https://example.org/post):'),
                          'Facts (<https://example.org/post|example.org>):')
         self.assertEqual(plain_text(r'`https://example.org/a\n\nThe`'),r'`https://example.org/a\n\nThe`')
+
+    def test_historical_blockers_are_not_recycled_as_current_source_evidence(self):
+        from capo.assignment_reports import research_context
+        previous={'findings':[{'key':'source','version':'v1'}], 'blockers':['An old source failed.'],
+                  'coverage':'The old source failed.', 'continuation':{'state':{'pending':['unread']}}}
+        fresh=research_context(previous)
+        self.assertEqual(fresh['blockers'],[])
+        self.assertEqual(fresh['historical_blocker_count'],1)
+        self.assertEqual(fresh['continuation'],previous['continuation'])
+        self.assertNotIn('An old source failed.',json.dumps(fresh))
+        self.assertEqual(previous['blockers'],['An old source failed.'])
+
+    def test_finish_contract_keeps_empty_document_fields_explicit(self):
+        from capo.research_tools import research,ReadTools,OUTPUT_CONTRACT
+        provider=Mock()
+        provider.call.return_value={'action':'finish','tool':'','arguments_json':json.dumps({'outcomes':[
+            {'requirement':'Answer question','kind':'answer','status':'complete','evidence':[],'next_step':''}]}),
+            'reply':'Answered.','document_title':'','document':''}
+        with tempfile.TemporaryDirectory() as tmp:
+            result=research(provider,ReadTools([]),{'message':'Answer a question'},Path(tmp),max_calls=1)
+        self.assertEqual(result['status'],'reported_complete')
+        self.assertEqual(json.loads(provider.call.call_args.args[1].splitlines()[-1])['output_contract'],OUTPUT_CONTRACT)

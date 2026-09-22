@@ -75,6 +75,17 @@ def previous_report(db, owner, schedule_id, revision, before):
     return json.loads(rows[0]).get('report', {}) if rows else {}
 
 
+def research_context(previous):
+    """Keep deduplication history without recycling historical failure prose.
+
+    The full report stays in host storage for delivery comparison. Pending IDs
+    and cursors remain available so actual unfinished inspections can continue.
+    """
+    if not previous.get('blockers'):return previous
+    return {**previous,'blockers':[], 'historical_blocker_count':len(previous['blockers']),
+            'coverage':'Historical findings only. Recheck relevant sources; prior blockers are not evidence of a current failure.'}
+
+
 def fingerprint(item):
     return hashlib.sha256(json.dumps([item['key'], item['version']], ensure_ascii=False).encode()).hexdigest()
 

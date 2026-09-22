@@ -10,6 +10,13 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
+OUTPUT_CONTRACT = ('\nOUTPUT CONTRACT: Return one JSON object containing all six required keys: '
+    'action, tool, arguments_json, reply, document_title, document. Never omit keys with empty values. '
+    'When no document is requested, include "document_title":"" and "document":"" explicitly. '
+    'For finish include "action":"finish" and "tool":""; arguments_json remains a JSON-encoded '
+    'outcome report string. The reply is user-facing prose, not a replacement for the JSON object.\n')
+
+
 class ToolInputError(ValueError):
     """Host-authored argument correction; never raw service error text."""
 
@@ -272,6 +279,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 'remaining_tool_calls': remaining,
                 'remaining_evidence_chars':max(0,evidence_limit-evidence_size),
                 'must_finish': remaining == 0 or evidence_size >= evidence_limit,
+                'output_contract':OUTPUT_CONTRACT,
             })
         )
         prompt = provider_prompt(directory/f'step-{step}', prompt, STEP, reasoning_provider)
