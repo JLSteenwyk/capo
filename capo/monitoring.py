@@ -55,31 +55,43 @@ class Monitor:
             changed = self.observations.changed(items)
             path = self.root/'active.json'
             state = json.loads(path.read_text()) if path.exists() else None
+            failures_path=self.root/'failed-batches.json'
+            failures=json.loads(failures_path.read_text()) if failures_path.exists() else {}
+            if state and state['status']=='failed' and state['key'] not in failures:
+                failures[state['key']]={'attempts':state.get('review_attempt',1),
+                    'references':[reference(x) for x in state['items']], 'retry_at':path.stat().st_mtime+3600, 'summary':state.get('error_summary','Review incomplete.')}
+                _write(failures_path,failures)
             if state and state['status'] in ('waiting', 'running'):
                 if now.timestamp() < state.get('retry_at', 0):
                     return changed
             else:
-                linked = [item for item in changed if item.get('linked_task_id')]
-                # Fit one commitment and all of its linked source updates in the
-                # bounded review. Unreviewed changes remain unacknowledged.
-                batch = ([item for item in linked if item['linked_task_id']==linked[0]['linked_task_id']]
-                         if linked else changed[:1])
-                if not batch:
-                    return []
-                key = hashlib.sha256(json.dumps(batch, sort_keys=True).encode()).hexdigest()
-                if state and state['key'] == key and state['status'] == 'failed':
-                    return changed
-                state = {'key':key, 'items':batch, 'status':'running'}
-                _write(path, state)
+                groups={}
+                for item in changed:
+                    group=item.get('linked_task_id') or reference(item)
+                    groups.setdefault(group,[]).append(item)
+                candidates=[]
+                for batch in groups.values():
+                    key=hashlib.sha256(json.dumps(batch,sort_keys=True).encode()).hexdigest()
+                    failure=failures.get(key,{})
+                    if failure.get('attempts',0)>=2 or now.timestamp()<failure.get('retry_at',0):continue
+                    candidates.append((bool(failure),key,batch,failure))
+                if not candidates:return changed
+                # Fresh batches proceed even when an earlier batch exhausted its attempts.
+                _,key,batch,failure=min(candidates,key=lambda x:(not any(item.get('linked_task_id') for item in x[2]),x[0]))
+                state={'key':key,'items':batch,'status':'running',
+                       'review_attempt':failure.get('attempts',0)+1}
+                _write(path,state)
             request = {'message':'Review the changed source evidence for clear commitments and updates to tracked work. '
                        'Ignore routine notifications and casual remarks. Do not create an obligation from a guess.',
                        'timezone':self.config.get('calendar', {}).get('timezone','America/Los_Angeles'),
-                       'observations':state['items']}
+                       'observations':state['items'],
+                       'previous_review':failures.get(state['key'],{}),
+                       'recovery_instruction':'Read current tasks before updating them; an earlier attempt may already have saved some updates.'}
             docs = Documents(self.home, self.owner)
             registry = shared_tools(self.home, self.config, docs, request)
             tools = ReadTools([t for t in registry.tools.values() if not t.mutates] + self.observations.tools(state['items']))
             try:
-                result = research(Providers(timeout=90,effort='medium'), tools, request, self.root/state['key'],
+                result = research(Providers(timeout=90,effort='medium'), tools, request, self.root/state['key'] if state.get('review_attempt',1)==1 else self.root/state['key']/'followup',
                     max_calls=settings(self.config)['max_tool_calls'], recovery=self.config.get('recovery'),
                     instructions=GUIDANCE+'Read tasks referenced by linked_task_id and inspect fresh thread_evidence. Reconcile sent replies with the actual task outcome, even if the original email is older than the recent inbox window. For grouped tasks inspect all linked sources before completion. This is a monitoring review, not a grant to act. Search existing tasks before creating or updating commitments. '
                     'Explicit commitments can be tracked as open; uncertain possibilities remain candidates and must not create reminders. '
@@ -93,28 +105,37 @@ class Monitor:
                 if result.get('status') == 'partial':
                     state.update(status='failed',result=result,
                                  error_summary='Task source review did not finish. Saved task status may be out of date.')
+                    failures[state['key']]={'attempts':state.get('review_attempt',1),'references':[reference(x) for x in state['items']],'retry_at':now.timestamp()+3600,'summary':state['error_summary']}
+                    _write(failures_path,failures)
                     _write(path,state)
                     return changed
                 state.update(status='done', result=result)
                 _write(path, state)
                 self.observations.acknowledge(state['items'])
+                covered={reference(x) for x in state['items']}
+                failures={key:value for key,value in failures.items() if key!=state['key'] and not (value.get('references') and set(value['references'])<=covered)}
+                _write(failures_path,failures)
             except RetryLater as exc:
                 state.update(status='waiting', retry_at=exc.retry_at)
                 _write(path, state)
             except Exception as exc:
                 state.update(status='failed', error_summary=failure_summary(exc))
+                failures[state['key']]={'attempts':state.get('review_attempt',1),'references':[reference(x) for x in state['items']],'retry_at':now.timestamp()+3600,'summary':state['error_summary']}
+                _write(failures_path,failures)
                 _write(path, state)
             return changed
         finally:
             os.close(fd)
 
     def notices(self):
-        path = self.root/'active.json'
-        if not path.exists():
-            return []
-        state = json.loads(path.read_text())
-        if state['status'] != 'failed':
-            return []
-        return [{'id':'monitor-failure:'+state['key'], 'kind':'connection',
+        path=self.root/'failed-batches.json'
+        failures=json.loads(path.read_text()) if path.exists() else {}
+        active=self.root/'active.json'
+        if active.exists():
+            state=json.loads(active.read_text())
+            if state['status']=='failed':
+                failures.setdefault(state['key'],{'summary':state.get('error_summary','Review incomplete.')})
+        return [{'id':'monitor-failure:'+key,'kind':'connection',
                  'title':'Commitment review needs attention',
-                 'summary':state.get('error_summary','The review stopped; saved evidence is preserved.')}]
+                 'summary':value.get('summary','The review stopped; saved evidence is preserved.')}
+                for key,value in list(failures.items())[:3]]

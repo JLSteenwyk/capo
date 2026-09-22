@@ -152,6 +152,24 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             WorkflowTools(self.home, self.config, invalid).policy()
 
+    def test_inspection_uses_live_pr_state_and_never_falls_back_to_stale_open_state(self):
+        result=self.tools.start('project','Clarify setup',False,'operation')
+        row=self.store.get(result['objective_id'])
+        row['publication']={'pr':{'number':7,'state':'open','draft':True,'url':'https://github.com/example/project/pull/7'}}
+        self.store.save(row,'fixture')
+        live={'number':7,'state':'closed','merged':True,'draft':False}
+        with patch('capo.github_tools.GitHubTools.pull_request',return_value=live) as read:
+            inspected=self.tools.inspect(row['id'])
+        read.assert_called_once_with('project','7')
+        self.assertTrue(inspected['publication']['merged'])
+        self.assertEqual(inspected['publication_source'],'live_github')
+        self.assertIn('Do not prepare',inspected['next_action'])
+        with patch('capo.github_tools.GitHubTools.pull_request',side_effect=RuntimeError('private error')):
+            unavailable=self.tools.inspect(row['id'])
+        self.assertEqual(unavailable['publication']['state'],'unknown')
+        self.assertNotIn('private error',json.dumps(unavailable))
+        self.assertEqual(self.store.get(row['id'])['publication']['pr']['state'],'open')
+
 
 if __name__ == '__main__':
     unittest.main()

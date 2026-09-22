@@ -48,6 +48,8 @@ class ScheduledManager(DigestManager):
                 if run['status']=='ready':run['status']='cancelled';self.db.save(run,now);continue
                 run['deadline']=now.timestamp();self.db.save(run,now)
             self.deliver(run,now)
+        from .check_recovery import queue_followups
+        queue_followups(self.db,self.owner,schedules,now)
         for s in schedules.values():
             if not s['enabled']:continue
             # Resume the same checkpoint after a temporary failure, including the
@@ -99,7 +101,9 @@ class ScheduledManager(DigestManager):
                         _write(baseline, previous_report(db, self.owner, s['id'], s['revision'], run['created']))
                     previous=json.loads(baseline.read_text())
                     request={'message':run['request'],'timezone':s['timezone'],
-                             'agent':s.get('agent', 'capo'), 'previous_check':previous}
+                             'agent':s.get('agent', 'capo'), 'previous_check':previous,
+                             'recovery_of':bool(run.get('recovery_of')),
+                             'recovery_instruction':'This is one bounded follow-up of an incomplete check. Inspect the missing sources and current state; do not repeat old claims without evidence.' if run.get('recovery_of') else ''}
                     role=ROLES.get(s.get('agent'), ('Capo' if s.get('agent', 'capo')=='capo' else 'Coding Agent',
                         'Use the shared tools to complete the assigned inspection.'))
                     registry=shared_tools(self.service.store.home,config,docs,request)
@@ -151,8 +155,8 @@ class ScheduledManager(DigestManager):
                     if isinstance(exc, RetryLater):
                         scheduled_deadline=run.setdefault('scheduled_deadline',run['deadline'])
                         run.update(status='queued', retry_at=exc.retry_at, attempts=max(0, run['attempts']-1),
-                                   deadline=scheduled_deadline+1800,
-                                   error_summary='The provider is temporarily unavailable. Capo will retry the saved work for up to 30 minutes after its scheduled window.')
+                                   deadline=scheduled_deadline if run.get('recovery_of') else scheduled_deadline+1800,
+                                   error_summary=('The provider is temporarily unavailable. The follow-up can retry within its original 15-minute deadline.' if run.get('recovery_of') else 'The provider is temporarily unavailable. Capo will retry the saved work for up to 30 minutes after its scheduled window.'))
                     else:
                         from .recovery import failure_summary
                         run.update(status='queued', retry_at=datetime.now(timezone.utc).timestamp()+60, error_summary=failure_summary(exc))

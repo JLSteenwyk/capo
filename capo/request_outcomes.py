@@ -50,6 +50,8 @@ def completion_failure_reply(receipts, tools):
     if confirmations:
         return ('\n'.join(confirmations[:3])+
                 '\n\nThese changes are confirmed. I could not verify whether the whole request is finished.')
+    if not any(r.get('tool') in tools.tools for r in receipts):
+        return 'I could not verify my answer. No changes were made.'
     return ('I could not verify the completion report. Saved results are preserved; '
             'no successful change could be confirmed from them.')
 
@@ -71,11 +73,11 @@ def assess(encoded,receipts,tools):
         selected=[]
         for index in item['evidence']:
             if not index.isdigit() or len(index)>3 or int(index)>=len(receipts):
-                raise OutcomeError('Outcome references an unknown receipt')
+                raise OutcomeError('Outcome references an unknown receipt. Use only current receipt_index values. For an answer about earlier conversation context, use kind=answer with evidence=[]; do not cite history positions as tool receipts.')
             selected.append(receipts[int(index)])
         if item['status']!='complete':continue
         if any('error' in r or r.get('uncertain') or 'result' not in r for r in selected):
-            raise OutcomeError('Failed or uncertain receipts cannot prove completion')
+            raise OutcomeError('Failed or uncertain receipts cannot prove completion. Omit error receipts. An honest explanation of a failed attempt can be kind=answer with evidence=[]; this does not establish a completed action.')
         if item['kind'] in ('action','handoff'):
             if not any(successful_action(r,tools,item['kind']) for r in selected):
                 cited=', '.join(index+' ('+receipts[int(index)].get('tool','report feedback')+')'

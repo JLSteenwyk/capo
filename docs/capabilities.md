@@ -342,3 +342,26 @@ recurrence, or another organizer remain outside this adapter's mutation policy.
 Automation alerts use stable schedule/status identifiers to avoid repeating the same
 problem merely because its wording changed. Current schedule health takes precedence
 over historical failed runs.
+
+### Bounded follow-ups and fresh state
+
+A failed commitment-review batch no longer blocks other changed sources. Each source
+version gets at most one follow-up after an hour, using fresh task reads and the same
+restricted observation tools. Original checkpoints and receipts remain intact.
+Failures stay visible after other batches succeed; successful review of the same
+sources clears superseded notices.
+
+Incomplete read-only scheduled assignments get one separate follow-up, at least
+30 minutes after the original start and within six hours on the same local day.
+Paused, retired, revised and off-day schedules do not qualify. A follow-up cannot
+spawn another follow-up. It has the normal ten-call limit and a 15-minute deadline,
+including provider waits, and preserves original results. Existing continuation
+cursors guide remaining work. External writes remain unavailable; delivery uses
+normal report deduplication and Slack receipts. This is an additional bounded
+inspection, not a reset of the original run's budgets or status.
+
+`development.inspect` checks linked PRs live through the existing GitHub adapter.
+If that read fails, PR state is explicitly unknown; a saved open/draft value is not
+presented as current. Workflow state remains local and does not authorize replay.
+Completion corrections distinguish conversational evidence from action receipts;
+answer-only validation failures do not imply a failed external change.

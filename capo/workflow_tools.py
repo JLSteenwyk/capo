@@ -72,10 +72,24 @@ class WorkflowTools:
     def inspect(self, id):
         with self.session() as (service, _):
             row = service.objective(id)
-            return {'id': id, 'status': row['status'], 'request': row.get('request', '')[:12000],
-                'question': row.get('question', ''), 'error': row.get('error', ''),
-                'publication': row.get('publication', {}).get('pr', {}),
-                'coverage': 'Current local workflow ledger. Use GitHub tools for live PR and check state.'}
+            publication=row.get('publication',{}).get('pr',{})
+            result={'id':id,'status':row['status'],'request':row.get('request','')[:12000],
+                    'question':row.get('question',''),'error':row.get('error',''),
+                    'publication':{},'publication_source':'none',
+                    'coverage':'Workflow status is local; PR status is authoritative only when live GitHub verification succeeds.'}
+            if publication:
+                try:
+                    from .github_tools import GitHubTools
+                    live=GitHubTools(self.config.get('repositories',{})).pull_request(
+                        row['slack']['repository_alias'],str(publication['number']))
+                    result.update(publication=live,publication_source='live_github')
+                    if live.get('merged') or live.get('state')=='closed':
+                        result['next_action']='This PR is already merged or closed. Do not prepare or publish it again.'
+                except Exception:
+                    result.update(publication={'number':publication.get('number'),'url':publication.get('url'),
+                        'state':'unknown'},publication_source='live_check_failed',
+                        next_action='Live PR state could not be verified. Do not treat the saved workflow state as pending GitHub work.')
+            return result
 
     def command(self, command, operation_id):
         from .capabilities import owner_key

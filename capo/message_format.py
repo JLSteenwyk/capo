@@ -36,6 +36,9 @@ def _prose(text):
     # sequences (paths, regexes and examples can legitimately contain them).
     # Code has already been separated; URLs must also remain byte-for-byte.
     separators = r'https?://[^\s<>]+|(?<!\\)(?:\\r\\n|\\n){2,}|(?<!\\)(?:\\r\\n|\\n)(?= *(?:[-*] |[0-9]+[.)] |#{1,6} ))'
+    # A backslash cannot be part of an HTTP URL. Separate escaped paragraph
+    # breaks followed by prose, while leaving literal examples untouched.
+    text = re.sub(r'(https?://[^\s<>`]*?)(?:\\n){2,}(?=[A-Za-z])', lambda m:m[1]+'\n\n', text)
     text = re.sub(separators, lambda m: m.group() if m.group().startswith(('http://', 'https://'))
                   else m.group().replace(r'\r\n', '\n').replace(r'\n', '\n'), text)
     text = re.sub(r'(?m)^ {0,3}#{1,6} +(.+?)(?: +#+)?$', r'\1', text)
@@ -57,7 +60,7 @@ def slack_text(text):
         parts=[];end=0
         for match in re.finditer(pattern,value):
             url=match['url'];tail=''
-            while url and (url[-1] in '.,;!?' or (url[-1]==')' and url.count(')')>url.count('('))):
+            while url and (url[-1] in '.,;!?:' or (url[-1]==')' and url.count(')')>url.count('('))):
                 tail=url[-1]+tail;url=url[:-1]
             try:
                 parsed=urlsplit(url)
