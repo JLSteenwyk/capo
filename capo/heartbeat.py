@@ -44,8 +44,8 @@ def evidence(config,objectives,now,home=None):
         if exc:
             status, action=diagnosis(exc)
             add('connection',{'title':service.title()+' check unavailable','status':status,'next_action':action})
-    def add(kind,data):
-        key=kind+':'+hashlib.sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()[:24]
+    def add(kind,data,stable=None):
+        key=stable or kind+':'+hashlib.sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()[:24]
         items.append(dict(id=key,kind=kind,**data))
     if config.get('gmail',{}).get('enabled'):
         try:
@@ -82,26 +82,29 @@ def evidence(config,objectives,now,home=None):
                                'labels':issue.get('labels',[])})
         except Exception:
             add('connection', {'title':'GitHub check unavailable for '+alias})
+    checks=health.automations(now) if health else []
+    # Older installations may have saved runs without a schedule record. Keep
+    # today's latest failure visible, but never override current schedule health.
     if home is not None and (home/'scheduled/digest/digest.sqlite3').exists():
-        scheduled = DigestStore(home/'scheduled')
+        scheduled=DigestStore(home/'scheduled')
         try:
-            inspected = set()
-            for (data,) in scheduled.db.execute('SELECT data FROM runs WHERE scope=? ORDER BY rowid DESC LIMIT 100', (scope(config),)):
-                run = json.loads(data)
-                id = run.get('schedule_id', run['key'])
-                if id in inspected:
-                    continue
-                inspected.add(id)
-                if run['status'] in ('failed', 'expired'):
-                    add('connection', {'title':'Scheduled work: '+run.get('title','Saved request'),
-                        'summary':run.get('error_summary', 'The allowed delivery window ended before completion; saved progress is preserved.'),
-                        'run_id':run['key']})
-        finally:
-            scheduled.close()
+            from .schedules import Schedules
+            from .capabilities import owner_key
+            inspected={s['id'] for s in Schedules(home,owner_key(config)).list()['schedules']}
+            inspected.update(check['schedule_id'] for check in checks if check['schedule_id'])
+            for (data,) in scheduled.db.execute('SELECT data FROM runs WHERE scope=? ORDER BY updated DESC, rowid DESC LIMIT 100',(scope(config),)):
+                run=json.loads(data); sid=run.get('schedule_id',run['key'])
+                if run.get('preview') or sid in inspected:continue
+                inspected.add(sid)
+                if run.get('day')==now.astimezone(timezone.utc).date().isoformat() and run['status'] in ('failed','expired'):
+                    add('connection',{'title':'Scheduled work: '+run.get('title','Saved request'),
+                        'summary':run.get('error_summary','The delivery window ended before completion.'),
+                        'run_id':run['key']},stable='automation:'+sid+':needs_attention')
+        finally:scheduled.close()
     if health:
-        for check in health.automations(now):
+        for check in checks:
             if check['status'] in ('missed','needs_attention'):
-                add('connection',{'title':check['title'], 'status':check['status'], 'next_action':check['next_action']})
+                add('connection',{'title':check['title'], 'status':check['status'], 'next_action':check['next_action']},stable='automation:'+str(check['schedule_id'] or check['title'])+':'+check['status'])
     superseded={o.get('continuation_of') for o in objectives}
     for objective in objectives:
         if objective['id'] in superseded:continue

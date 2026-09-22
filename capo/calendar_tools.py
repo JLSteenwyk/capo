@@ -87,6 +87,8 @@ class CalendarTools:
         keys = ('id','summary','start','end','location','status','transparency','eventType')
         value=copy.deepcopy({key:row[key] for key in keys if key in row})
         value['calendar_id']=calendar_id
+        value['editable_by_capo']=writable(row)
+        if not writable(row):value['edit_policy']='Only personal events organized by this account without guests or recurrence can be edited by this adapter.'
         value['source_times']=copy.deepcopy({key:row[key] for key in ('start','end') if key in row})
         from .date_tools import describe as date_facts
         value['local_dates']={}

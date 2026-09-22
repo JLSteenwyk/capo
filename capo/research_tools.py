@@ -10,6 +10,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
+class ToolInputError(ValueError):
+    """Host-authored argument correction; never raw service error text."""
+
+
 @dataclass(frozen=True)
 class ReadTool:
     name: str
@@ -58,7 +62,10 @@ class ReadTools:
         if name not in self.tools:
             raise ValueError('Unknown read tool')
         tool = self.tools[name]
-        validate(arguments, tool.arguments)
+        try:validate(arguments, tool.arguments)
+        except ValueError as exc:
+            path=str(exc).split(':',1)[0]
+            raise ToolInputError(path+': arguments must match the catalog schema, including required fields, types and allowed choices. No callback was executed.') from None
         if tool.mutates:
             if not operation_id:
                 raise ValueError('Mutation requires a host action receipt')
@@ -88,7 +95,7 @@ def complete_reply(result):
     return reply + '\n\n' + content
 
 
-def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude'):
+def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False):
     """Serialize the entire reasoning/tool loop, including external tool calls."""
     import fcntl
     import os
@@ -107,12 +114,12 @@ def research(provider, tools, request, directory, instructions='', max_calls=6, 
             tools = bind(tools, provider, directory, request, owner_update)
             if 'workers.delegate' in tools.tools:instructions = GUIDANCE + instructions
         elif 'workers.delegate' in tools.tools:raise ValueError('Recursive delegation is prohibited')
-        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update, reasoning_provider)
+        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update, reasoning_provider, require_source_inspection)
     finally:
         os.close(fd)
 
 
-def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude'):
+def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False):
     """Compose tools without a task-type enum; return evidence receipts and a document.
 
     max_calls counts tool attempts, including invalid calls. A final provider turn
@@ -140,6 +147,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
     if state.get('reasoning_provider', reasoning_provider) != reasoning_provider:
         raise RecoveryStopped('Research worker changed')
     state['reasoning_provider'] = reasoning_provider
+    state['require_source_inspection'] = state.get('require_source_inspection',False) or require_source_inspection
     if 'fingerprint' not in state:
         state['fingerprint']=hashlib.sha256(json.dumps([request, tools.catalog(), instructions, max_calls], sort_keys=True).encode()).hexdigest()
     bind(state, request, tools.catalog(), instructions, max_calls, directory, STEP)
@@ -287,6 +295,22 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             state['result']=completed
             _write(checkpoint,state)
             return completed
+        try:
+            unfinished=any(item.get('status') in ('partial','needs_input') for item in json.loads(result['arguments_json']).get('outcomes',[])) if result['action']=='finish' else False
+        except (ValueError,TypeError,AttributeError):unfinished=False
+        if result['action']=='finish' and unfinished and state['require_source_inspection'] and not any(
+                r.get('tool') in tools.tools and r['tool']!='clock.now' and not tools.tools[r['tool']].finalizes
+                and ('result' in r or r.get('attempted')) for r in receipts):
+            feedback='No source tool has been attempted through the host. The catalog tools are available here, not as native CLI tools. Return action=tool with a catalog name and JSON arguments. Do not claim unavailable tools without host failure receipts.'
+            prior_feedback=sum(bool(r.get('source_feedback')) for r in receipts)
+            receipts.append({'tool':'','source_feedback':True,'error':feedback})
+            if remaining and prior_feedback<2:
+                _write(checkpoint,state)
+                continue
+            completed={'reply':'The check stopped without inspecting its sources. Tool availability was not established; no findings were verified.',
+                       'status':'partial','stop_reason':'source_inspection_missing','receipts':receipts,'document':'','document_title':''}
+            state['result']=completed;_write(checkpoint,state)
+            return completed
         if result['action'] == 'finish' and finalizers and not reported and remaining:
             receipts.append({'tool':'', 'error':'Save the monitoring report before finishing. Use partial coverage and explicit gaps when needed.'})
             _write(checkpoint,state)
@@ -338,6 +362,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         if any(result[key] for key in ('reply', 'document_title', 'document')):
             raise ValueError('Unexpected output during tool selection')
         arguments_parsed = False
+        tool_attempted = False
         try:
             if len(result['arguments_json']) > 12000:
                 raise ValueError('Arguments too large')
@@ -362,6 +387,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 raise RecoveryStopped('Research was cancelled')
             updated=superseded()
             if updated is not None:return updated
+            tool_attempted = True
             evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+action_key)
             size = len(json.dumps(evidence))
             ceiling = evidence_limit if result['tool'] in finalizers else evidence_limit - report_reserve
@@ -385,7 +411,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             if isinstance(exc, (RateLimited, AuthenticationError, PermissionError, ConnectionError, TimeoutError)):
                 attempted = tools.tools.get(result['tool'])
                 receipts.append({'tool':result['tool'], 'arguments':arguments,
-                                 'error':failure_summary(exc), 'uncertain':bool(attempted and attempted.mutates)})
+                                 'error':failure_summary(exc), 'attempted':tool_attempted, 'uncertain':bool(attempted and attempted.mutates)})
                 state['pending'] = None
                 state['tool_state'] = tools.snapshot()
                 if isinstance(exc, (AuthenticationError, PermissionError)):
@@ -401,11 +427,11 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             from .web_tools import WebError
             from .effects import UncertainEffect
             from .calendar import CalendarError
-            safe_error = str(exc) if isinstance(exc, (WebError, UncertainEffect, CalendarError, GitHubReadError)) else 'Tool failed or arguments exceeded its limits. No result available.'
+            safe_error = str(exc) if isinstance(exc, (ToolInputError, WebError, UncertainEffect, CalendarError, GitHubReadError)) else 'Tool failed or arguments exceeded its limits. No result available.'
             if isinstance(exc,json.JSONDecodeError) and not arguments_parsed:
                 safe_error=f'Invalid JSON arguments: {exc.msg} at line {exc.lineno}, column {exc.colno}. Return a complete JSON object matching the tool schema. No tool was executed.'
             # Keep provider bodies, credentials, and arbitrary exception messages private.
-            failed={'tool':result['tool'],'error':safe_error}
+            failed={'tool':result['tool'],'error':safe_error,'attempted':tool_attempted and not isinstance(exc, ToolInputError)}
             if isinstance(exc,json.JSONDecodeError) and not arguments_parsed:
                 # Private, bounded repair context; never execute this string.
                 failed['invalid_arguments_json']=result['arguments_json']

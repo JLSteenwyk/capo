@@ -65,7 +65,10 @@ class GoogleCalendar:
         stored = json.loads(TOKEN.read_text())
         credentials = Credentials.from_authorized_user_file(str(TOKEN), stored.get('scopes', SCOPES))
         if not credentials.valid:
-            credentials.refresh(Request())
+            from google.auth.exceptions import RefreshError
+            from .providers import ServiceAuthenticationError
+            try:credentials.refresh(Request())
+            except RefreshError:raise ServiceAuthenticationError('Google Calendar') from None
             _write(TOKEN, json.loads(credentials.to_json()))
         self.session = AuthorizedSession(credentials)
 

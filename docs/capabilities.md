@@ -18,6 +18,7 @@ Available primitives:
 | calendar.preferences / calendar.availability / calendar.change | Owner calendar choices, combined work windows, and verified personal event changes |
 | calendar.pending / calendar.reconcile | Read-only verification of uncertain changes |
 | mail.search | Gmail query with pagination; returns message IDs |
+| mail.metadata | Triage discovered messages using bounded headers and snippets without spending the body-reading allowance |
 | mail.read | Read discovered messages with headers, labels and body excerpts |
 | calendar.events | Read primary-calendar events in a bounded date range |
 | calendar.calendars / calendar.inspect | Discover calendars and inspect metadata and access roles |
@@ -322,3 +323,22 @@ Routine scheduled inspections and commitment reviews explicitly use medium Claud
 reasoning effort to fit their short per-step deadlines. Interactive and coding
 work retains its existing defaults. Provider selection, evidence requirements
 and completion checks are unchanged.
+
+### Inspection and repair feedback
+
+Scheduled requests that report incomplete source checks without any host source-tool
+attempt receive bounded corrective feedback before returning. Tool failures remain
+visible; a missing attempt is not reported as an integration outage. Completed direct
+answers do not require unnecessary tool calls. The existing call and time limits apply.
+
+Mail metadata triage allows up to 100 message inspections per request, in batches of
+50 discovered IDs. It does not mark bodies as read. Body limits remain 50 reads and
+120,000 characters. Both allowances survive checkpoint recovery.
+
+Observation updates expose the current batch's allowed evidence references in the
+shared tool schema. Host validation supplies safe correction feedback without echoing
+rejected values. Calendar searches expose edit eligibility; events with guests,
+recurrence, or another organizer remain outside this adapter's mutation policy.
+Automation alerts use stable schedule/status identifiers to avoid repeating the same
+problem merely because its wording changed. Current schedule health takes precedence
+over historical failed runs.

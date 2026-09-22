@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from .calendar import GoogleCalendar, apply, event_body, instant, writable, CalendarPreconditionFailed
 from .contracts import TEXT, object_schema
 from .effects import Effects, UncertainEffect
-from .research_tools import ReadTool
+from .research_tools import ReadTool, ToolInputError
 from .conversation import _write
 
 
@@ -102,7 +102,7 @@ class CalendarActions:
                 if found:return found
                 raise UncertainEffect('Previous calendar change remains unconfirmed; no write repeated')
         if action in ('update','delete') and (event_id not in self.cache or not writable(self.cache[event_id])):
-            raise ValueError('Read the personal event first; guests and recurring events cannot be changed')
+            raise ToolInputError('Inspect the event with calendar.event. This adapter cannot edit events with guests, recurrence, or another organizer. Do not repeat the same change while this restriction remains.')
         existing=None
         if action=='create':
             first,last=start,end

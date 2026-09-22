@@ -115,10 +115,10 @@ class ScheduledManager(DigestManager):
                     readonly.restore(progress.get('state', {}), continuation=True)
                     attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
-                    result=research(Providers(timeout=90,deadline=run['deadline'],effort='medium'),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),
+                    result=research(Providers(timeout=90,deadline=run['deadline'],effort='medium'),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),require_source_inspection=True,
                         instructions=GUIDANCE+f'You are {role[0]}, managed by Capo. {role[1]} '
                         'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
-                        'report verified actionable findings, essential access/coverage blockers, and what was actually checked. '
+                        'report verified actionable findings, essential access/coverage blockers, and what was actually checked. For email searches, use mail.metadata to triage subject/sender/snippets before reading bodies; prefer targeted searches and read only relevant messages. Do not inherit an old blocker as a current failure without new evidence. '
                         'Previous-check continuation contains host-saved pending source IDs and pagination cursors. Resume those reads/pages first without rereading inspected bodies, then inspect newer sources if budget permits. Recheck stale cursors with a fresh bounded search. Report exactly which windows remain unchecked. Never infer that an inspected excerpt means its full message or attachment was read. '
                         'For a requested document, return the full document as your output; the host saves it after verification. Do not claim document saving as a completed external action. Use tasks.overview for loose ends and health.status for failed or missed checks when relevant. Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)

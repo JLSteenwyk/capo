@@ -146,6 +146,7 @@ class GmailReadTools(ReadTools):
         self.known_threads = set()
         self.read_attempts = 0
         self.characters = 0
+        self.metadata_reads = 0
         self.inspected_ids = set()
         self.search_pages = []
         from .mail_attachments import MailAttachments
@@ -158,6 +159,7 @@ class GmailReadTools(ReadTools):
                 'page_size is a string integer 1–50.',
                 object_schema({'query': TEXT, 'page_size': {'type': 'string',
                     'enum': [str(n) for n in range(1, 51)]}, 'page_token': TEXT}), self.search),
+            ReadTool('mail.metadata','Triage up to 50 IDs returned by mail.search using sender, subject, date and short snippets before selecting full body excerpts. No bodies or attachments; not proof an entire message was read. At most 100 metadata reads per request.', object_schema({'ids':TEXTS}),self.metadata),
             ReadTool('mail.read',
                 'Read up to 25 IDs returned by mail.search. Returns headers, labels and bounded '
                 'body text, not attachments. At most 50 message reads and 120000 body characters '
@@ -180,6 +182,7 @@ class GmailReadTools(ReadTools):
                 'search_pages': pages, 'inspected_ids': [], 'read_attempts': 0, 'characters': 0}
 
     def research_limit(self, name):
+        if name=='mail.metadata' and self.metadata_reads>=100:return 'Metadata inspection allowance exhausted; retain partial coverage.'
         if name in ('mail.read', 'mail.thread') and (self.read_attempts >= 50 or self.characters >= 120000):
             return 'Mail read allowance exhausted for this request. Report partial findings; resume unread IDs in a later scheduled check.'
         return ''
@@ -188,7 +191,7 @@ class GmailReadTools(ReadTools):
         return {'known_ids': sorted(self.known_ids), 'known_threads': sorted(self.known_threads),
                 'cursors': self.cursors, 'search_pages': self.search_pages,
                 'inspected_ids': sorted(self.inspected_ids), 'read_attempts': self.read_attempts,
-                'characters': self.characters}
+                'characters': self.characters, 'metadata_reads':self.metadata_reads}
 
     def restore_research_state(self, state, continuation=False):
         # Called only with host-owned private checkpoints, never model arguments.
@@ -198,6 +201,7 @@ class GmailReadTools(ReadTools):
         self.search_pages = state.get('search_pages', [])
         self.inspected_ids.update(state.get('inspected_ids', []))
         if not continuation:
+            self.metadata_reads=max(self.metadata_reads,state.get('metadata_reads',0))
             self.read_attempts = max(self.read_attempts, state.get('read_attempts', 0))
             self.characters = max(self.characters, state.get('characters', 0))
 
@@ -238,6 +242,20 @@ class GmailReadTools(ReadTools):
         self.search_pages.append({'query': query, 'page_token': page_token, 'next_page_token': cursor, 'ids': [r['id'] for r in rows]})
         return {'messages': rows, 'next_page_token': cursor, 'more_available': bool(cursor),
                 'coverage': 'One search page; identifiers only. Read bodies before analyzing prose.'}
+
+    def metadata(self,ids):
+        if not 1<=len(ids)<=50 or len(set(ids))!=len(ids) or not set(ids)<=self.known_ids:
+            raise ValueError('Use up to 50 IDs from a search')
+        rows=[]
+        for id in ids:
+            if self.metadata_reads>=100:break
+            self.metadata_reads+=1
+            message=self.client.get('messages/'+quote(id,safe=''),{'format':'metadata','metadataHeaders':['From','Subject','Date']})
+            headers={h['name'].lower():h['value'][:300] for h in message.get('payload',{}).get('headers',[])}
+            rows.append({'id':id,'thread_id':message.get('threadId',''),'headers':headers,
+                         'snippet':message.get('snippet','')[:700],'labels':message.get('labelIds',[])})
+        return {'messages':rows,'unread_ids':ids[len(rows):], 'remaining_metadata_reads':100-self.metadata_reads,
+                'coverage':'Headers and snippets only. Bodies and attachments have not been inspected.'}
 
     def read(self, ids, strip_quotes):
         if (not 1 <= len(ids) <= 25 or len(set(ids)) != len(ids)
