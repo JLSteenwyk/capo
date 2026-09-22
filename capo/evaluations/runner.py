@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 from contextlib import ExitStack
 
+from .conversation_cases import CASES as CONVERSATION_CASES,ConversationWorld
 from .calendar_cases import CASES,CalendarWorld
 from .mail_cases import CASES as MAIL_CASES,MailWorld
 from .github_cases import CASES as GITHUB_CASES,GitHubWorld
@@ -26,8 +27,8 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         raise ValueError('Evaluation artifacts must be outside the public repository')
     if output.exists() and any(output.iterdir()):raise ValueError('Use a fresh evaluation directory')
     output.mkdir(parents=True,mode=0o700,exist_ok=True)
-    case={**CASES,**MAIL_CASES,**GITHUB_CASES,**TASK_CASES,**RESEARCH_CASES}[name]
-    world=ResearchWorld(case) if case.get('web') else TaskWorld(case) if case.get('tasks') else GitHubWorld(case) if case.get('github') else (MailWorld(case) if case.get('mail') else CalendarWorld(case))
+    case={**CASES,**MAIL_CASES,**GITHUB_CASES,**TASK_CASES,**RESEARCH_CASES,**CONVERSATION_CASES}[name]
+    world=ConversationWorld(case) if case.get('conversation') else ResearchWorld(case) if case.get('web') else TaskWorld(case) if case.get('tasks') else GitHubWorld(case) if case.get('github') else (MailWorld(case) if case.get('mail') else CalendarWorld(case))
     from capo.capabilities import shared_tools,Documents
     from capo.research_tools import ReadTools,research
     from capo.conversation import _write
@@ -79,6 +80,27 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
                 # Keep the same simulated world and adapter discovery caches.
                 # Never recreate a world after a tool might have changed it.
                 time.sleep(delay);waited+=delay
+        turns=[{'request':request,'result':result,'writes':len(world.writes)}]
+        for turn,message in enumerate(case.get('followups',[]),1):
+            if case.get('tasks'):
+                world.tasks_before_followup=registry.call('tasks.search',{'query':'','status':'all','cursor':''})['tasks']
+            world.advance()
+            request={**request,'message':message,'recent_messages':[
+                {'user':row['request']['message'],'capo':row['result'].get('reply','')} for row in turns]}
+            # A new owner message gets fresh request-scoped adapter discovery caches.
+            # Only the synthetic remote state, task store and thread text persist.
+            registry=shared_tools(output/'state',config,Documents(output/'state','synthetic'),request)
+            tools=ReadTools([tool for name,tool in registry.tools.items() if name.startswith(allowed) and name!='github.issues'])
+            while True:
+                try:
+                    result=research(provider,tools,request,output/('turn-'+str(turn)),max_calls=10)
+                    break
+                except RetryLater as exc:
+                    delay=max(1,exc.retry_at-time.time())
+                    if waited+delay>recovery_wait_seconds:raise
+                    time.sleep(delay);waited+=delay
+            turns.append({'request':request,'result':result,'writes':len(world.writes)})
+        _write(output/'turns.json',turns)
         if case.get('correction'):
             _write(output/'first-stage.json',result)
             correction={'triggered':provider.triggered,'monitor_supported':bool(correction_args),
@@ -99,6 +121,8 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
     if case.get('tasks'):
         world.task_rows=registry.call('tasks.search',{'query':'','status':'all','cursor':''})['tasks']
     checks=world.grade(result)
+    if case.get('conversation'):
+        checks['all_turn_reports_accepted']=all(row['result'].get('status')=='reported_complete' for row in turns)
     if correction:
         checks['correction_delivered']=correction['triggered']
         checks['superseded_write_prevented']=correction['writes_before_followup']==0
@@ -109,11 +133,11 @@ def run_case(provider,name,output,mode='scripted',recovery_wait_seconds=0):
         source_hash.update(str(path.relative_to(repository)).encode()+b'\0'+path.read_bytes())
     success=False if any(v is False for v in checks.values()) else (None if any(v is None for v in checks.values()) else True)
     summary={'case':name,'split':case['split'],'mode':mode,'checks':checks,
-        'automated_checks_passed':success,'task_success':None if success and (case.get('mail') or case.get('web')) else success,
-        'semantic_review_required':bool(case.get('mail') or case.get('web')),
+        'automated_checks_passed':success,'task_success':None if success and (case.get('mail') or case.get('web') or case.get('conversation')) else success,
+        'semantic_review_required':bool(case.get('mail') or case.get('web') or case.get('conversation')),
         'available_tools':sorted(tools.tools),'correction':correction,
         'recovery_wait_seconds':waited,
-        'elapsed_seconds':round(time.monotonic()-started,3),'tool_attempts':len(result.get('receipts',[]))+correction.get('first_tool_attempts',0),
+        'elapsed_seconds':round(time.monotonic()-started,3),'tool_attempts':sum(len(row['result'].get('receipts',[])) for row in turns) if case.get('conversation') else len(result.get('receipts',[]))+correction.get('first_tool_attempts',0),
         'remote_writes':len(world.writes),'reported_status':result.get('status','unassessed'),
         'unnecessary_clarification':None,'unsupported_claims':None,
         'fixture_sha256':hashlib.sha256(json.dumps(case,sort_keys=True).encode()).hexdigest(),

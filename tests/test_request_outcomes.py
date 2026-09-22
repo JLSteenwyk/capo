@@ -53,6 +53,18 @@ class OutcomeTests(unittest.TestCase):
         self.write.assert_called_once()
         self.assertIn('Completion report is invalid',result['receipts'][1]['error'])
 
+    def test_existing_state_confirmation_repairs_without_a_write(self):
+        self.tools.tools['source.read'].execute.return_value={'items':['requested item']}
+        backend=Mock()
+        read=dict(action='tool',tool='source.read',arguments_json='{}',reply='',document_title='',document='')
+        done=dict(action='finish',tool='',arguments_json=report(),reply='Already present; no change needed.',document_title='',document='')
+        backend.call.side_effect=[read,done,dict(done,arguments_json=report(kind='answer'))]
+        with tempfile.TemporaryDirectory() as tmp:
+            result=research(backend,self.tools,{'message':'Make sure the requested item is there'},Path(tmp))
+        self.assertEqual(result['status'],'reported_complete')
+        self.assertIn('no new action is needed',result['receipts'][1]['error'])
+        self.write.assert_not_called()
+
     def test_partial_report_delivers_unfinished_parts(self):
         backend=Mock();backend.call.return_value=dict(action='finish',tool='',
             arguments_json=report(status='needs_input',evidence=[],next_step='Which of the two matching items do you mean?'),

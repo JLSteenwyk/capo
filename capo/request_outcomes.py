@@ -98,7 +98,10 @@ def assess(encoded,receipts,tools,inventory=None):
                                      if successful_action(r,tools,item['kind'])) or 'none'
                 raise OutcomeError('Completed actions need a successful matching host mutation receipt; handoffs need a confirmed host handoff receipt. '
                     'Cited: '+cited+'. Eligible receipt indexes: '+candidates+
-                    '. Use an eligible receipt only if its result establishes this specific outcome; do not repeat the write.')
+                    '. Use an eligible receipt only if its result establishes this specific outcome; do not repeat the write. '
+                    'If a current read confirms the requested state already exists and no new action is needed, '
+                    'report that verification as kind=answer with the read evidence, and explicitly say no new change was made. '
+                    'For a previously tracked action, keep its kind and original mutation evidence; if unavailable, mark that action partial and describe the verified current state separately.')
             if planned and item['kind']=='action':
                 eligible={index for index in item['evidence'] if successful_action(receipts[int(index)],tools)}
                 if eligible & used_actions:
