@@ -108,3 +108,18 @@ class GitHubToolTests(unittest.TestCase):
         first=self.adapter.check_annotations('project','70','1')
         self.assertEqual(first['next_page'],'2')
         self.assertEqual(self.adapter.check_annotations('project','70','2')['next_page'],'')
+
+    def test_security_alerts_return_current_evidence_and_surface_missing_access(self):
+        self.responds([{'number':4,'state':'open','html_url':'https://github.com/example/project/security/dependabot/4',
+            'security_advisory':{'ghsa_id':'GHSA-example','severity':'high'},
+            'dependency':{'package':{'name':'example','ecosystem':'pip'},'manifest_path':'requirements.txt'}}])
+        result=self.registry.call('github.security_alerts',{'repository':'project'})
+        self.assertEqual(result['alerts'][0]['advisory']['severity'],'high')
+        self.assertIn('state=open',self.client.get.call_args.args[0])
+        self.assertNotIn('&page=',self.client.get.call_args.args[0])
+        self.assertFalse(result['more_available'])
+        self.responds([{'number':i} for i in range(100)])
+        self.assertTrue(self.adapter.security_alerts('project')['more_available'])
+        self.client.get.side_effect=GitHubReadError('Permission unavailable')
+        with self.assertRaises(GitHubReadError):self.adapter.security_alerts('project')
+        with self.assertRaises(ValueError):self.adapter.security_alerts('unconfigured')

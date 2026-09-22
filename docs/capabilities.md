@@ -23,6 +23,7 @@ Available primitives:
 | calendar.events | Read primary-calendar events in a bounded date range |
 | calendar.calendars / calendar.inspect | Discover calendars and inspect metadata and access roles |
 | calendar.search / calendar.event | Find events in a selected calendar and inspect details and edit restrictions |
+| github.security_alerts | Read up to 100 current open Dependabot alerts, reporting possible additional results; permission failures remain explicit |
 | github.issues | Read open issues for a configured repository |
 | github.pull_requests / github.pull_request / github.reviews | Discover and inspect current PRs and review history |
 | github.workflow_runs / github.workflow_run / github.checks / github.check_annotations / github.job_log | Inspect workflow attempts, jobs, commit checks, annotations (including jobs that never started), and bounded logs |

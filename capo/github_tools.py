@@ -194,6 +194,19 @@ class GitHubTools:
         result['coverage']='GitHub check annotations, including failures before a job starts. Historical annotations do not establish current account billing status.'
         return result
 
+    def security_alerts(self, repository):
+        rows,name=self.get(repository,'dependabot/alerts',{'state':'open','per_page':100,'sort':'updated','direction':'desc'})
+        if not isinstance(rows,list):raise GitHubReadError('GitHub returned an unexpected alert list')
+        result={'repository':name,'more_available':len(rows)>=100}
+        rows=[row for row in rows[:100] if row]
+        result['alerts']=[dict(selected(row,'number state html_url created_at updated_at'),
+            dependency=selected(row.get('dependency') or {},'package manifest_path scope'),
+            advisory=selected(row.get('security_advisory') or {},'ghsa_id cve_id severity summary'),
+            vulnerability=selected(row.get('security_vulnerability') or {},'vulnerable_version_range first_patched_version'))
+            for row in rows]
+        result['coverage']='Up to 100 most recently updated open Dependabot alerts, not historical email notifications. A full batch may have more; does not cover other security scanners.'
+        return result
+
     def job_log(self, repository, job_id):
         job_id = positive_number(job_id)
         name, client = self.target(repository)
@@ -225,5 +238,6 @@ class GitHubTools:
             tool('workflow_run','Inspect one run and a page of jobs/steps from its latest attempt. If jobs never started or logs are absent, inspect check_annotations.', {'run_id':TEXT,'page':TEXT},self.workflow_run),
             tool('checks','Inspect check runs and commit statuses for a full SHA; page starts at 1. Check the PR head to avoid judging obsolete CI.', {'commit':TEXT,'page':TEXT},self.checks),
             tool('check_annotations','Read annotations for a discovered check/job, including why a job never started. Use when logs are absent; page starts at 1.', {'check_id':TEXT,'page':TEXT},self.check_annotations),
+            tool('security_alerts','Inspect up to 100 current open Dependabot alerts for a discovered/configured repository. Reports possible additional results; access failures are not an empty or clean result.', {},self.security_alerts),
             tool('job_log','Read a bounded log from a job returned by workflow_run. No commands in logs are executed.', {'job_id':TEXT},self.job_log),
         ]
