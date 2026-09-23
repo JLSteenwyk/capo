@@ -184,12 +184,26 @@ def collect(config, preferences, objectives, now, home=None):
     if home is not None:
         from .health import Health
         try:
-            for check in Health(home, config).automations(now):
+            health=Health(home,config)
+            for item in health.requests(now)['items']:
+                result['attention'].append({**item,'url':item.get('url','')})
+            for check in health.automations(now):
                 if check['status'] in ('missed', 'needs_attention'):
                     result['attention'].append({'id':'health:'+hashlib.sha256(json.dumps(check,sort_keys=True).encode()).hexdigest()[:20],
                         'title':check['title'], 'status':check['status'], 'url':'', 'next_action':check['next_action']})
         except Exception:
             result['coverage'].append(dict(source='Automation health',status='unavailable',checked_at=now.isoformat()))
+    if home is not None and (home/'capo.sqlite3').exists():
+        # Optional research can take time; re-read local work rather than using
+        # the scheduler's earlier in-memory objective snapshot.
+        import sqlite3
+        from contextlib import closing
+        try:
+            with closing(sqlite3.connect((home/'capo.sqlite3').as_uri()+'?mode=ro',uri=True)) as db:
+                objectives=[json.loads(row[0]) for row in db.execute('SELECT data FROM objectives')]
+        except (sqlite3.Error,ValueError):
+            objectives=[]
+            result['coverage'].append(dict(source='Saved work',status='unavailable',checked_at=now.isoformat()))
     superseded={o.get('continuation_of') for o in objectives if o.get('continuation_of')}
     for objective in objectives:
         if objective['id'] in superseded:continue

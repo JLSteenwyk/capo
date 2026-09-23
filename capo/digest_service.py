@@ -94,17 +94,20 @@ class DigestManager:
             db=DigestStore(self.service.store.home)
             try:
                 attempt=directory/str(run['attempts']);attempt.mkdir(mode=0o700,exist_ok=True)
-                evidence=collect(config,p,objectives,now,self.service.store.home)
+                from .digest_briefings import collect as collect_briefings
+                briefings=collect_briefings(self.service.store.home,config,attempt/'briefings',seen)
+                observed=datetime.now(timezone.utc)
+                evidence=collect(config,p,objectives,observed,self.service.store.home)
                 from .personalization import snapshot
                 evidence['interest_context']=snapshot(self.service.store.home,config,directory)
                 _write(attempt/'evidence.json',evidence)
                 payload=compose(evidence,p,seen,attempt)
-                from .digest_briefings import collect as collect_briefings
-                briefings=collect_briefings(self.service.store.home,config,directory/'briefings',seen)
                 payload['briefing_findings']=briefings['findings']
                 if briefings['text']:payload['text']+='\n\n'+briefings['text']
                 if len(payload['text'])>10000:raise ValueError('Digest too long')
-                run.update(status='ready',payload=payload)
+                from .report_freshness import snapshot
+                run.pop('error_summary',None)
+                run.update(status='ready',payload=payload,evidence_snapshot=snapshot(observed.timestamp(),rebuildable=True))
             except Exception:
                 run.update(status='queued',retry_at=datetime.now(timezone.utc).timestamp()+60)
                 _write(directory/'failure.json',{'reason':'generation_failed','attempt':run['attempts']})
@@ -137,6 +140,9 @@ class DigestManager:
             run=self.db.get(run['key'])
             if run['status'] not in ('ready','sending'):return
             if now.timestamp()<run.get('retry_at',0):return
+            from .report_freshness import guard
+            if not guard(run,now.timestamp()):
+                self.db.save(run,now);return
             if run.get('payload',{}).get('task_notices'):
                 notice_fd=os.open(self.service.store.home/'task-notice.delivery.lock',os.O_RDWR|os.O_CREAT,0o600)
                 try:fcntl.flock(notice_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)

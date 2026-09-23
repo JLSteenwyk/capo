@@ -135,14 +135,15 @@ class AssignmentTests(unittest.TestCase):
                 observed.append(request)
                 tools.call('monitor.report',current,operation_id='local-report')
                 return {'reply':'Checked.','document':'','document_title':'',
-                        'receipts':[{'tool':'mail.search','result':{'messages':['synthetic']}}]}
+                        'receipts':[{'tool':'mail.search','result':{'messages':['synthetic']},'observed_at':date.timestamp()}]}
             now=datetime.fromisoformat('2030-01-01T10:00:00-08:00')
-            with patch('capo.scheduled_requests.research',side_effect=generate):
+            with patch('capo.scheduled_requests.research',side_effect=generate), patch('capo.scheduled_requests.datetime',wraps=datetime) as clock:
                 for day in range(3):
                     manager=ScheduledManager(service)
                     try:
                         if day==2:current=report('changed-price')
                         date=now+timedelta(days=day)
+                        clock.now.return_value=date
                         manager.tick(date)
                         for worker in manager.workers.values():worker.join(5);self.assertFalse(worker.is_alive())
                         manager.tick(date+timedelta(seconds=30))

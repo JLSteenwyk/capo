@@ -36,6 +36,26 @@ class DigestTests(unittest.TestCase):
                  identity=self.config,attempts=0,retry_at=0,created=self.now.timestamp(),payload=self.payload)
         self.db.save(run,self.now);return run
 
+    def test_stale_report_is_rebuilt_from_new_sources_before_delivery(self):
+        from capo.report_freshness import snapshot
+        run=self.run_record()
+        run.update(attempts=1,evidence_snapshot=snapshot(self.now.timestamp()-301,rebuildable=True),wire_text='Old calendar')
+        self.db.save(run,self.now)
+        self.manager.deliver(run,self.now)
+        self.service.client.chat_postMessage.assert_not_called()
+        self.assertEqual(self.db.get(run['key'])['status'],'queued')
+        with patch('capo.digest_service.collect',return_value={'now':self.now.isoformat(),'events':[{'summary':'Updated appointment'}]}) as read, patch('capo.digest_service.compose',return_value={'text':'Updated appointment','news':[]}) as compose, patch('capo.digest_briefings.collect',return_value={'text':'','findings':[]}), patch('capo.personalization.snapshot',return_value={}):
+            self.manager.advance(self.db.get(run['key']),self.now)
+            self.manager.workers[run['key']].join(5)
+            read.assert_called_once()
+            self.assertEqual(compose.call_args.args[0]['events'][0]['summary'],'Updated appointment')
+        prepared=self.db.get(run['key'])
+        # Delivery time follows the new host observation, not the old report date.
+        delivery=datetime.fromtimestamp(prepared['evidence_snapshot']['observed_at'],timezone.utc)
+        prepared['deadline']=delivery.timestamp()+300;self.db.save(prepared,delivery)
+        self.manager.deliver(prepared,delivery)
+        self.assertEqual(self.service.client.chat_postMessage.call_args.kwargs['text'],'Updated appointment')
+
     def test_daily_delivery_is_unique_and_restart_keeps_receipt(self):
         self.payload['briefing_findings']=[{'id':'briefing:example:one','briefing_key':'example','summary':'Verified event.'}]
         self.run_record()

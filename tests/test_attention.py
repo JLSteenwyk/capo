@@ -84,3 +84,18 @@ class AttentionTests(unittest.TestCase):
         manager.deliver(run,self.now)
         self.client.chat_postMessage.assert_not_called()
         self.assertEqual(manager.db.get(run['key'])['status'],'quiet')
+
+    def test_rejected_send_cache_cannot_restore_closed_task_text(self):
+        tasks=Tasks(self.home,owner_key(self.config))
+        task=tasks.save('','',fields(),'create')['task']
+        evidence=personal_tasks(self.home,self.config,self.now)[0]
+        notice={'id':evidence['id'],'day':evidence['notice_day'],'task_id':task['id'],'line':'Old obligation'}
+        manager=self.manager(Path('.'))
+        run=self.run_record(manager,'rejected','Good morning\nOld obligation\nCalendar outlook',notice)
+        run.update(wire_text='Good morning\nOld obligation\nCalendar outlook',wire_mrkdwn=True)
+        manager.db.save(run,self.now)
+        tasks.save(task['id'],'1',fields(status='completed'),'complete')
+        manager.deliver(run,self.now)
+        text=self.client.chat_postMessage.call_args.kwargs['text']
+        self.assertNotIn('Old obligation',text)
+        self.assertIn('Calendar outlook',text)

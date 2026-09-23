@@ -83,9 +83,14 @@ class Health:
         from .slack_outbox import pending
         return {'connections': list(checks.values()), 'automations': self.automations(now),
                 'unconfirmed_slack_replies':pending(self.home),
+                'requests':self.requests(now),
                 'coverage': 'Saved connection observations, not continuous monitoring. Stale or untested is not healthy. '
                             'Automation checks use saved receipts and current schedules; no writes are replayed. '
                             'Use health.check for a fresh Google connection probe. Other provider login status is available through capacity tools.'}
+
+    def requests(self, now):
+        from .reliability import review
+        return review(self.home,self.config,now)
 
     def automations(self, now):
         from .capabilities import owner_key
@@ -152,5 +157,5 @@ class Health:
         return results
 
     def tools(self):
-        return [ReadTool('health.status', 'Read connection freshness and missing/failed scheduled reports, including digest and hourly checks. Does not run probes or replay actions.', object_schema({}), self.status),
+        return [ReadTool('health.status', 'Read owner-scoped pending replies, incomplete request outcomes, connection freshness and missing/failed scheduled reports, including digest and hourly checks. Does not run probes or replay actions.', object_schema({}), self.status),
                 ReadTool('health.check', 'Perform one bounded read-only Google connection probe, using normal automatic token refresh. Records health privately; never opens login pages, sends messages, or retries writes.', object_schema({'service': {'type':'string','enum':['gmail','calendar']}}), self.check)]

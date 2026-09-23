@@ -81,7 +81,8 @@ class PlanningTests(unittest.TestCase):
                 self.assertEqual(request['message'],value['request']);return result
             manager=ScheduledManager(service)
             try:
-                with patch('capo.scheduled_requests.research',side_effect=generate):
+                with patch('capo.scheduled_requests.research',side_effect=generate), patch('capo.scheduled_requests.datetime',wraps=datetime) as clock:
+                    clock.now.return_value=now
                     manager.tick(now)
                     for worker in manager.workers.values():worker.join(3);self.assertFalse(worker.is_alive())
                     manager.tick(now+timedelta(seconds=30))

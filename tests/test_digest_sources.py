@@ -44,3 +44,19 @@ class SourceTests(unittest.TestCase):
             calendar.return_value.events.return_value=[]
             result=collect(dict(identity,calendar={'enabled':True},repositories={}),{'timezone':'America/Los_Angeles'},[old,new],self.now)
         self.assertEqual(result['attention'],[])
+
+    def test_collection_reloads_work_completed_after_scheduler_snapshot(self):
+        import tempfile
+        from pathlib import Path
+        from capo.store import Store
+        config=dict(team_id='TTEST',channel_id='CTEST',owner_user_id='UTEST',repositories={})
+        with tempfile.TemporaryDirectory() as tmp:
+            home=Path(tmp);store=Store(home)
+            try:
+                saved=store.create({'request':'Synthetic work','slack':config})
+                old=dict(saved,status='blocked')
+                store.save(dict(saved,status='completed'),'completed')
+                with patch('capo.digest_sources.github_attention',return_value=([],[])),patch('capo.digest_sources.news',return_value=([],[])):
+                    result=collect(config,{'timezone':'America/Los_Angeles'},[old],self.now,home)
+                self.assertFalse(any(row['id']==saved['id'] for row in result['attention']))
+            finally:store.db.close()

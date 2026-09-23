@@ -127,6 +127,8 @@ class ScheduledManager(DigestManager):
                         'For a requested document, return the full document as your output; the host saves it after verification. Do not claim document saving as a completed external action. Use tasks.overview for loose ends and health.status for failed or missed checks when relevant. Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)
                     run.pop('error_summary',None)
+                    from .report_freshness import from_receipts
+                    run['evidence_snapshot']=from_receipts(result.get('receipts',[]),readonly,datetime.now(timezone.utc).timestamp())
                     run.update(status='ready',payload={'text':result['reply'],'news':[]},outcome_status=result.get('status','complete'),
                                checked_at=datetime.now(timezone.utc).isoformat())
                     if s.get('delivery')=='changes':

@@ -91,6 +91,9 @@ def filter_notices(manager,run,now):
     remove={n['line'] for n in duplicates};ids={n['id'] for n in duplicates}
     payload=run['payload']
     payload['text']='\n'.join(line for line in payload['text'].splitlines() if line not in remove)
+    # A known rejected send may have cached the old wire representation.
+    # Only ready reports reach here; uncertain sends retain their exact payload.
+    run.pop('wire_text',None);run.pop('wire_mrkdwn',None)
     payload['task_notices']=[n for n in notices if n not in duplicates]
     payload['news']=[n for n in payload.get('news',[]) if n['id'] not in ids]
     # An hourly check may have nothing left; a morning digest retains its outlook.

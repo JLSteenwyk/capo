@@ -374,3 +374,5 @@ from the next model request. The next check receives historical findings and
 pending-source continuation, and must establish its own current failures.
 
 Mail body extraction uses the readable HTML alternative when a sender supplies only a short plain-text stub. Existing message and character limits still apply; attachments are separate. GitHub annotations are available only after discovering a job or check in the same repository. Historical billing annotations describe that attempt, not current account status.
+
+Reliability uses shared saved-outcome inspection and report-freshness policy rather than new request intents. `health.status` exposes owner-scoped unfinished-request concerns alongside connection and automation health. Morning digests may rebuild stale read-only snapshots; schedules and hourly work preserve effects and surface stale reports without replay. See [recovery](recovery.md) for bounds, freshness windows and legacy-report limits.

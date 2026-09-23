@@ -102,6 +102,7 @@ def evidence(config,objectives,now,home=None):
                         'run_id':run['key']},stable='automation:'+sid+':needs_attention')
         finally:scheduled.close()
     if health:
+        items.extend(health.requests(now)['items'])
         for check in checks:
             if check['status'] in ('missed','needs_attention'):
                 add('connection',{'title':check['title'], 'status':check['status'], 'next_action':check['next_action']},stable='automation:'+str(check['schedule_id'] or check['title'])+':'+check['status'])
@@ -132,7 +133,7 @@ def select(items,seen,now,directory,provider=None,assessments=None):
     if operational:
         selected=operational[:3]
         return {'text':'Needs your attention:\n'+'\n'.join(
-                    '• '+item['title'][:120]+': '+str(item.get('next_action') or item.get('summary') or 'Check the saved service status before retrying.')[:220]
+                    '• '+item['title'][:120]+': '+str(item.get('next_action') or item.get('summary') or 'Check the saved service status before retrying.')[:220]+(' '+item['url'] if item.get('url') else '')
                     for item in selected),
                 'news':[{'id':item['id'],'day':day} for item in selected], 'task_notices':[]}
     schema=object_schema({'alerts':{'type':'array','maxItems':3,'items':object_schema({'id':TEXT,'reason':TEXT})}})
@@ -230,7 +231,9 @@ class HeartbeatManager(DigestManager):
                 items.extend(TaskWork(self.service.store.home, config).tick(now, items, seen, changes))
                 _write(attempt/'evidence.json',items)
                 payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt,assessments=monitor.observations)
-                run.update(status='ready' if payload['text'] else 'quiet',payload=payload)
+                from .report_freshness import snapshot
+                run.update(status='ready' if payload['text'] else 'quiet',payload=payload,
+                           evidence_snapshot=snapshot(now.timestamp(),rebuildable=False))
             except Exception:run.update(status='queued',retry_at=datetime.now(timezone.utc).timestamp()+60)
             finally:
                 db.save(run,datetime.now(timezone.utc));db.close();os.close(fd)
