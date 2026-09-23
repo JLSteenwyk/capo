@@ -141,16 +141,20 @@ class MonitoringLimitsTests(unittest.TestCase):
                 return dict(reply='Incomplete.', document='', document_title='', status='partial',
                             receipts=[dict(tool='mail.read', result={'messages':[{'id':'read'}]})])
             start = datetime.fromisoformat('2030-01-01T10:00:00-08:00')
-            with patch('capo.scheduled_requests.shared_tools', side_effect=registry), patch('capo.scheduled_requests.research', side_effect=generate):
+            with patch('capo.scheduled_requests.shared_tools', side_effect=registry), patch('capo.scheduled_requests.research', side_effect=generate), patch('capo.scheduled_requests.datetime',wraps=datetime) as clock:
                 for day in range(2):
                     manager = ScheduledManager(service)
                     try:
                         now = start + timedelta(days=day)
+                        clock.now.return_value=now
                         manager.tick(now)
                         for worker in manager.workers.values():
                             worker.join(5)
                             self.assertFalse(worker.is_alive())
                         manager.tick(now + timedelta(seconds=30))
                     finally:
+                        for worker in list(manager.workers.values()):
+                            worker.join(5)
+                            self.assertFalse(worker.is_alive())
                         manager.db.close()
             self.assertEqual(len(registries), 2)
