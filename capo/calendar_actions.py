@@ -14,8 +14,11 @@ from .research_tools import ReadTool, ToolInputError
 from .conversation import _write
 
 
-def equivalent(event, body):
-    if event.get('status')=='cancelled':return False
+def equivalent(event, body, ignore_attendees=False):
+    if event.get('status')=='cancelled' or event.get('attendeesOmitted'):return False
+    expected={a.get('email','').lower() for a in body.get('attendees',[])}
+    guests={a.get('email','').lower() for a in event.get('attendees',[]) if not a.get('organizer') or a.get('email','').lower() in expected}
+    if not ignore_attendees and guests!=expected:return False
     from .calendar_recurrence import equivalent_rules
     if event.get('recurringEventId') or not equivalent_rules(event.get('recurrence',[]),body.get('recurrence',[]),body['start'].get('dateTime',body['start'].get('date'))):return False
     if body.get('recurrence') and 'dateTime' in body['start'] and any(event.get(k,{}).get('timeZone')!=body[k].get('timeZone') for k in ('start','end')):return False
@@ -70,7 +73,7 @@ class CalendarActions:
 
     def pending(self):
         self.known_pending={hashlib.sha256(op.encode()).hexdigest():(op,req)
-                            for op,req in self.effects.pending('calendar-change')}
+                            for op,req in self.effects.pending('calendar-')}
         return {'actions':[{'id':id,'action':req['plan']['action'],'title':req['plan']['title'],'calendar_id':req['plan'].get('calendar_id','primary')}
                            for id,(_,req) in self.known_pending.items()]}
 
@@ -78,21 +81,32 @@ class CalendarActions:
         if id not in self.known_pending:raise ValueError('List pending calendar actions first')
         op,req=self.known_pending[id]
         calendar_id=req['plan'].get('calendar_id','primary')
+        if req['kind']=='calendar-invite':
+            from .calendar_invites import confirmed
+            client=GoogleCalendar() if calendar_id=='primary' else GoogleCalendar(calendar_id)
+            if confirmed(client,req['plan']):
+                return self.effects.resolve(op,req,{'verified':True,'reconciled':True,'reply':'Requested guests are on the event; no invitation was resent.'})
+            return {'confirmed':False,'reply':'Invitation remains unconfirmed; no write was repeated.'}
         client=GoogleCalendar() if calendar_id=='primary' else GoogleCalendar(calendar_id)
         result=self.check_pending(op,req,client)
         return result or {'confirmed':False,'reply':'The previous calendar change remains unconfirmed. No write was repeated.'}
 
-    def change(self,action,event_id,title,location,start,end,all_day,operation_id,recurrence=""):
+    def change(self,action,event_id,title,location,start,end,all_day,operation_id,recurrence="",attendees=None):
         lock=self.effects.path.parent/'calendar-change.lock'
         fd=os.open(lock,os.O_CREAT|os.O_RDWR,0o600)
         try:
             try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise UncertainEffect('Another calendar change is running. Check its result before retrying.') from None
-            return self._change(action,event_id,title,location,start,end,all_day,operation_id,recurrence)
+            return self._change(action,event_id,title,location,start,end,all_day,operation_id,recurrence,attendees)
         finally:os.close(fd)
 
-    def _change(self,action,event_id,title,location,start,end,all_day,operation_id,recurrence=""):
+    def _change(self,action,event_id,title,location,start,end,all_day,operation_id,recurrence="",attendees=None):
         plan=dict(action=action,event_id=event_id,title=title,location=location,start=start,end=end,all_day=all_day,reply='')
+        if attendees:
+            from .contacts import email
+            if action!='create':raise ToolInputError('Use calendar.invite to add guests to an existing event.')
+            if len(attendees)>20:raise ToolInputError('Invite at most twenty contacts at a time.')
+            plan['attendees']=sorted(set(email(address) for address in attendees))
         if recurrence:
             from .calendar_recurrence import rule
             if action!='create':raise ToolInputError('Recurrence is supported for creation only; series editing requires explicit scope.')
@@ -123,6 +137,8 @@ class CalendarActions:
                 if len(parents)>20:raise ToolInputError('Too many series to verify duplicates; choose a narrower start window.')
                 candidates += [row for parent in sorted(parents) if (row:=client.lookup(parent)) is not None]
             matches=[e for e in candidates if equivalent(e,body)]
+            if not matches and any(equivalent(e,body,ignore_attendees=True) for e in candidates):
+                raise ToolInputError('A matching event exists with different guests. Inspect it and use calendar.invite to add the requested people; do not create a duplicate.')
             if matches:
                 existing={'changed':False,'already_exists':True,'event_id':matches[0]['id'],'calendar_id':self.calendar_id,
                           'reply':'The matching event is already on your calendar.'}
@@ -151,7 +167,7 @@ class CalendarActions:
     def tools(self):
         schema=object_schema({'action':{'type':'string','enum':['create','update','delete']},'event_id':TEXT,'title':TEXT,'location':TEXT,'start':TEXT,'end':TEXT,'all_day':{'type':'boolean'}})
         schema['properties']['recurrence']=TEXT
-        return [ReadTool('calendar.change','Apply an explicitly owner-requested personal change. Reads existing events before creation to avoid exact duplicates; read events before update/delete. Full preserved title/location/times on update. No guests. Optional recurrence creates one series, for example RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6. Use FREQ=DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL, BYDAY, BYMONTHDAY, BYMONTH, WKST, and COUNT or UNTIL. Empty or omitted means one event. Timed UNTIL is UTC (YYYYMMDDTHHMMSSZ); all-day UNTIL is YYYYMMDD. Use the configured timezone for daylight-saving behavior. Do not invent an end date. Series/instance update/delete remains unsupported. Timed values require local offsets; all-day end is exclusive. Unused strings empty. Unconfirmed identical changes are reconciled without another write.',
+        return [ReadTool('calendar.change','Apply an explicitly owner-requested personal change. Reads existing events before creation to avoid exact duplicates; read events before update/delete. Full preserved title/location/times on update. Optional contact_ids on creation invite those explicitly requested saved contacts; Google sends guest notifications. Use calendar.invite for an existing event. Optional recurrence creates one series, for example RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6. Use FREQ=DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL, BYDAY, BYMONTHDAY, BYMONTH, WKST, and COUNT or UNTIL. Empty or omitted means one event. Timed UNTIL is UTC (YYYYMMDDTHHMMSSZ); all-day UNTIL is YYYYMMDD. Use the configured timezone for daylight-saving behavior. Do not invent an end date. Series/instance update/delete remains unsupported. Timed values require local offsets; all-day end is exclusive. Unused strings empty. Unconfirmed identical changes are reconciled without another write.',
             schema,self.change,mutates=True),
             ReadTool('calendar.pending','List uncertain calendar changes for read-only reconciliation.',object_schema({}),self.pending),
             ReadTool('calendar.reconcile','Check a listed uncertain action against the actual calendar. Never repeats a write; absence or conflicting evidence for a save remains unconfirmed.',object_schema({'id':TEXT}),self.reconcile,verifies=True)]

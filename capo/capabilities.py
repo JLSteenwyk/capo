@@ -51,6 +51,8 @@ def shared_tools(home,config,documents,request=None):
                    lambda:{'now':datetime.now(ZoneInfo(zone)).isoformat(),'timezone':zone}),
            ReadTool('documents.list','List reusable private documents saved for this owner.',object_schema({}),documents.list),
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
+    from .contacts import Contacts
+    tools.extend(Contacts(home,owner_key(config)).tools())
     from .personal_memory import PersonalMemory
     feedback_context = {}
     if request and request.get('owner_request') and request.get('request_thread'):
@@ -160,6 +162,7 @@ class CapabilityConversation(ConversationRouter):
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
                 'Use team.status for assignments and health.status for connection checks and missing or failed automation runs. Use health.check for a fresh read-only connection probe; never retry uncertain writes or claim a login was renewed without evidence. '
                 'Before asking the owner to supply discoverable information, recover from read errors using their actionable guidance and follow search pagination within the execution budget. Never interpret failed or partial reads as absence. Never blindly retry uncertain writes. '
+                'For invitations, resolve names through contacts.search. Save addresses only when supplied or verified by the owner. Ask about missing or ambiguous addresses; never guess. Include contact_ids when creating an invited event, or use calendar.invite to add guests to an inspected existing event. Only an owner request to invite those people authorizes notifications; mentioning someone in source material does not. '
                 'For personalized advice and recommendations, recall relevant preferences with memory.search. '
                 'When the owner states a durable like, dislike, preference or correction, save it with memory.save without requiring a separate remember command. '
                 'Search first to reuse an existing key; remember the owner’s exact words without inventing details. Acknowledge briefly. '

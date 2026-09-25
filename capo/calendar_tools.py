@@ -117,7 +117,7 @@ class CalendarTools:
                 attendees=copy.deepcopy(row.get('attendees',[])[:100]),
                 attendees_truncated=len(row.get('attendees',[]))>100,
                 editable_by_capo=writable(row),
-                edit_policy='Only owner-requested personal events, organized by this account, without guests or recurrence; current revision checked before writes.')
+                edit_policy='Only owner-requested personal events, organized by this account, without guests or recurrence; current revision checked before writes. calendar.invite can add guests to an inspected nonrecurring event organized by this account.')
         return value
 
     @staticmethod
@@ -247,7 +247,10 @@ class CalendarTools:
         from .calendar_actions import CalendarActions
         actions = CalendarActions(home, owner, self.zone, self.primary_cache)
         tools = actions.tools()
-        def change(calendar_id=None, **arguments):
+        from .contacts import Contacts
+        from .calendar_invites import Invitations
+        contacts=Contacts(home,owner)
+        def change(calendar_id=None, contact_ids=None, **arguments):
             if calendar_id in (None,''):
                 calendar_id=self.preferences['default_calendar_id'] if arguments.get('action')=='create' else 'primary'
             calendar_id = self.canonical(calendar_id)
@@ -255,12 +258,23 @@ class CalendarTools:
                 raise PermissionError('Capo changes events only on calendars owned by this account')
             cache = self.primary_cache if calendar_id=='primary' else {
                 event_id:row for (cal_id,event_id),row in self.cache.items() if cal_id==calendar_id}
+            if contact_ids:
+                if arguments.get('action')!='create':raise ToolInputError('Use calendar.invite to add guests to an existing event.')
+                arguments['attendees']=contacts.resolve(contact_ids)
             return CalendarActions(home, owner, self.zone, cache, calendar_id=calendar_id).change(**arguments)
         schema = copy.deepcopy(tools[0].arguments)
         # Optional for persisted callers; new requests can name a discovered calendar.
         schema['properties']['calendar_id'] = TEXT
+        schema['properties']['contact_ids'] = TEXTS
         tools[0] = replace(tools[0], arguments=schema, execute=change,
             description=tools[0].description+' Optional calendar_id selects a discovered owned calendar. Creation defaults to the owner preference from calendar.preferences; legacy update/delete default to primary. Carry the calendar ID from inspection; never infer identity from event ID alone.')
+        def invite(calendar_id,event_id,contact_ids,operation_id):
+            calendar_id=self.canonical(calendar_id)
+            if calendar_id!='primary' and self.calendars[calendar_id].get('accessRole')!='owner':
+                raise PermissionError('Invitations require an owned calendar')
+            cache=self.primary_cache if calendar_id=='primary' else {eid:row for (cid,eid),row in self.cache.items() if cid==calendar_id}
+            return Invitations(home,owner,calendar_id,cache).invite(event_id,contacts.resolve(contact_ids),operation_id)
+        tools.append(ReadTool('calendar.invite','Add explicitly owner-requested saved contacts to an inspected event organized by this account. This sends Google guest notifications. Preserves existing guests and all other fields; never guesses addresses or resends an uncertain invitation. Existing recurring events are unsupported. Use contact_ids on calendar.change when creating an event or series with guests.',object_schema({'calendar_id':TEXT,'event_id':TEXT,'contact_ids':TEXTS}),invite,mutates=True))
         return tools
 
     def tools(self):

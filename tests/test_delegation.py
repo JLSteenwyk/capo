@@ -20,6 +20,13 @@ class DelegationTests(unittest.TestCase):
         self.write = Mock(return_value={'changed': True})
         self.registry = ReadTools([ReadTool('calendar.change', 'Personal change', object_schema({}), self.write, True)] + self.tasks.tools())
 
+    def test_existing_calendar_grant_does_not_expand_to_guest_notifications(self):
+        task = self.tasks.save('', '', fields(), 'owner-create')['task']
+        tools = execution_tools(self.registry, self.tasks, task['id'], {})
+        with self.assertRaises(PermissionError):
+            tools.tools['calendar.change'].execute(contact_ids=['saved-contact'], operation_id='invite')
+        self.write.assert_not_called()
+
     def test_owner_origin_and_current_policy_bound_background_actions(self):
         task = self.tasks.save('', '', fields(), 'owner-create')['task']
         tools = execution_tools(self.registry, self.tasks, task['id'], {})

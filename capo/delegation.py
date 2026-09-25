@@ -68,6 +68,8 @@ def execution_tools(registry, tasks, id, config):
                 current = authority(tasks, id)
                 if not current or current != grant or _tool.name not in current['allowed_actions']:
                     raise PermissionError('Task action permission was revoked')
+                if _tool.name == 'calendar.change' and (arguments.get('contact_ids') or arguments.get('attendees')):
+                    raise PermissionError('Background personal-calendar grants do not authorize guest notifications; request invitations directly.')
                 if not task['ready']:
                     raise PermissionError('Task is waiting on an unfinished dependency or person')
                 if _tool.name == 'tasks.save' and arguments.get('fields', {}).get('status') == 'completed':

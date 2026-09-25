@@ -422,3 +422,37 @@ limits. Authentication, malformed responses, rate limits and other permanent
 failures do not trigger immediate retries. Scheduled recovery retains its last
 failure reason when its window expires. Reasoning fallback remains explicit
 private configuration (`recovery.fallbacks`), never an implicit provider change.
+
+
+### Contacts and calendar invitations
+
+`contacts.search`, `contacts.save`, and `contacts.remove` provide an owner-scoped
+address book under `CAPO_HOME/contacts`. Names and email addresses stay in private
+SQLite storage, outside the repository. Contact changes have transactional replay
+receipts. Saving another address for the same name preserves both choices; Capo
+must resolve ambiguity with the owner. Addresses must be supplied or verified by
+the owner, never guessed. Removing a contact does not alter existing invitations.
+
+An owner can say “Remember Alex: alex@example.invalid,” then “Invite Alex to
+lunch.” Capo resolves saved contact IDs and composes the existing calendar tools:
+
+- `calendar.change` accepts optional `contact_ids` for new events and new recurring
+  series. Google is asked to notify those guests. Matching events with different
+  guests require inspection and an additive invitation, not a duplicate event.
+- `calendar.invite` adds saved contacts to an inspected, nonrecurring event that
+  this account organizes on an owned calendar. It preserves existing attendee
+  records, patches only attendees, and checks the inspected revision with an ETag.
+- Uncertain invitation results enter `calendar.pending` and support read-only
+  `calendar.reconcile`. Retrying cannot blindly resend invitations. Existing guests
+  are not added again. Verification confirms calendar state, not email delivery
+  or acceptance.
+
+Inviting people requires an explicit owner request; merely naming someone in a
+source document is insufficient. Contact storage itself grants no permission to
+send messages. General event update/delete restrictions still apply to guest and
+recurring events. Adding guests to an existing recurring series or instance is
+not supported yet. Up to 20 saved contacts can be selected per call; existing-event
+invitations support up to 100 total attendees.
+
+Provider semantics: [Google event insertion](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert)
+and [event patching](https://developers.google.com/workspace/calendar/api/v3/reference/events/patch).

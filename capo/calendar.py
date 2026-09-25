@@ -159,6 +159,10 @@ def event_body(plan, zone):
         from .calendar_recurrence import rule
         if plan['action']!='create':raise ValueError('Recurrence is supported for creation only')
         result['recurrence']=[rule(plan['recurrence'],plan['all_day'],plan['start'])]
+    if plan.get('attendees'):
+        from .contacts import email
+        if plan['action']!='create':raise ValueError('Use calendar.invite to add guests to existing events')
+        result['attendees']=[{'email':email(address)} for address in plan['attendees']]
     return result
 
 
@@ -190,9 +194,10 @@ def apply(client, plan, events, zone, directory):
     _write(journal, {'action': action, 'plan': plan, 'status': 'attempting'})
     if action == 'create':
         body['id'] = hashlib.sha256(str(directory).encode()).hexdigest()
-        client.request('POST', json=body, params={'sendUpdates': 'none'})
+        client.request('POST', json=body, params={'sendUpdates': 'all' if body.get('attendees') else 'none'})
         reply = f'Added “{body["summary"]}” to your calendar.'
         if body.get('recurrence'):reply += ' Created as a recurring series.'
+        if body.get('attendees'):reply += ' Guest invitations requested.'
         if not plan['all_day']:
             first = instant(plan['start']).astimezone(ZoneInfo(zone))
             last = instant(plan['end']).astimezone(ZoneInfo(zone))
