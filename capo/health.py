@@ -81,8 +81,10 @@ class Health:
             check['stale'] = bool(check.get('checked_at') and
                 now-datetime.fromisoformat(check['checked_at']) > timedelta(hours=2))
         from .slack_outbox import pending
+        from .delivery_recovery import pending as pending_reports
         return {'connections': list(checks.values()), 'automations': self.automations(now),
                 'unconfirmed_slack_replies':pending(self.home),
+                'unconfirmed_reports':pending_reports(self.home,self.config),
                 'requests':self.requests(now),
                 'coverage': 'Saved connection observations, not continuous monitoring. Stale or untested is not healthy. '
                             'Automation checks use saved receipts and current schedules; no writes are replayed. '
@@ -146,7 +148,7 @@ class Health:
             state = (run or {}).get('status', 'not_started')
             problems = (run or {}).get('report', {}).get('blockers', [])
             outcome = (run or {}).get('outcome_status')
-            if state in ('failed','expired') or problems or outcome == 'partial' or (state=='sending' and (run or {}).get('delivery_error')=='unconfirmed'): state = 'needs_attention'
+            if state in ('failed','expired','delivery_unknown') or problems or outcome == 'partial' or (state=='sending' and (run or {}).get('delivery_error')=='unconfirmed'): state = 'needs_attention'
             elif state not in ('sent','quiet','cancelled') and now.timestamp() > (run or {}).get('deadline', deadline): state = 'missed'
             results.append({'title': title, 'schedule_id': sid, 'due_at': latest.isoformat(), 'status': state,
                             'next_action': (' '.join(problems[:2]) or (run or {}).get('error_summary') or

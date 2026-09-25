@@ -40,7 +40,7 @@ class DigestManager:
         if not allowed_day(now,p):return
         day,due,deadline=slot(now,p)
         # Finish uncertain delivery receipts even after their morning window.
-        rows=self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status='sending'",(self.owner,)).fetchall()
+        rows=self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('sending','delivery_unknown')",(self.owner,)).fetchall()
         for row in rows:
             run=json.loads(row[0])
             if now.timestamp() >= run.get('retry_at',0):self.deliver(run,now)
@@ -66,7 +66,7 @@ class DigestManager:
         return self.db.get(key)
 
     def advance(self,run,now):
-        if run['status'] in ('sent','expired','failed','sending'):return
+        if run['status'] in ('sent','expired','failed','sending','delivery_unknown'):return
         if now.timestamp() >= run['deadline']:
             run['status']='expired';self.db.save(run,now);return
         if now.timestamp()<run.get('retry_at',0):return
@@ -138,12 +138,12 @@ class DigestManager:
             try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return
             run=self.db.get(run['key'])
-            if run['status'] not in ('ready','sending'):return
+            if run['status'] not in ('ready','sending','delivery_unknown'):return
             if now.timestamp()<run.get('retry_at',0):return
             from .report_freshness import guard
             if not guard(run,now.timestamp()):
                 self.db.save(run,now);return
-            if run.get('payload',{}).get('task_notices'):
+            if run['status']=='ready' and run.get('payload',{}).get('task_notices'):
                 notice_fd=os.open(self.service.store.home/'task-notice.delivery.lock',os.O_RDWR|os.O_CREAT,0o600)
                 try:fcntl.flock(notice_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
                 except BlockingIOError:return
@@ -159,15 +159,16 @@ class DigestManager:
 
     def _deliver(self,run,now):
         if now.timestamp() < run.get('not_before',0):return
-        if run['status']=='sending':
+        if run['status'] in ('sending','delivery_unknown'):
             try:ts=self.reconcile(run)
             except Exception:
-                run['retry_at']=now.timestamp()+60;self.db.save(run,now);return
+                ts=None
             if ts:
                 self.db.delivered(run,ts,now);return
             # Empty or delayed history is not proof that Slack rejected the post.
             # Preserve uncertainty instead of risking another message.
-            run.update(retry_at=now.timestamp()+60,delivery_error='unconfirmed')
+            from .delivery_recovery import defer
+            defer(run,now.timestamp())
             self.db.save(run,now);return
         if now.timestamp()>=run['deadline']:
             run['status']='expired';self.db.save(run,now);return

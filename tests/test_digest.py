@@ -134,6 +134,22 @@ class DigestTests(unittest.TestCase):
         self.assertEqual(run['status'],'sending')
         self.assertEqual(run['delivery_error'],'unconfirmed')
 
+    def test_parked_uncertain_delivery_reconciles_late_after_restart_without_resend(self):
+        run=self.run_record();self.service.client.chat_postMessage.side_effect=TimeoutError()
+        self.manager.deliver(run,self.now)
+        self.service.client.conversations_history.side_effect=TimeoutError()
+        self.manager.deliver(run,self.now+timedelta(minutes=20))
+        saved=self.db.get(run['key'])
+        self.assertEqual(saved['status'],'delivery_unknown')
+        self.service.client.conversations_history.side_effect=None
+        self.service.client.conversations_history.return_value={'ok':True,'messages':[
+            dict(ts='456.7',bot_id='BBOT',user='UBOT',text=saved['wire_text'],client_msg_id=saved['marker'])]}
+        restarted=DigestManager(self.service)
+        try:restarted.deliver(saved,self.now+timedelta(hours=2))
+        finally:restarted.db.close()
+        self.assertEqual(self.db.get(run['key'])['status'],'sent')
+        self.service.client.chat_postMessage.assert_called_once()
+
     def test_no_late_delivery_or_replay_next_day(self):
         run=self.run_record()
         self.manager.advance(run,self.now+timedelta(hours=3))

@@ -42,6 +42,17 @@ class Monitor:
         self.root = self.observations.tasks.root/'monitor'
         self.root.mkdir(mode=0o700, exist_ok=True)
 
+    def retry_items(self, failure):
+        from .task_evidence import TaskEvidence
+        reader=TaskEvidence(self.home,self.owner,self.config)
+        items=self.observations.unresolved(failure.get('references',[]))
+        for item in items:
+            evidence=reader.source(reference(item),{})
+            if evidence.get('status')!='checked':
+                raise ConnectionError('The failed review source could not be refreshed')
+            item['thread_evidence']=evidence
+        return items
+
     def tick(self, now, items):
         fd = os.open(self.root/'generation.lock', os.O_CREAT | os.O_RDWR, 0o600)
         try:
@@ -73,11 +84,27 @@ class Monitor:
                 for batch in groups.values():
                     key=hashlib.sha256(json.dumps(batch,sort_keys=True).encode()).hexdigest()
                     failure=failures.get(key,{})
-                    if failure.get('attempts',0)>=2 or now.timestamp()<failure.get('retry_at',0):continue
+                    if failure:continue  # Failed identities use the independent, refreshed retry path.
                     candidates.append((bool(failure),key,batch,failure))
+                due=[(key,value) for key,value in failures.items()
+                     if value.get('attempts',0)<2 and now.timestamp()>=value.get('retry_at',0)]
+                if due:
+                    key,failure=min(due,key=lambda pair:pair[1].get('retry_at',0))
+                    try:batch=self.retry_items(failure)
+                    except Exception as exc:
+                        failure.update(attempts=failure.get('attempts',0)+1,retry_at=now.timestamp()+3600,
+                            summary=failure_summary(exc))
+                        _write(failures_path,failures)
+                    else:
+                        if batch:
+                            candidates.insert(0,(True,key,batch,failure))
+                        else:
+                            failures.pop(key,None);_write(failures_path,failures)
+                            if state and state['key']==key:
+                                state['status']='superseded';_write(path,state)
                 if not candidates:return changed
                 # Fresh batches proceed even when an earlier batch exhausted its attempts.
-                _,key,batch,failure=min(candidates,key=lambda x:(not any(item.get('linked_task_id') for item in x[2]),x[0]))
+                _,key,batch,failure=candidates[0] if due and candidates[0][0] else min(candidates,key=lambda x:(not any(item.get('linked_task_id') for item in x[2]),x[0]))
                 state={'key':key,'items':batch,'status':'running',
                        'review_attempt':failure.get('attempts',0)+1}
                 _write(path,state)
@@ -101,6 +128,7 @@ class Monitor:
                     'Use commitments.observe only with actual supplied source references. Read-only worker delegation is available; no external mutations are authorized. '
                     'Ignore repetitive CI alerts, promotions and ordinary calendar entries unless they change an actual commitment. '
                     'Resolve this small batch before exploring unrelated tasks. Reserve tool calls for commitments.observe: once source evidence and the current task are sufficient, save the update immediately rather than merely describing it. '
+                    'Use observations.read to obtain receipt evidence for the supplied batch; source_reference values are not receipt indices. '
                     'Finish quietly when there is nothing to track; the host decides what merits an alert.')
                 if result.get('status') == 'partial':
                     state.update(status='failed',result=result,
@@ -113,7 +141,7 @@ class Monitor:
                 _write(path, state)
                 self.observations.acknowledge(state['items'])
                 covered={reference(x) for x in state['items']}
-                failures={key:value for key,value in failures.items() if key!=state['key'] and not (value.get('references') and set(value['references'])<=covered)}
+                failures={key:value for key,value in failures.items() if not (value.get('references') and set(value['references'])<=covered and not self.observations.unresolved(value['references']))}
                 _write(failures_path,failures)
             except RetryLater as exc:
                 state.update(status='waiting', retry_at=exc.retry_at)
@@ -134,8 +162,9 @@ class Monitor:
         if active.exists():
             state=json.loads(active.read_text())
             if state['status']=='failed':
-                failures.setdefault(state['key'],{'summary':state.get('error_summary','Review incomplete.')})
+                failures.setdefault(state['key'],{'summary':state.get('error_summary','Review incomplete.'),'references':[reference(x) for x in state.get('items',[])]})
         return [{'id':'monitor-failure:'+key,'kind':'connection',
                  'title':'Commitment review needs attention',
                  'summary':value.get('summary','The review stopped; saved evidence is preserved.')}
-                for key,value in list(failures.items())[:3]]
+                for key,value in failures.items()
+                if not value.get('references') or self.observations.unresolved(value['references'])][:3]

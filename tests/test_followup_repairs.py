@@ -50,7 +50,8 @@ class FollowupRepairs(unittest.TestCase):
         second={'id':'b','kind':'email','message_id':'b','title':'Another obligation'}
         with tempfile.TemporaryDirectory() as tmp:
             m=Monitor(Path(tmp),{})
-            with patch('capo.monitoring.shared_tools') as shared,patch('capo.monitoring.research') as run:
+            with patch('capo.monitoring.shared_tools') as shared,patch('capo.monitoring.research') as run, \
+                 patch('capo.task_evidence.TaskEvidence.source',return_value={'status':'checked','messages':[]}):
                 shared.return_value.tools={}
                 run.side_effect=[{'status':'partial'},{'status':'reported_complete'},{'status':'partial'}]
                 m.tick(now,[first]);m=Monitor(Path(tmp),{});m.tick(now+timedelta(minutes=1),[first,second])

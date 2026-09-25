@@ -64,7 +64,7 @@ def prior_notices(home,config,exclude_key):
         if not path.exists():continue
         db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=10)
         try:
-            rows=db.execute("SELECT key,data FROM runs WHERE scope=? AND status IN ('sent','sending')",(scope(config),))
+            rows=db.execute("SELECT key,data FROM runs WHERE scope=? AND status IN ('sent','sending','delivery_unknown')",(scope(config),))
             for key,data in rows:
                 if key==exclude_key:continue
                 run=json.loads(data)

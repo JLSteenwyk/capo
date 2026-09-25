@@ -399,3 +399,26 @@ events spanning window boundaries can repeat and should be deduplicated by
 calendar and event ID. Discovery and cursor state survive request restarts; event
 bodies still require fresh inspection. Invalid ranges return actionable guidance
 without changing mutation authorization or retrying uncertain writes.
+
+Unconfirmed report delivery is checked at most five times in the active state or
+for fifteen minutes, then parked as `delivery_unknown`. The payload and marker
+remain frozen. Parked reports can be reconciled from Slack history hourly, but
+are never automatically resent or reported as delivered without evidence. They
+remain visible in `health.status` and monitoring; they do not block deployment
+as if a worker were still executing. Notice reservations remain intact.
+
+Failed commitment batches have one independent follow-up after the existing
+cooldown, even when their sources leave the incoming scan. Stored source versions
+are retained and supported sources are refreshed before reviewing. Unavailable
+or unsupported refreshes remain unresolved, with the same attempt limit. The
+shared `observations.read` tool supplies citable batch evidence; source reference
+strings are not outcome receipt indices. Only covered, acknowledged current
+source versions clear failures; unrelated successful reviews do not.
+
+Social research validates arguments before reserving metered API usage. Timeout,
+connection and temporary server failures may retry once within the existing
+two-attempt/request and daily limits. Failed attempts remain charged against both
+limits. Authentication, malformed responses, rate limits and other permanent
+failures do not trigger immediate retries. Scheduled recovery retains its last
+failure reason when its window expires. Reasoning fallback remains explicit
+private configuration (`recovery.fallbacks`), never an implicit provider change.

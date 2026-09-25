@@ -40,9 +40,9 @@ class ScheduledManager(DigestManager):
             old=json.loads(row[0]);worker=self.workers.get(old['key'])
             if now.timestamp()>=old['deadline'] and not (worker and worker.is_alive()):
                 old['status']='expired'
-                old['error_summary']='The check could not finish before its recovery window closed. Saved results remain available; the next scheduled check will try again.'
+                old['error_summary']='The recovery window closed before this check finished. '+old.get('recovery_reason','Saved results remain available; the next scheduled check will try again.')
                 self.db.save(old,now)
-        for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('ready','sending')",(self.owner,)).fetchall():
+        for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('ready','sending','delivery_unknown')",(self.owner,)).fetchall():
             run=json.loads(row[0]);s=schedules.get(run['schedule_id'])
             if not s or not s['enabled'] or s['revision']!=run['revision']:
                 if run['status']=='ready':run['status']='cancelled';self.db.save(run,now);continue
@@ -156,7 +156,7 @@ class ScheduledManager(DigestManager):
                     from .recovery import RetryLater
                     if isinstance(exc, RetryLater):
                         scheduled_deadline=run.setdefault('scheduled_deadline',run['deadline'])
-                        run.update(status='queued', retry_at=exc.retry_at, attempts=max(0, run['attempts']-1),
+                        run.update(status='queued', retry_at=exc.retry_at, recovery_reason=str(exc)[:300], attempts=max(0, run['attempts']-1),
                                    deadline=scheduled_deadline if run.get('recovery_of') else scheduled_deadline+1800,
                                    error_summary=('The provider is temporarily unavailable. The follow-up can retry within its original 15-minute deadline.' if run.get('recovery_of') else 'The provider is temporarily unavailable. Capo will retry the saved work for up to 30 minutes after its scheduled window.'))
                     else:

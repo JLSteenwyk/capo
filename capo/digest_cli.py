@@ -57,7 +57,7 @@ def command(args):
                 if run['status']=='sent':
                     print('Digest preview delivered to the configured Slack channel.')
                     return 0
-                if run['status']=='sending':manager.deliver(run,datetime.now(timezone.utc))
+                if run['status'] in ('sending','delivery_unknown'):manager.deliver(run,datetime.now(timezone.utc))
                 if run['status'] in ('failed','expired'):raise ValueError('Preview failed; inspect private digest records')
                 time.sleep(1)
             raise ValueError('Preview is still pending; rerun with the same preview ID to check it')

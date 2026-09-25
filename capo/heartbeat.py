@@ -103,6 +103,8 @@ def evidence(config,objectives,now,home=None):
         finally:scheduled.close()
     if health:
         items.extend(health.requests(now)['items'])
+        from .delivery_recovery import pending as pending_reports
+        items.extend(pending_reports(home,config))
         for check in checks:
             if check['status'] in ('missed','needs_attention'):
                 add('connection',{'title':check['title'], 'status':check['status'], 'next_action':check['next_action']},stable='automation:'+str(check['schedule_id'] or check['title'])+':'+check['status'])
@@ -180,7 +182,7 @@ class HeartbeatManager(DigestManager):
             if now.timestamp()>=old['deadline'] and not (self.workers.get(old['key']) and self.workers[old['key']].is_alive()):
                 old['status']='expired';self.db.save(old,now)
         # Reconcile old deliveries but never repost a stale alert outside its window.
-        for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status='sending'",(self.owner,)).fetchall():
+        for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('sending','delivery_unknown')",(self.owner,)).fetchall():
             run=json.loads(row[0])
             if now.timestamp()>=run.get('retry_at',0):self.deliver(run,now)
         due=due_slot(now,p)

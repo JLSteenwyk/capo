@@ -31,7 +31,7 @@ class ReminderManager(DigestManager):
             if not cursor:break
         active={t['id']:t for t in tasks}
         # Reconcile uncertain posts even if the task was subsequently cancelled.
-        for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('ready','sending')",(self.owner,)).fetchall():
+        for row in self.db.db.execute("SELECT data FROM runs WHERE scope=? AND status IN ('ready','sending','delivery_unknown')",(self.owner,)).fetchall():
             run=json.loads(row[0]);task=active.get(run['task_id'])
             stale=not task or task['remind_at']!=run['remind_at']
             if stale:
