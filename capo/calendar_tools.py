@@ -1,12 +1,12 @@
 """Calendar discovery and inspection with resource identity and explicit coverage."""
 import copy
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .calendar import instant, writable
 from .contracts import TEXT, TEXTS, object_schema
-from .research_tools import ReadTool
+from .research_tools import ReadTool, ToolInputError
 
 
 def selection_settings(settings):
@@ -28,6 +28,15 @@ class CalendarTools:
         self.cursors = {}
         self.cache = {}
         self.primary_cache = {}
+
+    def research_state(self):
+        return {'calendars':copy.deepcopy(self.calendars),'cursors':copy.deepcopy(self.cursors)}
+
+    def restore_research_state(self, state, continuation=False):
+        # Resume scoped discovery/cursors, never stale event bodies or write authority.
+        if continuation:return
+        self.calendars=copy.deepcopy(state.get('calendars',self.calendars))
+        self.cursors={token:tuple(key) for token,key in state.get('cursors',{}).items()}
 
     def canonical(self, calendar_id):
         if calendar_id not in self.calendars:
@@ -115,7 +124,7 @@ class CalendarTools:
     def window(start,end):
         first,last=instant(start),instant(end)
         if not 0<(last-first).total_seconds()<=31*86400:
-            raise ValueError('Calendar range must be at most 31 days')
+            raise ToolInputError('Calendar range must be at most 31 days. Use calendar.search for longer searches or split this read into shorter windows.')
 
     def events(self, start, end):
         """Preserve the existing primary-calendar contract for saved callers."""
@@ -129,16 +138,51 @@ class CalendarTools:
 
     def search(self, calendar_id, start, end, query, page_token):
         calendar_id = self.canonical(calendar_id)
-        self.window(start,end)
-        if len(query)>500:raise ValueError('Calendar search is too long')
+        first,last=instant(start),instant(end)
+        if not 0<(last-first).total_seconds()<=366*86400:
+            raise ToolInputError('Search at most 366 days at a time; split a longer range into separate calendar.search calls.')
+        if len(query)>500:raise ToolInputError('Calendar search is too long; shorten the query to 500 characters.')
         key=(calendar_id,start,end,query)
         self.token(page_token,key)
+        if (last-first).total_seconds()>31*86400:
+            return self.search_windows(calendar_id,start,end,query,page_token,key)
         data=self.client(calendar_id).events_page(start,end,query,page_token)
         if isinstance(data.get('timeZone'),str):self.calendars[calendar_id]['timeZone']=data['timeZone']
         rows=[row for row in data.get('items',[])[:50] if row.get('status')!='cancelled']
         for row in rows:self.remember(calendar_id,row)
         return {'calendar_id':calendar_id,'events':[self.describe(calendar_id,row) for row in rows],
                 **self.page(data,key),'coverage':'Up to 50 events from this calendar and window; not other calendars. Empty query finds all events. Inspect candidates before deciding.'}
+
+    def search_windows(self, calendar_id, start, end, query, page_token, key):
+        # Opaque cursors are accepted only after token() ties them to this query.
+        import base64
+        first,last=instant(start),instant(end)
+        provider_token=''
+        if page_token:
+            point,provider_token=json.loads(base64.urlsafe_b64decode(page_token.encode()))
+            first=instant(point)
+        rows=[];seen=set();next_token='';window_start=first
+        client=self.client(calendar_id)
+        # At most 12 reads per call, each within the existing 31-day boundary.
+        for _ in range(12):
+            stop=min(first+timedelta(days=31),last)
+            data=client.events_page(first.isoformat(),stop.isoformat(),query,provider_token)
+            if isinstance(data.get('timeZone'),str):self.calendars[calendar_id]['timeZone']=data['timeZone']
+            for row in data.get('items',[])[:50]:
+                if row.get('status')=='cancelled' or row.get('id') in seen:continue
+                seen.add(row.get('id'));rows.append(row);self.remember(calendar_id,row)
+            provider_token=data.get('nextPageToken','')
+            if not provider_token:first=stop
+            if first>=last:break
+            # Stop after any results: retain every provider page, bounded output.
+            if rows or provider_token:break
+        if first<last:
+            next_token=base64.urlsafe_b64encode(json.dumps([first.isoformat(),provider_token]).encode()).decode()
+            self.cursors[next_token]=key
+        return {'calendar_id':calendar_id,'events':[self.describe(calendar_id,row) for row in rows],
+            'next_page_token':next_token,'more_available':bool(next_token),
+            'searched_start':window_start.isoformat(),'searched_end':stop.isoformat(),
+            'coverage':'Search split into 31-day windows. Follow next_page_token with the same arguments until more_available is false before claiming full coverage. Events spanning windows may repeat; deduplicate by calendar_id and id.'}
 
     def event(self, calendar_id, event_id):
         calendar_id = self.canonical(calendar_id)
@@ -225,6 +269,6 @@ class CalendarTools:
             ReadTool('calendar.calendars','Discover calendars, names, timezones and access roles. Start with empty page_token. Requires Google calendar read permission.',object_schema({'page_token':TEXT}),self.list,fresh_for=300),
             ReadTool('calendar.inspect','Inspect metadata for primary or a discovered calendar ID.',object_schema({'calendar_id':TEXT}),self.inspect,fresh_for=300),
             ReadTool('calendar.events','Read primary-calendar events in a maximum 31-day explicit RFC3339 window. Use calendar.search for a selected calendar and calendar.event for details.',object_schema({'start':TEXT,'end':TEXT}),self.events,fresh_for=300),
-            ReadTool('calendar.search','Find events in primary or a discovered calendar. Empty query means all events; empty page_token starts a search. Reuse the cursor only with the same calendar, window and query.',object_schema({'calendar_id':TEXT,'start':TEXT,'end':TEXT,'query':TEXT,'page_token':TEXT}),self.search,fresh_for=300),
+            ReadTool('calendar.search','Find events in primary or a discovered calendar over at most 366 days, automatically split into 31-day windows. Follow next_page_token until more_available is false for complete coverage. Empty query means all events; empty page_token starts a search. Reuse the cursor only with the same calendar, window and query.',object_schema({'calendar_id':TEXT,'start':TEXT,'end':TEXT,'query':TEXT,'page_token':TEXT}),self.search,fresh_for=300),
             ReadTool('calendar.event','Read current details by calendar and event ID from a search result or previous conversation receipt; no repeat search is required. Returns description, attendees, organizer, recurrence, timezone and edit restrictions. Inspect before updating; IDs must refer to the same calendar.',object_schema({'calendar_id':TEXT,'event_id':TEXT}),self.event,fresh_for=300),
         ]

@@ -79,6 +79,7 @@ class ImageTests(unittest.TestCase):
         store.enqueue_slack('old',prior)
         body={'team_id':'T123','event':{'type':'message','user':'U123','channel':'C123','ts':'101.1','thread_ts':'100.1','text':'Use that image'}}
         service=SimpleNamespace(store=store,config=config,client=Mock())
+        service.client.conversations_replies.return_value={"messages":[]}
         from capo.slack_images import ImageConversation
         with patch('capo.slack_images.download',return_value={'media_type':'image/png','data':base64.b64encode(self.png).decode()}),patch('capo.slack_images.Providers') as provider:
             provider.return_value.call.return_value={'observations':'A reservation at 6:15 pm.','uncertainties':'End time not shown.'}

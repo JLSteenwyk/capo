@@ -33,6 +33,40 @@ class CalendarToolTests(unittest.TestCase):
             {'id':'shared','accessRole':'reader','summary':'Shared'}]}
         self.tools.list('')
 
+    def test_long_search_splits_windows_and_preserves_provider_pagination(self):
+        from capo.calendar import instant
+        start='2030-01-01T00:00:00Z';end='2030-05-01T00:00:00Z'
+        self.primary.events_page.side_effect=[{'items':[]},
+            {'items':[event('Birthday')],'nextPageToken':'provider-page'},
+            {'items':[dict(event('Another'),id='another')]}, {'items':[]}, {'items':[]}]
+        first=self.tools.search('primary',start,end,'birthday','')
+        self.assertTrue(first['more_available'])
+        self.assertEqual(self.primary.events_page.call_count,2)
+        import json
+        state=json.loads(json.dumps(self.tools.research_state()))
+        self.tools=CalendarTools('America/Los_Angeles',self.factory)
+        self.tools.restore_research_state(state)
+        second=self.tools.search('primary',start,end,'birthday',first['next_page_token'])
+        self.assertEqual(self.primary.events_page.call_args.args[3],'provider-page')
+        final=self.tools.search('primary',start,end,'birthday',second['next_page_token'])
+        self.assertFalse(final['more_available'])
+        for call in self.primary.events_page.call_args_list:
+            self.assertLessEqual((instant(call.args[1])-instant(call.args[0])).total_seconds(),31*86400)
+        # Results still compose with inspection and stay scoped to their query.
+        self.primary.lookup.return_value=event('Birthday')
+        self.assertTrue(self.tools.event('primary','same-id')['found'])
+        with self.assertRaises(ValueError):self.tools.search('work',start,end,'birthday',first['next_page_token'])
+        with self.assertRaises(ValueError):self.tools.search('primary',start,end,'other',first['next_page_token'])
+
+    def test_long_empty_search_is_bounded_and_invalid_range_actionable(self):
+        from capo.research_tools import ToolInputError
+        self.primary.events_page.return_value={'items':[]}
+        result=self.tools.search('primary','2030-01-01T00:00:00Z','2031-01-01T00:00:00Z','name','')
+        self.assertFalse(result['more_available'])
+        self.assertEqual(self.primary.events_page.call_count,12)
+        with self.assertRaisesRegex(ToolInputError,'split a longer range'):
+            self.tools.search('primary','2030-01-01T00:00:00Z','2032-01-01T00:00:00Z','','')
+
     def test_prior_receipt_id_can_be_inspected_without_search(self):
         row = event('Personal')
         self.primary.lookup.return_value = row

@@ -13,6 +13,9 @@ class Client:
     def __init__(self):
         self.messages = []
 
+    def conversations_replies(self, **kwargs):
+        return {"messages": []}
+
     def chat_postMessage(self, **kwargs):
         self.messages.append(kwargs)
         return {"ts": "123.456"}

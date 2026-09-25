@@ -96,6 +96,9 @@ def context(service,event_id,body,text):
     """Called only after owner authorization; recover attachments in this thread."""
     from .slack import authorized
     if not authorized(service.config,body,service.store):raise ValueError('Unauthorized image request')
+    from .slack_thread_context import recover, ThreadContextError
+    try:recover(service,body)
+    except ThreadContextError as exc:raise ImageError(str(exc)) from exc
     event=body['event'];thread=event.get('thread_ts',event['ts'])
     files=[]
     def add(value):

@@ -271,6 +271,8 @@ class SharedConversationTests(unittest.TestCase):
                      'status':'sent','ts':'100.1','payload':{'text':'Morning briefing','news':[]}},
                     datetime.now(timezone.utc))
         finally:db.close()
+        self.service.client.conversations_replies.return_value={'messages':[
+            {'ts':'100.1','user':'UBOT','bot_id':'B123','text':'Morning briefing'}]}
         body=self.body('What is on my calendar?', 'digest-reply', '100.1')
         body['event'].update(type='message',text='What is on my calendar?')
         with patch('capo.capabilities.Providers') as providers, patch('capo.calendar.GoogleCalendar') as calendar, \

@@ -385,3 +385,17 @@ Reliability uses shared saved-outcome inspection and report-freshness policy rat
 Timed series use the configured named timezone so Google expands occurrences across daylight-saving changes; all-day series use date boundaries. A timed UNTIL must be UTC; an all-day UNTIL must be a date. Creation checks matching expanded occurrences' parent series before writing. Comparisons normalize field ordering, default weekly weekday, interval=1 and the default week start; they do not establish equivalence of every possible RFC rule. Changed recurrence or timezone cannot certify an uncertain write. The existing action journal, deterministic event ID and read-only reconciliation protect retries.
 
 No new Google scope or user command is required. Ordinary and legacy-classified calendar requests use the shared capability loop. Guest invitations and editing/deleting a series or individual occurrence remain unsupported; those require a separate explicit scope design. Google’s [recurring-event guide](https://developers.google.com/workspace/calendar/api/guides/recurringevents) describes the series/instance distinction.
+
+Missing Slack thread roots are recovered through bounded, owner-scoped history
+reads before interpreting follow-ups, including image attachments. Recovered
+messages are stored as handled context, never queued as new actions. Recovery
+reads at most three pages and retries a transient connection/timeout once; a
+failed history read is surfaced rather than interpreted as missing evidence.
+
+`calendar.search` accepts up to 366 days and splits longer searches into 31-day
+windows. Each invocation makes at most twelve provider reads and returns a cursor
+when more windows or provider pages remain. Follow that cursor for full coverage;
+events spanning window boundaries can repeat and should be deduplicated by
+calendar and event ID. Discovery and cursor state survive request restarts; event
+bodies still require fresh inspection. Invalid ranges return actionable guidance
+without changing mutation authorization or retrying uncertain writes.
