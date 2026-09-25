@@ -112,7 +112,7 @@ class SlackCase(unittest.TestCase):
         self.router.poll.side_effect = None
         self.router.poll.return_value = {"action": "calendar", "repository": "", "objective_id": "", "reply": ""}
         body = self.body("What is on my calendar tomorrow?")
-        with patch("capo.calendar.CalendarConversation") as calendar:
+        with patch("capo.capabilities.CapabilityConversation") as calendar:
             self.assertIn("not connected", self.service.dispatch("Cal1", body))
             calendar.assert_not_called()
             self.config["calendar"] = {"enabled": True, "timezone": "America/Los_Angeles"}
@@ -942,9 +942,10 @@ class SlackCase(unittest.TestCase):
         self.router.poll.side_effect=None
         self.router.poll.return_value={'action':'calendar','repository':'','objective_id':'','reply':''}
         original='Find the dates in this screenshot and create reminders two weeks before each.'
-        with patch('capo.calendar.CalendarConversation') as calendar:
+        with patch('capo.capabilities.CapabilityConversation') as calendar:
             calendar.return_value.poll.return_value={'reply':'I need the dates.'}
             self.service.natural_dispatch('original',self.body(original),original)
+        del self.service.capability_conversation  # A fresh service recreates the shared adapter.
         self.router.poll.return_value={'action':'research','repository':'','objective_id':'','reply':''}
         followup=self.body('Can you figure out when?',event_id='followup')
         followup['event']['thread_ts']='123.456';followup['event']['ts']='123.999'

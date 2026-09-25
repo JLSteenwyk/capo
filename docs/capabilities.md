@@ -341,7 +341,7 @@ Mail metadata triage allows up to 100 message inspections per request, in batche
 Observation updates expose the current batch's allowed evidence references in the
 shared tool schema. Host validation supplies safe correction feedback without echoing
 rejected values. Calendar searches expose edit eligibility; events with guests,
-recurrence, or another organizer remain outside this adapter's mutation policy.
+recurrence, or another organizer remain outside this adapter's update/delete policy. Personal recurring series can be created through the shared calendar tool.
 Automation alerts use stable schedule/status identifiers to avoid repeating the same
 problem merely because its wording changed. Current schedule health takes precedence
 over historical failed runs.
@@ -376,3 +376,12 @@ pending-source continuation, and must establish its own current failures.
 Mail body extraction uses the readable HTML alternative when a sender supplies only a short plain-text stub. Existing message and character limits still apply; attachments are separate. GitHub annotations are available only after discovering a job or check in the same repository. Historical billing annotations describe that attempt, not current account status.
 
 Reliability uses shared saved-outcome inspection and report-freshness policy rather than new request intents. `health.status` exposes owner-scoped unfinished-request concerns alongside connection and automation health. Morning digests may rebuild stale read-only snapshots; schedules and hourly work preserve effects and surface stale reports without replay. See [recovery](recovery.md) for bounds, freshness windows and legacy-report limits.
+
+
+### Recurring calendar creation
+
+`calendar.change` accepts an optional `recurrence` string for creation. It creates one Google Calendar series, with an RFC 5545 RRULE, rather than a batch of separate events. Supported fields are daily/weekly/monthly/yearly frequency, interval, weekdays (including monthly numbered weekdays), month days, months, week start, and either count or an inclusive end boundary. Omit recurrence for a single event. No count/end date means the owner requested an ongoing series; do not invent an end date. Unsupported rule fields are rejected before writing.
+
+Timed series use the configured named timezone so Google expands occurrences across daylight-saving changes; all-day series use date boundaries. A timed UNTIL must be UTC; an all-day UNTIL must be a date. Creation checks matching expanded occurrences' parent series before writing. Comparisons normalize field ordering, default weekly weekday, interval=1 and the default week start; they do not establish equivalence of every possible RFC rule. Changed recurrence or timezone cannot certify an uncertain write. The existing action journal, deterministic event ID and read-only reconciliation protect retries.
+
+No new Google scope or user command is required. Ordinary and legacy-classified calendar requests use the shared capability loop. Guest invitations and editing/deleting a series or individual occurrence remain unsupported; those require a separate explicit scope design. Google’s [recurring-event guide](https://developers.google.com/workspace/calendar/api/guides/recurringevents) describes the series/instance distinction.

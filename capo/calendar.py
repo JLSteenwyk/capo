@@ -1,6 +1,6 @@
 """Private Google Calendar access and bounded subscription-backed Slack requests.
 
-Only personal, non-recurring events are writable in this first adapter. A durable
+Personal series can be created through shared tools; edits remain non-recurring. A durable
 started marker prevents replay after a crash, including uncertain network writes.
 """
 import hashlib
@@ -155,6 +155,10 @@ def event_body(plan, zone):
               'start': {key: plan['start']}, 'end': {key: plan['end']}}
     if not plan['all_day']:
         result['start']['timeZone'] = result['end']['timeZone'] = zone
+    if plan.get('recurrence'):
+        from .calendar_recurrence import rule
+        if plan['action']!='create':raise ValueError('Recurrence is supported for creation only')
+        result['recurrence']=[rule(plan['recurrence'],plan['all_day'],plan['start'])]
     return result
 
 
@@ -188,6 +192,7 @@ def apply(client, plan, events, zone, directory):
         body['id'] = hashlib.sha256(str(directory).encode()).hexdigest()
         client.request('POST', json=body, params={'sendUpdates': 'none'})
         reply = f'Added “{body["summary"]}” to your calendar.'
+        if body.get('recurrence'):reply += ' Created as a recurring series.'
         if not plan['all_day']:
             first = instant(plan['start']).astimezone(ZoneInfo(zone))
             last = instant(plan['end']).astimezone(ZoneInfo(zone))

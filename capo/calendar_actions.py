@@ -16,6 +16,9 @@ from .conversation import _write
 
 def equivalent(event, body):
     if event.get('status')=='cancelled':return False
+    from .calendar_recurrence import equivalent_rules
+    if event.get('recurringEventId') or not equivalent_rules(event.get('recurrence',[]),body.get('recurrence',[]),body['start'].get('dateTime',body['start'].get('date'))):return False
+    if body.get('recurrence') and 'dateTime' in body['start'] and any(event.get(k,{}).get('timeZone')!=body[k].get('timeZone') for k in ('start','end')):return False
     if event.get('summary','').strip().casefold()!=body['summary'].strip().casefold():return False
     if event.get('location','').strip()!=body.get('location','').strip():return False
     for key in ('start','end'):
@@ -79,17 +82,22 @@ class CalendarActions:
         result=self.check_pending(op,req,client)
         return result or {'confirmed':False,'reply':'The previous calendar change remains unconfirmed. No write was repeated.'}
 
-    def change(self,action,event_id,title,location,start,end,all_day,operation_id):
+    def change(self,action,event_id,title,location,start,end,all_day,operation_id,recurrence=""):
         lock=self.effects.path.parent/'calendar-change.lock'
         fd=os.open(lock,os.O_CREAT|os.O_RDWR,0o600)
         try:
             try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise UncertainEffect('Another calendar change is running. Check its result before retrying.') from None
-            return self._change(action,event_id,title,location,start,end,all_day,operation_id)
+            return self._change(action,event_id,title,location,start,end,all_day,operation_id,recurrence)
         finally:os.close(fd)
 
-    def _change(self,action,event_id,title,location,start,end,all_day,operation_id):
+    def _change(self,action,event_id,title,location,start,end,all_day,operation_id,recurrence=""):
         plan=dict(action=action,event_id=event_id,title=title,location=location,start=start,end=end,all_day=all_day,reply='')
+        if recurrence:
+            from .calendar_recurrence import rule
+            if action!='create':raise ToolInputError('Recurrence is supported for creation only; series editing requires explicit scope.')
+            try:plan['recurrence']=rule(recurrence,all_day,start)
+            except ValueError as exc:raise ToolInputError(str(exc)) from None
         if self.calendar_id!='primary':plan['calendar_id']=self.calendar_id
         request={'kind':'calendar-change','plan':plan}
         previous=self.effects.completed(operation_id,request)
@@ -109,7 +117,12 @@ class CalendarActions:
             if all_day:
                 first=datetime.combine(datetime.fromisoformat(start).date(),time.min,ZoneInfo(self.zone)).isoformat()
                 last=datetime.combine(datetime.fromisoformat(end).date(),time.min,ZoneInfo(self.zone)).isoformat()
-            matches=[e for e in client.events(first,last) if equivalent(e,body)]
+            candidates=client.events(first,last)
+            if recurrence:
+                parents={e['recurringEventId'] for e in candidates if e.get('recurringEventId')}
+                if len(parents)>20:raise ToolInputError('Too many series to verify duplicates; choose a narrower start window.')
+                candidates += [row for parent in sorted(parents) if (row:=client.lookup(parent)) is not None]
+            matches=[e for e in candidates if equivalent(e,body)]
             if matches:
                 existing={'changed':False,'already_exists':True,'event_id':matches[0]['id'],'calendar_id':self.calendar_id,
                           'reply':'The matching event is already on your calendar.'}
@@ -136,7 +149,9 @@ class CalendarActions:
             raise
 
     def tools(self):
-        return [ReadTool('calendar.change','Apply an explicitly owner-requested personal change. Reads existing events before creation to avoid exact duplicates; read events before update/delete. Full preserved title/location/times on update. No guests/repeats. Timed values require local offsets; all-day end is exclusive. Unused strings empty. Unconfirmed identical changes are reconciled without another write.',
-            object_schema({'action':{'type':'string','enum':['create','update','delete']},'event_id':TEXT,'title':TEXT,'location':TEXT,'start':TEXT,'end':TEXT,'all_day':{'type':'boolean'}}),self.change,mutates=True),
+        schema=object_schema({'action':{'type':'string','enum':['create','update','delete']},'event_id':TEXT,'title':TEXT,'location':TEXT,'start':TEXT,'end':TEXT,'all_day':{'type':'boolean'}})
+        schema['properties']['recurrence']=TEXT
+        return [ReadTool('calendar.change','Apply an explicitly owner-requested personal change. Reads existing events before creation to avoid exact duplicates; read events before update/delete. Full preserved title/location/times on update. No guests. Optional recurrence creates one series, for example RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6. Use FREQ=DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL, BYDAY, BYMONTHDAY, BYMONTH, WKST, and COUNT or UNTIL. Empty or omitted means one event. Timed UNTIL is UTC (YYYYMMDDTHHMMSSZ); all-day UNTIL is YYYYMMDD. Use the configured timezone for daylight-saving behavior. Do not invent an end date. Series/instance update/delete remains unsupported. Timed values require local offsets; all-day end is exclusive. Unused strings empty. Unconfirmed identical changes are reconciled without another write.',
+            schema,self.change,mutates=True),
             ReadTool('calendar.pending','List uncertain calendar changes for read-only reconciliation.',object_schema({}),self.pending),
             ReadTool('calendar.reconcile','Check a listed uncertain action against the actual calendar. Never repeats a write; absence or conflicting evidence for a save remains unconfirmed.',object_schema({'id':TEXT}),self.reconcile,verifies=True)]

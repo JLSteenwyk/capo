@@ -15,6 +15,11 @@ CASES={
   'followups':['I already replied. Please update my task list so it stops showing as something I need to do.']},
 }
 
+CASES['conversation_recurrence']={
+ 'split':'development','conversation':True,'series':True,'calendar':'primary','target':'planning','write':False,
+ 'request':'Create a personal Focus event every Monday for six occurrences, starting November 4, 2030, 2–3 p.m. Pacific. No guests. Keep my other events.',
+ 'followups':['Please check that the weekly series is there; do not add duplicates.']}
+
 class ConversationWorld(MailWorld,ResearchWorld):
     def client(self,calendar_id='primary'):
         return ResearchWorld.client(self,calendar_id)
@@ -25,7 +30,16 @@ class ConversationWorld(MailWorld,ResearchWorld):
 
     def grade(self,result):
         checks={'nonempty_answer':bool(result.get('reply','').strip()),'no_drafts':not self.drafts,'completion_report_accepted':result.get('status')=='reported_complete'}
-        if self.case.get('tasks'):
+        if self.case.get('series'):
+            from capo.calendar_recurrence import equivalent_rules
+            new=[row for id,row in self.calendars['primary'].items() if id not in self.original['primary']]
+            checks.update(one_series=len(new)==1 and len(self.writes)==1,
+                unchanged_followup=self.calendars==self.before_followup,
+                correct_rule=len(new)==1 and equivalent_rules(new[0].get('recurrence',[]),['RRULE:FREQ=WEEKLY;COUNT=6'],'2030-11-04'),
+                correct_time=len(new)==1 and new[0]['start']=={'dateTime':'2030-11-04T14:00:00-08:00','timeZone':'America/Los_Angeles'}
+                    and new[0]['end']=={'dateTime':'2030-11-04T15:00:00-08:00','timeZone':'America/Los_Angeles'},
+                others_preserved=all(self.calendars[c].get(id)==row for c,rows in self.original.items() for id,row in rows.items()))
+        elif self.case.get('tasks'):
             rows=self.task_rows
             before=self.tasks_before_followup
             checks.update(calendar_unchanged=self.calendars==self.original,no_external_writes=not self.writes,

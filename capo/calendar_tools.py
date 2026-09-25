@@ -204,7 +204,7 @@ class CalendarTools:
         actions = CalendarActions(home, owner, self.zone, self.primary_cache)
         tools = actions.tools()
         def change(calendar_id=None, **arguments):
-            if calendar_id is None:
+            if calendar_id in (None,''):
                 calendar_id=self.preferences['default_calendar_id'] if arguments.get('action')=='create' else 'primary'
             calendar_id = self.canonical(calendar_id)
             if calendar_id != 'primary' and self.calendars[calendar_id].get('accessRole') != 'owner':

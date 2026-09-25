@@ -464,7 +464,9 @@ class SlackService:
         if action == "digest":
             from .digest_feedback import dispatch as digest_dispatch
             return digest_dispatch(self, event_id, event, "digest " + text, legacy=True)
-        if action in ("inbox", "research"):
+        if action == "calendar" and not self.config.get("calendar", {}).get("enabled", False):
+            return "Google Calendar is not connected yet. Run capo calendar-auth first."
+        if action in ("inbox", "research", "calendar"):
             from .capabilities import CapabilityConversation
             if not hasattr(self, "capability_conversation"):
                 self.capability_conversation = CapabilityConversation(self.store.home, self.config)
@@ -475,18 +477,6 @@ class SlackService:
                 "browser_preferences": self.config.get("browser", {}).get("preferences", {}),
                 "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles"),
                 "recent_messages": list(reversed(recent))})["reply"]
-        if action == "calendar":
-            from .calendar import CalendarConversation
-            if not self.config.get("calendar", {}).get("enabled", False):
-                return "Google Calendar is not connected yet. Run capo calendar-auth first."
-            if not hasattr(self, "calendar_conversation"):
-                self.calendar_conversation = CalendarConversation(self.store.home, owner_key(self.config))
-            return self.calendar_conversation.poll(event_id, {
-                "aliases": [], "objectives": [], "message": text,
-                "recent_messages": list(reversed(recent)), "request_state": request_state,
-                "request_thread": thread, "request_event": event_id,
-                "timezone": self.config.get("calendar", {}).get("timezone", "America/Los_Angeles")
-            })["reply"]
         if action == "browser":
             from .browser_slack import start
             return start(self, event_id, event, "\n".join(row["user"] for row in reversed(recent)) + "\n" + text)
