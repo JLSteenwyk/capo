@@ -985,18 +985,19 @@ def serve(home, config_path):
             ingest(store.home, config, body)
         service = SlackService(store, config, app.client)
         service.bot_user_id = identity["user_id"]
-        handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
+        from .slack_connection import ConnectionWatchdog
+        connection = ConnectionWatchdog(lambda: SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]), store.home)
         previous = signal.getsignal(signal.SIGTERM)
         def stop(*_):
             raise KeyboardInterrupt
         signal.signal(signal.SIGTERM, stop)
         try:
-            handler.connect()
+            connection.start()
             from .update_runtime import health
             release=os.environ.get('CAPO_RELEASE','development')
             cycle_completed=False
             while True:
-                if health(store.home,handler.client.is_connected(),release,cycle_completed):
+                if health(store.home,connection.connected(),release,cycle_completed):
                     time.sleep(1)
                     continue
                 try:
@@ -1008,7 +1009,7 @@ def serve(home, config_path):
                 time.sleep(1)
         finally:
             signal.signal(signal.SIGTERM, previous)
-            handler.close()
+            connection.close()
             if hasattr(service, "heartbeat_manager"):
                 service.heartbeat_manager.db.close()
             if hasattr(service, "digest_manager"):

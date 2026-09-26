@@ -456,3 +456,21 @@ invitations support up to 100 total attendees.
 
 Provider semantics: [Google event insertion](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert)
 and [event patching](https://developers.google.com/workspace/calendar/api/v3/reference/events/patch).
+
+### Slack connection recovery
+
+The Slack service runs a separate connection watchdog. It allows the SDK 30
+seconds to repair a disconnection, then closes and replaces the Socket Mode
+client using the same app and durable message ingestion. It does not restart
+workers, replay requests, or resend messages. Failed recovery attempts back off
+from 30 seconds to at most five minutes; a stable connection for one minute
+resets the backoff. Brief interruptions recovered by the SDK need no replacement.
+If closing a client fails, no competing replacement is opened.
+
+Private `CAPO_HOME/slack-connection.json` records connection/recovery status,
+attempt count and retry delay without SDK exception payloads or credentials.
+The existing live health receipt reports actual connection state. The watchdog
+runs independently of request processing and stops during service shutdown.
+Invalid or revoked credentials still require reconnection of the account; a
+watchdog cannot repair revoked access. This mechanism repairs a disconnected
+client; it is not an end-to-end message delivery probe or a process supervisor.
