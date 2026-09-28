@@ -112,6 +112,9 @@ def shared_tools(home,config,documents,request=None):
                 if self.client is None:self.client=Gmail()
                 return self.client.get(*args,**kwargs)
         mail=GmailReadTools(LazyMail())
+        # Host-supplied observed sources are readable without a redundant search.
+        mail.known_ids.update(item['message_id'] for item in (request or {}).get('observations',[])
+                              if item.get('kind')=='email' and item.get('message_id'))
         task_evidence.mail_reads=mail
         tools.extend(mail.tools.values())
         if config.get('gmail',{}).get('drafts',False):

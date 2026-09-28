@@ -129,7 +129,16 @@ class TaskEvidenceTests(unittest.TestCase):
         from datetime import datetime, timezone
         item={'kind':'email','id':'email:abc','message_id':'abc','linked_task_id':'example','title':'Updated'}
         monitor=Monitor(self.home,{})
+        from datetime import timedelta
+        now=datetime.now(timezone.utc)
         with patch('capo.monitoring.research',return_value={'status':'partial'}):
-            monitor.tick(datetime.now(timezone.utc),[item])
+            monitor.tick(now,[item])
         self.assertEqual(len(monitor.observations.changed([item])),1)
-        self.assertIn('out of date',monitor.notices()[0]['summary'])
+        self.assertEqual(monitor.notices(),[])
+        # The refreshed retry fails too: now the owner is told which source to check.
+        with patch('capo.monitoring.research',return_value={'status':'partial'}) as review, \
+             patch('capo.task_evidence.TaskEvidence.source',return_value={'status':'checked','messages':[]}):
+            monitor.tick(now+timedelta(hours=2),[])
+            review.assert_called_once()
+        summary=monitor.notices()[0]['summary']
+        self.assertIn('out of date',summary);self.assertIn('“Updated” after 2 attempts',summary)

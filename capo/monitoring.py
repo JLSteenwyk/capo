@@ -70,7 +70,8 @@ class Monitor:
             failures=json.loads(failures_path.read_text()) if failures_path.exists() else {}
             if state and state['status']=='failed' and state['key'] not in failures:
                 failures[state['key']]={'attempts':state.get('review_attempt',1),
-                    'references':[reference(x) for x in state['items']], 'retry_at':path.stat().st_mtime+3600, 'summary':state.get('error_summary','Review incomplete.')}
+                    'references':[reference(x) for x in state['items']], 'retry_at':path.stat().st_mtime+3600, 'summary':state.get('error_summary','Review incomplete.'),
+                    'label':label(state['items'])}
                 _write(failures_path,failures)
             if state and state['status'] in ('waiting', 'running'):
                 if now.timestamp() < state.get('retry_at', 0):
@@ -87,7 +88,7 @@ class Monitor:
                     if failure:continue  # Failed identities use the independent, refreshed retry path.
                     candidates.append((bool(failure),key,batch,failure))
                 due=[(key,value) for key,value in failures.items()
-                     if value.get('attempts',0)<2 and now.timestamp()>=value.get('retry_at',0)]
+                     if value.get('attempts',0)<RETRIES and now.timestamp()>=value.get('retry_at',0)]
                 if due:
                     key,failure=min(due,key=lambda pair:pair[1].get('retry_at',0))
                     try:batch=self.retry_items(failure)
@@ -133,7 +134,7 @@ class Monitor:
                 if result.get('status') == 'partial':
                     state.update(status='failed',result=result,
                                  error_summary='Task source review did not finish. Saved task status may be out of date.')
-                    failures[state['key']]={'attempts':state.get('review_attempt',1),'references':[reference(x) for x in state['items']],'retry_at':now.timestamp()+3600,'summary':state['error_summary']}
+                    failures[state['key']]={'attempts':state.get('review_attempt',1),'references':[reference(x) for x in state['items']],'retry_at':now.timestamp()+3600,'summary':state['error_summary'],'label':label(state['items'])}
                     _write(failures_path,failures)
                     _write(path,state)
                     return changed
@@ -147,8 +148,11 @@ class Monitor:
                 state.update(status='waiting', retry_at=exc.retry_at)
                 _write(path, state)
             except Exception as exc:
-                state.update(status='failed', error_summary=failure_summary(exc))
-                failures[state['key']]={'attempts':state.get('review_attempt',1),'references':[reference(x) for x in state['items']],'retry_at':now.timestamp()+3600,'summary':state['error_summary']}
+                from .providers import AuthenticationError
+                # A lapsed login needs the owner now; a retry cannot fix it.
+                state.update(status='failed', error_summary=failure_summary(exc), needs_owner=isinstance(exc, AuthenticationError))
+                failures[state['key']]={'attempts':state.get('review_attempt',1),'references':[reference(x) for x in state['items']],'retry_at':now.timestamp()+3600,'summary':state['error_summary'],'label':label(state['items']),
+                                        'needs_owner':state['needs_owner']}
                 _write(failures_path,failures)
                 _write(path, state)
             return changed
@@ -156,15 +160,42 @@ class Monitor:
             os.close(fd)
 
     def notices(self):
+        """Alert only after the automatic retry is also exhausted, naming the source.
+
+        A first failure is retried quietly an hour later; alerting then would
+        report Capo's internal state rather than something the owner can act on.
+        """
         path=self.root/'failed-batches.json'
         failures=json.loads(path.read_text()) if path.exists() else {}
         active=self.root/'active.json'
         if active.exists():
             state=json.loads(active.read_text())
             if state['status']=='failed':
-                failures.setdefault(state['key'],{'summary':state.get('error_summary','Review incomplete.'),'references':[reference(x) for x in state.get('items',[])]})
+                failures.setdefault(state['key'],{'summary':state.get('error_summary','Review incomplete.'),
+                    'attempts':state.get('review_attempt',1),'label':label(state.get('items',[])),
+                    'needs_owner':state.get('needs_owner',False),
+                    'references':[reference(x) for x in state.get('items',[])]})
         return [{'id':'monitor-failure:'+key,'kind':'connection',
-                 'title':'Commitment review needs attention',
-                 'summary':value.get('summary','The review stopped; saved evidence is preserved.')}
+                 'title':'Commitment review needs attention','summary':notice_text(value)}
                 for key,value in failures.items()
-                if not value.get('references') or self.observations.unresolved(value['references'])][:3]
+                if (value.get('needs_owner') or value.get('attempts',RETRIES)>=RETRIES)
+                and (not value.get('references') or self.observations.unresolved(value['references']))][:3]
+
+
+RETRIES = 2  # The first attempt plus one refreshed retry; see Monitor.tick.
+
+
+def notice_text(failure):
+    summary=failure.get('summary','The review stopped; saved evidence is preserved.')
+    if not failure.get('label'):return summary
+    if failure.get('needs_owner'):return summary+' It stopped while reviewing '+failure['label']+'.'
+    return ('Capo could not finish reviewing '+failure['label']+' after '+str(failure.get('attempts',RETRIES))+
+            ' attempts, so related tasks may be out of date. Check it yourself. '+summary)
+
+
+def label(items):
+    """Short owner-recognizable name for a reviewed batch; titles only, no bodies."""
+    titles=[' '.join(str(x.get('title') or x.get('subject') or '').split())[:80] for x in items]
+    titles=[t for t in titles if t]
+    if not titles:return ''
+    return '“'+titles[0]+'”'+(f' and {len(titles)-1} more' if len(titles)>1 else '')

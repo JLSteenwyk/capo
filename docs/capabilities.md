@@ -352,7 +352,12 @@ A failed commitment-review batch no longer blocks other changed sources. Each so
 version gets at most one follow-up after an hour, using fresh task reads and the same
 restricted observation tools. Original checkpoints and receipts remain intact.
 Failures stay visible after other batches succeed; successful review of the same
-sources clears superseded notices.
+sources clears superseded notices. A first failure is retried quietly; the owner is
+alerted, with the source's title, only after the retry also fails, or immediately
+when a lapsed login needs renewal. Mail sources supplied in the observed batch are
+readable without a separate search, and a repeated update of a task that is already
+closed returns an unchanged receipt instead of failing the review (reopening or
+otherwise changing a closed task is still refused).
 
 Failed or expired read-only scheduled assignments, and delivered checks whose
 verification the host could not finish, get one separate follow-up at least

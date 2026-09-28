@@ -36,7 +36,8 @@ class RecoveryHardeningTests(unittest.TestCase):
             item={'kind':'email','message_id':'abc123','id':'abc123','subject':'Review proposal','snippet':'Please review.'}
             def initial(*args,**kwargs):return {'status':'partial','reply':'unverified'}
             with patch('capo.monitoring.research',side_effect=initial):m.tick(now,[item])
-            self.assertEqual(len(m.notices()),1)
+            # The first failure is retried quietly; it is not yet an owner alert.
+            self.assertEqual(m.notices(),[])
             refreshed={'status':'checked','messages':[{'sent_by_owner':True,'snippet':'Review complete.'}]}
             def completed(provider,tools,request,*args,**kwargs):
                 batch=tools.call('observations.read',{})['observations']

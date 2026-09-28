@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import quote
 from .conversation import ConversationRouter, _write
 from .contracts import TEXT, TEXTS, object_schema
-from .research_tools import ReadTool, ReadTools, research
+from .research_tools import ReadTool, ReadTools, ToolInputError, research
 from .providers import Providers
 
 TOKEN = Path.home()/'.config/capo/google-gmail-token.json'
@@ -210,7 +210,7 @@ class GmailReadTools(ReadTools):
             self.characters = max(self.characters, state.get('characters', 0))
 
     def thread(self,id):
-        if id not in self.known_threads:raise ValueError('Search the thread first')
+        if id not in self.known_threads:raise ToolInputError('Unknown thread ID. Use a thread_id returned by mail.search or mail.read.')
         data=self.client.get('threads/'+quote(id,safe=''),{'format':'minimal'})
         ids=list(dict.fromkeys(m['id'] for m in data.get('messages',[])))
         self.known_ids.update(ids)
@@ -247,9 +247,17 @@ class GmailReadTools(ReadTools):
         return {'messages': rows, 'next_page_token': cursor, 'more_available': bool(cursor),
                 'coverage': 'One search page; identifiers only. Read bodies before analyzing prose.'}
 
+    def _check_ids(self, ids, limit):
+        # Explain rejections so the caller can correct them; IDs are its own arguments.
+        if not 1 <= len(ids) <= limit or len(set(ids)) != len(ids):
+            raise ToolInputError(f'Pass 1–{limit} distinct message IDs.')
+        unknown = [i for i in ids if i not in self.known_ids]
+        if unknown:
+            raise ToolInputError('Unknown message IDs: '+', '.join(unknown[:5])+'. Use IDs returned by mail.search '
+                                 '(or supplied by this request\'s observed sources); search by rfc822msgid:, subject: or from: to find a message.')
+
     def metadata(self,ids):
-        if not 1<=len(ids)<=50 or len(set(ids))!=len(ids) or not set(ids)<=self.known_ids:
-            raise ValueError('Use up to 50 IDs from a search')
+        self._check_ids(ids,50)
         rows=[]
         for id in ids:
             if self.metadata_reads>=100:break
@@ -262,10 +270,9 @@ class GmailReadTools(ReadTools):
                 'coverage':'Headers and snippets only. Bodies and attachments have not been inspected.'}
 
     def read(self, ids, strip_quotes):
-        if (not 1 <= len(ids) <= 25 or len(set(ids)) != len(ids)
-                or not set(ids) <= self.known_ids or self.read_attempts >= 50
-                or self.characters >= 120000):
-            raise ValueError('Invalid IDs or exhausted message budget')
+        self._check_ids(ids,25)
+        if self.read_attempts >= 50 or self.characters >= 120000:
+            raise ToolInputError('The mail read allowance for this request is exhausted. Report what remains unread.')
         rows, errors = [], []
         for message_id in ids:
             if self.characters >= 120000 or self.read_attempts >= 50:

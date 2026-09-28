@@ -98,6 +98,10 @@ class Observations:
             if id:
                 current = self.tasks.get(id)
                 if current['status'] in ('paused', 'dismissed', 'cancelled', 'completed'):
+                    if fields['status'] == current['status']:
+                        # Already settled (possibly earlier in this review): nothing to change, not a violation.
+                        return {'task': current, 'changed': False,
+                                'coverage': f"The task is already {current['status']}. Monitoring does not edit closed tasks; no change was saved."}
                     raise PermissionError('Monitoring cannot reopen an owner-closed task')
                 if fields['status'] not in ('candidate', 'open', 'waiting', 'completed'):
                     raise PermissionError('Monitoring cannot dismiss or cancel owner work')
