@@ -101,9 +101,8 @@ class DigestManager:
                 from .personalization import snapshot
                 evidence['interest_context']=snapshot(self.service.store.home,config,directory)
                 _write(attempt/'evidence.json',evidence)
-                payload=compose(evidence,p,seen,attempt)
+                payload=compose(evidence,p,seen,attempt,briefings=briefings['text'])
                 payload['briefing_findings']=briefings['findings']
-                if briefings['text']:payload['text']+='\n\n'+briefings['text']
                 if len(payload['text'])>10000:raise ValueError('Digest too long')
                 from .report_freshness import snapshot
                 run.pop('error_summary',None)
@@ -118,8 +117,13 @@ class DigestManager:
     def reconcile(self,run):
         cursor=''
         for _ in range(10):
-            result=self.service.client.conversations_history(channel=run['identity']['channel_id'],
-                oldest=str(run['created']-60),limit=100,cursor=cursor,include_all_metadata=True)
+            # A thread reply appears only in its thread, not in channel history.
+            if run.get('thread_ts'):
+                result=self.service.client.conversations_replies(channel=run['identity']['channel_id'],
+                    ts=run['thread_ts'],oldest=str(run['created']-60),limit=100,cursor=cursor,include_all_metadata=True)
+            else:
+                result=self.service.client.conversations_history(channel=run['identity']['channel_id'],
+                    oldest=str(run['created']-60),limit=100,cursor=cursor,include_all_metadata=True)
             if not result.get('ok',True):raise ValueError('History unavailable')
             for message in result.get('messages',[]):
                 marker=(message.get('metadata') or {}).get('event_payload',{}).get('key')
@@ -181,6 +185,7 @@ class DigestManager:
         try:
             result=self.service.client.chat_postMessage(channel=run['identity']['channel_id'],
                 text=run['wire_text'],client_msg_id=run['marker'],
+                **({'thread_ts':run['thread_ts']} if run.get('thread_ts') else {}),
                 metadata={'event_type':'capo_digest','event_payload':{'key':run['marker']}},
                 mrkdwn=run.get('wire_mrkdwn',False),parse='none',link_names=False,unfurl_links=False,unfurl_media=False)
             if not result.get('ok',True) or not result.get('ts'):return

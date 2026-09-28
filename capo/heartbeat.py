@@ -94,7 +94,8 @@ def evidence(config,objectives,now,home=None):
             inspected.update(check['schedule_id'] for check in checks if check['schedule_id'])
             for (data,) in scheduled.db.execute('SELECT data FROM runs WHERE scope=? ORDER BY updated DESC, rowid DESC LIMIT 100',(scope(config),)):
                 run=json.loads(data); sid=run.get('schedule_id',run['key'])
-                if run.get('preview') or sid in inspected:continue
+                from .check_recovery import supersedes
+                if run.get('preview') or sid in inspected or not supersedes(run):continue
                 inspected.add(sid)
                 if run.get('day')==now.astimezone(timezone.utc).date().isoformat() and run['status'] in ('failed','expired'):
                     add('connection',{'title':'Scheduled work: '+run.get('title','Saved request'),

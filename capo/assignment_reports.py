@@ -2,12 +2,17 @@
 import hashlib
 import json
 import re
+from datetime import date, datetime
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 from .contracts import TEXT, TEXTS, object_schema, validate
 from .conversation import _write
 from .research_tools import ReadTool
 
-FINDING = object_schema({'key': TEXT, 'version': TEXT, 'summary': TEXT, 'source': TEXT})
+FINDING = object_schema({'key': TEXT, 'version': TEXT, 'summary': TEXT, 'source': TEXT, 'due': TEXT})
+# `due` is optional so saved reports and older callers stay valid.
+FINDING['required'] = ['key', 'version', 'summary', 'source']
+DUE_SOON_DAYS = 3
 REPORT = object_schema({'findings': {'type': 'array', 'items': FINDING},
                         'blockers': TEXTS, 'coverage': TEXT})
 
@@ -19,6 +24,7 @@ class AssignmentReport:
         if self.interests:
             finding = object_schema({**FINDING['properties'], 'interest_key': TEXT,
                 'relationship': {'type':'string','enum':['none','direct','related']}, 'why': TEXT})
+            finding['required'] = [k for k in finding['required'] if k != 'due']
             self.schema = object_schema({**REPORT['properties'], 'findings':{'type':'array','items':finding}})
         self.path = directory / 'assignment-report.json'
 
@@ -32,6 +38,8 @@ class AssignmentReport:
             if any(not item[k].strip() or len(item[k]) > 1200 for k in ('key','version','summary','source')) or item['key'] in keys:
                 raise ValueError('Findings need unique stable keys, versions, summaries and evidence sources')
             keys.add(item['key'])
+            if item.get('due') and not re.fullmatch(r'\d{4}-\d{2}-\d{2}', item['due']):
+                raise ValueError('Use due as YYYY-MM-DD, or leave it empty')
             if self.interests:
                 if item['relationship']=='none':
                     if item['interest_key'] or item['why']:raise ValueError('Unpersonalized findings must leave interest_key and why empty')
@@ -53,6 +61,8 @@ class AssignmentReport:
             'Use the relevant browser URL (html_url) as source whenever available, especially for PRs, issues, '
             'CI runs and security alerts. Never use receipt indexes as sources. Include the repository in GitHub summaries. '
             'Reuse prior keys/versions if facts did not change. Empty findings means nothing actionable in checked sources. '
+            'Set due (YYYY-MM-DD) only for a verified deadline, renewal, expiry or event date the owner may need to act on; '
+            'the host uses it to remind the owner shortly before that date. '
             'Missing access or incomplete essential checks belong in blockers; never treat failures as a clean check. '
             'Ordinary page/window limits belong in coverage, not blockers, unless they prevent the requested check. '
             'Do not request bank access or other integrations that the assignment does not require. '
@@ -81,6 +91,7 @@ def research_context(previous):
     The full report stays in host storage for delivery comparison. Pending IDs
     and cursors remain available so actual unfinished inspections can continue.
     """
+    previous={k:v for k,v in previous.items() if k!='reminded'}  # host delivery bookkeeping
     if not previous.get('blockers'):return previous
     return {**previous,'blockers':[], 'historical_blocker_count':len(previous['blockers']),
             'coverage':'Historical findings only. Recheck relevant sources; prior blockers are not evidence of a current failure.'}
@@ -90,26 +101,54 @@ def fingerprint(item):
     return hashlib.sha256(json.dumps([item['key'], item['version']], ensure_ascii=False).encode()).hexdigest()
 
 
-def finish(run, report, previous):
+def due_soon(item, today):
+    """Whether a finding's verified action date falls within the reminder window."""
+    try:
+        days = (date.fromisoformat(item.get('due') or '') - today).days
+    except ValueError:
+        return False
+    return 0 <= days <= DUE_SOON_DAYS
+
+
+def finish(run, report, previous, timezone='UTC'):
+    """Deliver changes only; a follow-up in the original's thread adds findings only.
+
+    A previously reported finding with an action date is shown once more shortly
+    before that date, so an unchanged renewal is not silently dropped.
+    """
     seen = {fingerprint(item) for item in previous.get('findings', [])}
     new = [item for item in report['findings'] if fingerprint(item) not in seen]
-    blockers = [item for item in report['blockers'] if item not in previous.get('blockers', [])]
+    followup = bool(run.get('recovery_of') and run.get('thread_ts'))
+    # Follow-up blockers restate the original's coverage in new words.
+    blockers = [] if followup else [item for item in report['blockers'] if item not in previous.get('blockers', [])]
+    today = datetime.fromtimestamp(run.get('created', 0), ZoneInfo(timezone)).date()
+    reminded = set(previous.get('reminded', []))
+    upcoming = [] if followup else [item for item in report['findings'] if fingerprint(item) in seen
+                                    and fingerprint(item) not in reminded and due_soon(item, today)]
+    report['reminded'] = sorted(reminded | {fingerprint(item) for item in upcoming})
     run['report'] = report
-    if not new and not blockers:
+    if not new and not blockers and not upcoming:
         run['status'] = 'quiet'
         return
     # Deliver the bounded actual findings, never an empty model preamble.
-    lines = [run['title']]
+    lines = ['Follow-up: new since the earlier check' if followup else run['title']]
+    from .personalization import finding_text
     for item in new[:3]:
-        # Keep internal mail/document IDs in the saved report, not the Slack update.
-        try:
-            source=urlsplit(item['source'])
-            link=item['source'] if source.scheme in ('https', 'http') and source.netloc and not source.username else ''
-        except ValueError:
-            link=''
-        from .personalization import finding_text
-        lines.append('- ' + finding_text(item) + (' (' + link + ')' if link else ''))
+        lines.append('- ' + finding_text(item) + _link(item))
     if len(new) > 3:
         lines.append(f'{len(new)-3} more findings saved. Ask Capo for the full check.')
+    for item in upcoming[:3]:
+        when = date.fromisoformat(item['due'])
+        label = 'today' if when == today else when.strftime('%a %b %-d')
+        lines.append(f'- Reminder, {label}: ' + finding_text(item) + _link(item))
     lines.extend('- Needs attention: ' + item for item in blockers[:2])
     run.update(status='ready', payload={'text': '\n'.join(lines), 'news': []})
+
+
+def _link(item):
+    # Keep internal mail/document IDs in the saved report, not the Slack update.
+    try:
+        source = urlsplit(item['source'])
+        return ' (' + item['source'] + ')' if source.scheme in ('https', 'http') and source.netloc and not source.username else ''
+    except ValueError:
+        return ''

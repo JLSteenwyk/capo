@@ -17,14 +17,21 @@ def settings(config):
 
 
 def collect(home, config, directory, seen, provider=None):
+    """Render verified findings; a partial check keeps them and names its gap.
+
+    The generic failure line appears only without usable findings. Actual
+    errors stay in the briefing directory, never in Slack.
+    """
     from .capabilities import Documents, owner_key, shared_tools
+    from .conversation import _write
     from .providers import Providers
+    from .web_tools import public_url
     sections=[];findings=[]
     for item in settings(config):
         previous=[v for v in seen.values() if v.get('briefing_key')==item['key']][-30:]
         path=directory/item['key'];path.mkdir(parents=True,exist_ok=True)
         try:
-            from .personalization import snapshot, GUIDANCE, finding_text
+            from .personalization import snapshot, GUIDANCE
             interests=snapshot(home,config,path)
             report=AssignmentReport(path,interests['interests'])
             registry=shared_tools(home,config,Documents(home,owner_key(config)))
@@ -37,18 +44,27 @@ def collect(home, config, directory, seen, provider=None):
                 'Each finding needs a browser source URL. Omit repeats, irrelevant matches and unverified claims; report coverage gaps honestly. '
                 'Prefer at most two useful findings. An empty findings list is appropriate when nothing new matches.',
                 max_calls=10,recovery=config.get('recovery'))
-            if result.get('status')=='partial':raise ValueError('Incomplete briefing')
-            value=report.read();lines=[]
-            for finding in value['findings']:
-                key='briefing:'+item['key']+':'+fingerprint(finding)
-                if key in seen:continue
-                from .web_tools import public_url
-                public_url(finding['source'])
-                lines.append('• '+finding_text(finding)[:650]+'\n'+finding['source'])
-                findings.append(dict(finding,id=key,briefing_key=item['key']))
-                if len(lines)==2:break
-            if value['blockers']:lines.append('Check incomplete: '+value['blockers'][0][:200])
-            if lines:sections.append(item['title']+'\n'+'\n'.join(lines))
-        except Exception:
+            value=report.read()
+        except Exception as exc:
+            _write(path/'failure.json',{'error':type(exc).__name__,'message':str(exc)[:300]})
             sections.append(item['title']+'\nI could not complete this check today.')
+            continue
+        partial=result.get('status')=='partial'
+        lines=[]
+        from .personalization import finding_text
+        for finding in value['findings']:
+            key='briefing:'+item['key']+':'+fingerprint(finding)
+            if key in seen:continue
+            try:public_url(finding['source'])
+            except ValueError:continue
+            lines.append('• '+finding_text(finding)[:650]+'\n'+finding['source'])
+            findings.append(dict(finding,id=key,briefing_key=item['key']))
+            if len(lines)==2:break
+        if partial and not lines:
+            _write(path/'failure.json',{'error':'partial','message':'; '.join(value['blockers'])[:300]})
+            sections.append(item['title']+'\nI could not complete this check today.')
+            continue
+        if value['blockers']:lines.append('Check incomplete: '+value['blockers'][0][:200])
+        elif partial:lines.append('Check incomplete: some sources were not checked.')
+        if lines:sections.append(item['title']+'\n'+'\n'.join(lines))
     return {'text':'\n\n'.join(sections),'findings':findings}

@@ -117,7 +117,8 @@ class TaskEvidence:
             if any(s.get('later_sent_ids') for s in check.get('sources',[])):
                 item['status']='Later reply found; saved task needs reconciliation'
             else:
-                item['status']='Saved task status, not confirmed current: '+item['status']
+                # Renderers state this caveat once for the section, not per item.
+                item['status_unconfirmed']=True
 
     def observations(self, refreshed):
         items=[]

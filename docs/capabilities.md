@@ -76,7 +76,7 @@ Capo and scheduled specialists can use `memory.search` to recall owner-stated pr
 
 Records live under `CAPO_HOME/personal-memory/<owner-hash>/memory.sqlite3`, with private directory/file permissions. Removing an active preference does not erase historical messages, backups or action receipts. Existing conversation history, specialist preferences, documents and digest preferences remain available through their own tools.
 
-Optional `digest_briefings` in private configuration adds up to three reusable morning research sections. Each has `key`, `title` and `request`. Sections use the same web, clock, memory and digest read tools; they cannot book, buy, send messages or edit calendars. Findings require browser links and are suppressed after successful delivery using stable keys and factual versions. Failed checks are reported as incomplete. For example, a local-event section can consult saved tastes, verify upcoming dates and venues, and report only new matching events. Section settings and personal interests belong in private configuration, not public examples or logs.
+Optional `digest_briefings` in private configuration adds up to three reusable morning research sections. Each has `key`, `title` and `request`. Sections use the same web, clock, memory and digest read tools; they cannot book, buy, send messages or edit calendars. Findings require browser links and are suppressed after successful delivery using stable keys and factual versions. A partial check keeps its verified findings with a short gap note; a check with no usable findings is reported as incomplete, and its actual error stays in the private briefing directory. Sections appear before the digest's feedback footer. For example, a local-event section can consult saved tastes, verify upcoming dates and venues, and report only new matching events. Section settings and personal interests belong in private configuration, not public examples or logs.
 
 Automations now receive a bounded interest context before reasoning: active shared memory, followed artists, exclusions and topic feedback. The main digest uses this context to choose relevance; personalized research and eligible scheduled assignments use it to search and explain discoveries. A snapshot is private and fixed during retries; subsequent runs load corrections and forgotten preferences afresh. Restricted assignments only receive this context when their allowed capabilities include `memory.`; ordinary unrestricted assignments receive it automatically.
 
@@ -354,14 +354,25 @@ restricted observation tools. Original checkpoints and receipts remain intact.
 Failures stay visible after other batches succeed; successful review of the same
 sources clears superseded notices.
 
-Incomplete read-only scheduled assignments get one separate follow-up, at least
+Failed or expired read-only scheduled assignments, and delivered checks whose
+verification the host could not finish, get one separate follow-up at least
 30 minutes after the original start and within six hours on the same local day.
+A delivered `partial` outcome or model-written blockers alone (rotation, "recheck
+next run", an exhausted search allowance) do not qualify; the next scheduled run
+handles them.
 Paused, retired, revised and off-day schedules do not qualify. A follow-up cannot
 spawn another follow-up. It has the normal ten-call limit and a 15-minute deadline,
 including provider waits, and preserves original results. Existing continuation
 cursors guide remaining work. External writes remain unavailable; delivery uses
-normal report deduplication and Slack receipts. This is an additional bounded
-inspection, not a reset of the original run's budgets or status.
+normal report deduplication and Slack receipts. A follow-up of a delivered check
+replies in the original's thread with new findings only and stays quiet when
+nothing changed. This is an additional bounded inspection, not a reset of the
+original run's budgets or status: an unfinished or failed follow-up does not
+replace the original in `health.status`, team status or hourly checks.
+
+Monitoring findings may carry an optional verified `due` date (deadline, renewal,
+expiry or event). A previously reported finding is shown once more as a reminder
+within three days of that date, for any change-only assignment.
 
 `development.inspect` checks linked PRs live through the existing GitHub adapter.
 If that read fails, PR state is explicitly unknown; a saved open/draft value is not

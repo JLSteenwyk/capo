@@ -126,7 +126,7 @@ class ScheduledManager(DigestManager):
                         'Previous-check continuation contains host-saved pending source IDs and pagination cursors. Resume those reads/pages first without rereading inspected bodies, then inspect newer sources if budget permits. Recheck stale cursors with a fresh bounded search. Report exactly which windows remain unchecked. Never infer that an inspected excerpt means its full message or attachment was read. '
                         'For a requested document, return the full document as your output; the host saves it after verification. Do not claim document saving as a completed external action. Use tasks.overview for loose ends and health.status for failed or missed checks when relevant. Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)
-                    run.pop('error_summary',None)
+                    run.pop('error_summary',None);run.pop('verification_incomplete',None)
                     from .report_freshness import from_receipts
                     run['evidence_snapshot']=from_receipts(result.get('receipts',[]),readonly,datetime.now(timezone.utc).timestamp())
                     run.update(status='ready',payload={'text':result['reply'],'news':[]},outcome_status=result.get('status','complete'),
@@ -135,6 +135,7 @@ class ScheduledManager(DigestManager):
                         try: recorded=report.read()
                         except ValueError:
                             recorded=incomplete_report(result.get('receipts', []))
+                            run['verification_incomplete']=True
                         if result.get('status')=='partial':
                             from .monitoring_progress import completion_gaps
                             recorded['blockers']=list(dict.fromkeys(recorded['blockers']+completion_gaps(result)))[:5]
@@ -151,7 +152,7 @@ class ScheduledManager(DigestManager):
                         if progress['gap']:
                             recorded['blockers'].append(progress['gap'])
                         run.pop('error_summary', None)
-                        finish(run, recorded, previous)
+                        finish(run, recorded, previous, s['timezone'])
                 except Exception as exc:
                     from .recovery import RetryLater
                     if isinstance(exc, RetryLater):
@@ -171,8 +172,9 @@ class ScheduledManager(DigestManager):
                                 recorded=incomplete_report(saved.get('receipts', []))
                             recorded['continuation'] = continuation(readonly)
                             recorded['blockers'].append('The check could not finish verification; saved evidence is preserved.')
+                            run['verification_incomplete']=True
                             run['checked_at']=datetime.now(timezone.utc).isoformat()
-                            finish(run,recorded,previous)
+                            finish(run,recorded,previous,s['timezone'])
                 finally:
                     try:
                         if db is not None:db.save(run,datetime.now(timezone.utc))

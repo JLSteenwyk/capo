@@ -241,6 +241,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             'Never claim that reflection alone changed code, permissions or model weights. '
             'For a reusable document requested by the owner, return document_title and document; '
             'otherwise leave both empty. The host saves the document privately AND delivers its full content to the owner. '
+            'The document follows the reply in the same message, so write the reply as a summary of what follows; '
+            'do not point elsewhere for it (avoid phrases like "details are in the doc" or "see the document"). '
             'Put all requested items, quantities, dates and other essential details in reply or document. '
             'Never return only an introduction promising a list or answer that is absent. '
             'Use document for answers too long for reply; concision must not remove requested content. Put a concise answer '

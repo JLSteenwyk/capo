@@ -197,8 +197,11 @@ COMPOSE = object_schema({'news': {'type':'array','items': CHOICE},
                          'preparation_event': TEXT, 'upcoming': {'type':'array','items': TEXT}})
 
 
-def compose(evidence, p, seen, directory, provider=None):
-    """Claude chooses relevance; facts, IDs, dates and links stay host-controlled."""
+def compose(evidence, p, seen, directory, provider=None, briefings=''):
+    """Claude chooses relevance; facts, IDs, dates and links stay host-controlled.
+
+    Optional briefing sections precede the feedback footer, which stays last.
+    """
     available = candidates(evidence['news'],p,seen)
     allowed = {v['id']:v for v in available}
     now=instant(evidence['now'])
@@ -239,7 +242,7 @@ def compose(evidence, p, seen, directory, provider=None):
     lines=['Good morning — '+local.strftime('%A, %B %-d')]
     task_notices=[]
     if picked:
-        lines+=['','Needs your attention']
+        lines+=['','Needs your attention'+(' (saved task status, not confirmed current)' if any(v.get('status_unconfirmed') for v in picked) else '')]
         for item in picked:
             lines.append(f"• {item['status']}: {item['title'][:130]}" + (' '+item['url'] if item['url'] else ''))
             if item.get('kind')=='personal_task':task_notices.append({'id':item['id'],'day':item['notice_day'],'task_id':item['task_id'],'line':lines[-1]})
@@ -268,5 +271,6 @@ def compose(evidence, p, seen, directory, provider=None):
     absent=[c for c in ('world','music','tech') if counts[c] < (2 if c=='tech' else 1)]
     if absent: lines+=['','No fresh matching items for some '+', '.join(absent)+' slots today.']
     if missing:lines+=['Coverage unavailable: '+', '.join(missing)+'.']
+    if briefings:lines+=['',briefings]
     lines+=['','Reply with feedback, e.g. “more like item 2,” or “digest settings.”']
     return dict(text='\n'.join(lines),news=selected,coverage=evidence['coverage'],preferences=p,task_notices=task_notices)

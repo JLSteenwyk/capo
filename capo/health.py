@@ -130,13 +130,14 @@ class Health:
                 if latest: break
             if latest is None: continue
             path = self.home/folder/'digest/digest.sqlite3'
+            from .check_recovery import supersedes
             run = None
             if path.exists():
                 with closing(sqlite3.connect(path.as_uri()+'?mode=ro', uri=True)) as db:
                     rows = db.execute('SELECT data FROM runs WHERE scope=? ORDER BY updated DESC LIMIT 500', (scope(self.config),))
                     for (data,) in rows:
                         candidate = json.loads(data)
-                        if candidate.get('preview'): continue
+                        if candidate.get('preview') or not supersedes(candidate): continue
                         if sid and candidate.get('schedule_id') != sid: continue
                         if sid and candidate.get('revision') != s['revision']: continue
                         if hours is not None:

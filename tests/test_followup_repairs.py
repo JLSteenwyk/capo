@@ -18,7 +18,7 @@ class FollowupRepairs(unittest.TestCase):
             schedule={'id':'s','revision':1,'enabled':True,'timezone':'America/Los_Angeles','weekdays':list('01234')}
             parent={'key':'original','scope':'owner','day':'2030-01-03','status':'sent','created':now.timestamp()-3600,
                 'deadline':now.timestamp()-1800,'schedule_id':'s','revision':1,'request':'Inspect sources',
-                'title':'Review','identity':{},'outcome_status':'partial'}
+                'title':'Review','identity':{},'outcome_status':'partial','verification_incomplete':True,'ts':'100.1'}
             db.save(parent,now-timedelta(minutes=30))
             queue_followups(db,'other',{'s':schedule},now)
             self.assertIsNone(db.get('original:followup'))
@@ -28,6 +28,7 @@ class FollowupRepairs(unittest.TestCase):
             queue_followups(db,'owner',{'s':schedule},now)
             child=db.get('original:followup')
             self.assertEqual(child['recovery_of'],'original');self.assertEqual(child['deadline'],now.timestamp()+900)
+            self.assertEqual(child['thread_ts'],'100.1')
             self.assertEqual(db.get('original'),parent)
             child.update(status='sent',outcome_status='partial');db.save(child,now)
             queue_followups(db,'owner',{'s':schedule},now+timedelta(hours=1))

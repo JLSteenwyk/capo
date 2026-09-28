@@ -45,10 +45,11 @@ class TeamStatus:
             for schedule in schedules:
                 last = None
                 if db:
-                    row = db.execute("SELECT data FROM runs WHERE scope=? AND json_extract(data, '$.schedule_id')=? "
-                        "ORDER BY json_extract(data, '$.created') DESC LIMIT 1",
-                        (scope(self.config), schedule['id'])).fetchone()
-                    if row: last = json.loads(row[0])
+                    from .check_recovery import supersedes
+                    rows = db.execute("SELECT data FROM runs WHERE scope=? AND json_extract(data, '$.schedule_id')=? "
+                        "ORDER BY json_extract(data, '$.created') DESC LIMIT 20",
+                        (scope(self.config), schedule['id']))
+                    last = next((run for run in map(lambda row: json.loads(row[0]), rows) if supersedes(run)), None)
                 report = (last or {}).get('report', {})
                 item = dict(id=schedule['id'], title=schedule['title'], request=schedule['request'],
                     enabled=schedule['enabled'], delivery=schedule.get('delivery', 'always'),
