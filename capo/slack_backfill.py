@@ -55,10 +55,18 @@ def missed(client, config, bot_user_id, seen, now=None):
             for index, reply in enumerate(thread[1:], 1):
                 if float(reply['ts']) >= oldest:
                     candidates.append((reply, thread[index + 1:]))
+    # The owner may have resent a missed message after noticing no reply; the
+    # received resend already covers it, so answering the original would duplicate.
+    text = lambda m: ' '.join(str(m.get('text', '')).split()).casefold()
+    resent = {}
+    for message, _ in candidates:
+        if message.get('user') == owner and message['ts'] in seen and text(message):
+            resent[text(message)] = max(resent.get(text(message), 0), float(message['ts']))
     found = []
     for message, later in candidates:
         if (message.get('user') != owner or message.get('bot_id') or message['ts'] in seen
-                or message.get('subtype') not in (None, 'file_share')):
+                or message.get('subtype') not in (None, 'file_share')
+                or resent.get(text(message), 0) > float(message['ts'])):
             continue
         # A later Capo reply in the same thread means it was already answered.
         if any(reply.get('user') == bot_user_id for reply in later):

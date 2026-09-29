@@ -74,6 +74,13 @@ class BackfillTests(unittest.TestCase):
         # Live first: the received message is not recovered again.
         self.assertEqual(sum(event['ts'] == self.received['ts'] for _, event in self.queued()), 1)
 
+    def test_original_is_skipped_when_owner_already_resent_it(self):
+        resend = msg(NOW-HOUR+30, '  create a REMINDER for tomorrow at 10 ')
+        ingest(self.store.home, CONFIG, {'team_id': 'T1', 'event_id': 'Ev3', 'event': dict(resend, type='message', channel='C1')})
+        self.assertEqual(backfill(self.store, CONFIG, FakeSlack(self.history+[resend], self.threads), 'UBOT', now=NOW), 1)
+        recovered = [event['ts'] for _, event in self.queued() if event.get('capo_recovered')]
+        self.assertEqual(recovered, [self.thread_reply['ts']])
+
     def test_slack_bounds_never_exceed_six_decimals(self):
         from capo.message_format import slack_timestamp
         for value in (NOW, NOW-60, 1790018420.4627967, 1790018420):
