@@ -491,12 +491,14 @@ Invalid or revoked credentials still require reconnection of the account; a
 watchdog cannot repair revoked access. This mechanism repairs a disconnected
 client; it is not an end-to-end message delivery probe or a process supervisor.
 
-Socket Mode does not replay events sent during an outage. At startup and after
-each reconnection, the service reads the configured channel and its recently
+Socket Mode does not replay events sent during an outage. At startup, after
+each reconnection and every five minutes, the service reads the configured channel and its recently
 active threads (24 hours, at most 20 messages) and queues owner messages that
 have neither an ingest receipt nor a later Capo reply. They pass through the
 normal ingest path and authorization; a recovered message and a late live
 delivery of the same message are deduplicated in either order. Recovered
 messages keep their original timestamp and are marked as late so relative dates
 resolve from when they were sent. A failed check never blocks live handling and
-is retried after a minute.
+is retried after a minute. Slack history bounds are sent with at most six decimal
+places; Slack answers longer bounds with an empty page, which previously hid
+messages from recovery and delivery reconciliation.

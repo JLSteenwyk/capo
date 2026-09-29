@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from .conversation import _write
-from .message_format import plain_text, slack_text
+from .message_format import plain_text, slack_text, slack_timestamp
 from .digest import DigestStore, compose, identity, scope, slot
 from .digest_sources import collect
 
@@ -120,10 +120,10 @@ class DigestManager:
             # A thread reply appears only in its thread, not in channel history.
             if run.get('thread_ts'):
                 result=self.service.client.conversations_replies(channel=run['identity']['channel_id'],
-                    ts=run['thread_ts'],oldest=str(run['created']-60),limit=100,cursor=cursor,include_all_metadata=True)
+                    ts=run['thread_ts'],oldest=slack_timestamp(run['created']-60),limit=100,cursor=cursor,include_all_metadata=True)
             else:
                 result=self.service.client.conversations_history(channel=run['identity']['channel_id'],
-                    oldest=str(run['created']-60),limit=100,cursor=cursor,include_all_metadata=True)
+                    oldest=slack_timestamp(run['created']-60),limit=100,cursor=cursor,include_all_metadata=True)
             if not result.get('ok',True):raise ValueError('History unavailable')
             for message in result.get('messages',[]):
                 marker=(message.get('metadata') or {}).get('event_payload',{}).get('key')

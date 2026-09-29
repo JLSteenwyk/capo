@@ -6,6 +6,7 @@ import time
 import uuid
 
 from .conversation import _write
+from .message_format import slack_timestamp
 
 
 class SlackOutbox:
@@ -18,7 +19,7 @@ class SlackOutbox:
         payload=state['payload'];cursor=''
         for _ in range(5):
             page=self.client.conversations_replies(channel=payload['channel'],ts=payload['thread_ts'],
-                oldest=str(state['started_at']-1),inclusive=True,limit=100,cursor=cursor,include_all_metadata=True)
+                oldest=slack_timestamp(state['started_at']-1),inclusive=True,limit=100,cursor=cursor,include_all_metadata=True)
             if not page.get('ok',True):return None
             for row in page.get('messages',[]):
                 key=(row.get('metadata') or {}).get('event_payload',{}).get('key')

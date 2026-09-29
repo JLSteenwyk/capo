@@ -7,7 +7,7 @@ from capo.slack_backfill import backfill
 from capo.store import Store
 
 CONFIG = {'team_id': 'T1', 'channel_id': 'C1', 'owner_user_id': 'UOWNER'}
-NOW = 1_900_000_000.0
+NOW = 1_900_000_000.1234567  # str() of derived bounds has seven decimals
 HOUR = 3600
 
 
@@ -21,6 +21,9 @@ class FakeSlack:
 
     def conversations_history(self, channel, oldest, cursor, limit):
         self.calls.append('history')
+        # Real Slack returns an empty page (ok=true) for bounds with over six decimals.
+        if len(oldest.partition('.')[2]) > 6:
+            return {'ok': True, 'messages': []}
         return {'messages': [m for m in self.history if float(m['ts']) >= float(oldest)]}
 
     def conversations_replies(self, channel, ts, cursor, limit):
@@ -70,6 +73,12 @@ class BackfillTests(unittest.TestCase):
         self.assertEqual(sum(event['ts'] == self.missed['ts'] for _, event in self.queued()), 1)
         # Live first: the received message is not recovered again.
         self.assertEqual(sum(event['ts'] == self.received['ts'] for _, event in self.queued()), 1)
+
+    def test_slack_bounds_never_exceed_six_decimals(self):
+        from capo.message_format import slack_timestamp
+        for value in (NOW, NOW-60, 1790018420.4627967, 1790018420):
+            self.assertLessEqual(len(slack_timestamp(value).partition('.')[2]), 6)
+            self.assertAlmostEqual(float(slack_timestamp(value)), value, places=5)
 
     def test_recovered_record_keeps_send_time_and_explains_late_delivery(self):
         record = owner_message_record('Create a reminder for tomorrow', dict(self.missed, capo_recovered=True))

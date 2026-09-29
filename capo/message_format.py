@@ -100,3 +100,12 @@ def slack_chunks(text, limit=2500):
                 break
         chunks.append(text[start:end]);start=end
     return chunks
+
+
+def slack_timestamp(seconds):
+    """Format a Slack oldest/latest bound; Slack accepts at most six decimals.
+
+    With more (as str(float) sometimes produces), Slack returns an empty page
+    with ok=true, which silently hides every message.
+    """
+    return f'{float(seconds):.6f}'

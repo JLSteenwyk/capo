@@ -1005,19 +1005,21 @@ def serve(home, config_path):
             from .update_runtime import health
             release=os.environ.get('CAPO_RELEASE','development')
             cycle_completed=False
-            recover_missed=True  # Startup and every reconnection check for undelivered messages.
+            # Check for undelivered owner messages at startup, right after every
+            # reconnection, and periodically: a single read can be transiently
+            # incomplete, and Slack can drop events while nominally connected.
+            from .slack_backfill import RECHECK_SECONDS, backfill
             recover_at=0
             while True:
                 connected=connection.connected()
-                if not connected:recover_missed=True
+                if not connected:recover_at=0
                 if health(store.home,connected,release,cycle_completed):
                     time.sleep(1)
                     continue
-                if connected and recover_missed and time.monotonic()>=recover_at:
-                    from .slack_backfill import backfill
+                if connected and time.monotonic()>=recover_at:
                     try:
                         backfill(store, config, app.client, service.bot_user_id)
-                        recover_missed=False
+                        recover_at=time.monotonic()+RECHECK_SECONDS
                     except Exception:
                         # Never let recovery stop live handling; retry with a bounded delay.
                         print("Could not check for missed Slack messages; retrying later.", file=sys.stderr)
