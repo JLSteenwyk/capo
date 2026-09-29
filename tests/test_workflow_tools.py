@@ -41,6 +41,14 @@ class WorkflowTests(unittest.TestCase):
         again = self.tools.start('project', 'Clarify the setup steps', False, 'operation')
         self.assertEqual(result, again)
         self.assertFalse(result['completed'])
+        # A queued objective proves the handoff, never completion of the work.
+        from capo.request_outcomes import successful_action
+        from capo.research_tools import ReadTools
+        registry = ReadTools(self.tools.tools())
+        receipt = {'tool': 'development.start', 'result': result}
+        self.assertTrue(result['handoff_completed'])
+        self.assertTrue(successful_action(receipt, registry, 'handoff'))
+        self.assertFalse(successful_action(receipt, registry, 'action'))
         self.assertEqual(len(self.store.list()), 1)
         row = self.store.get(result['objective_id'])
         self.assertEqual(row['checks'], [['python3', '-c', 'print(1)']])

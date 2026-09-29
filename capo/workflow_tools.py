@@ -102,9 +102,10 @@ class WorkflowTools:
                 text = service.dispatch(key, forwarded, context_prepared=True)
                 created = next((r for r in service.store.list()
                     if r.get('source') == 'slack:'+self.config['team_id']+':'+key), None)
+                # A durably created objective is a confirmed handoff, not a completion.
                 return {'message': text, 'objective_id': created['id'] if created else '',
                         'status': created['status'] if created else 'recorded',
-                        'completed': False}
+                        'completed': False, 'handoff_completed': created is not None}
             return Effects(self.home, owner_key(self.config)).run(operation_id, receipt, execute)
 
     def start(self, repository, instructions, self_improvement, operation_id):
@@ -179,8 +180,8 @@ class WorkflowTools:
             ReadTool('development.list', 'Discover this owner’s coding objectives, statuses and threads.', object_schema({}), self.list),
             ReadTool('development.inspect', 'Inspect an owner coding objective and its publication link. The controlled workflow handles implementation, verification, review and publication under repository policy. Use development.policy for effective permissions; eligible routine work can publish and merge under standing owner authorization.', object_schema({'id': TEXT}), self.inspect),
             ReadTool('development.prepare','Prepare an existing verified candidate for owner review in its original thread. The host delivers the exact review preview. Does not publish, approve, merge, or weaken repository policy.',object_schema({'id':TEXT}),self.prepare,True),
-            ReadTool('development.start', 'Delegate explicitly requested repository work to the existing coding workflow. Preserve the whole owner objective in a bounded brief. This queues work; it does not mean implementation is complete. Eligible routine changes can publish and merge automatically under repository policy; consult development.policy rather than assuming every change requires approval. Do not turn monitoring or a request for advice into permission to edit code.',
-                object_schema({'repository': TEXT, 'instructions': TEXT, 'self_improvement': {'type': 'boolean'}}), self.start, True),
+            ReadTool('development.start', 'Delegate explicitly requested repository work to the existing coding workflow. Preserve the whole owner objective in a bounded brief. This queues work; it does not mean implementation is complete. When the result has handoff_completed=true, report it as kind=handoff and finish: the workflow posts its plan and result in this thread, so do not poll development.inspect. Eligible routine changes can publish and merge automatically under repository policy; consult development.policy rather than assuming every change requires approval. Do not turn monitoring or a request for advice into permission to edit code.',
+                object_schema({'repository': TEXT, 'instructions': TEXT, 'self_improvement': {'type': 'boolean'}}), self.start, True, handoff=True),
             ReadTool('development.manage', 'Follow up or cancel an owner coding objective in its original thread. Does not approve publication or merge. For cancel, instructions may be empty.',
                 object_schema({'id': TEXT, 'action': {'type': 'string', 'enum': ['followup', 'cancel']}, 'instructions': TEXT}), self.manage, True)]
         if self.config.get('browser', {}).get('enabled'):
