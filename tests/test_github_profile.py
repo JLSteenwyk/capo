@@ -104,7 +104,11 @@ class ProfileTests(unittest.TestCase):
             result=adapter.pull_requests('example/ok','open','1')
             self.assertEqual(result['pull_requests'],[]);self.assertEqual(result['next_page'],'2')
             client.get.return_value=(json.dumps({'body':'Related to Excluded Company','number':1}),False)
-            with self.assertRaises(PermissionError):adapter.pull_request('example/ok','1')
+            # Excluded content in an allowed repository is withheld without aborting the run.
+            from capo.github_tools import OutOfScope, GitHubReadError
+            with self.assertRaises(OutOfScope) as withheld:adapter.pull_request('example/ok','1')
+            self.assertIsInstance(withheld.exception, GitHubReadError)
+            self.assertNotIn('Excluded Company', str(withheld.exception))
             for name in ('example/../private','https://evil','Excluded-Org/private'):
                 with self.assertRaises((ValueError,PermissionError)):adapter.issues(name)
 

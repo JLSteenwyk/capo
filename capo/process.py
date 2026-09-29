@@ -146,6 +146,9 @@ def run_process(argv, cwd, directory, timeout, stdin=None):
     output = (directory / "stdout.txt").read_text(errors="replace")
     if process.returncode == 124:
         raise subprocess.TimeoutExpired(argv, timeout)
+    if process.returncode == 127:
+        # Classified as a temporary unavailability, so the caller retries later.
+        raise FileNotFoundError(f"{Path(argv[0]).name} was not found; it may be updating")
     if process.returncode:
         raise WorkerError(f"{Path(argv[0]).name} exited {process.returncode}; inspect {directory}")
     return output

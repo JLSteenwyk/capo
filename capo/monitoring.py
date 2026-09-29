@@ -176,7 +176,9 @@ class Monitor:
                     'needs_owner':state.get('needs_owner',False),
                     'references':[reference(x) for x in state.get('items',[])]})
         return [{'id':'monitor-failure:'+key,'kind':'connection',
-                 'title':'Commitment review needs attention','summary':notice_text(value)}
+                 'title':'Commitment review needs attention','summary':notice_text(value),
+                 'source_label':value.get('label',''),'attempts':value.get('attempts',RETRIES),
+                 'status':'authentication' if value.get('needs_owner') else 'review_failed'}
                 for key,value in failures.items()
                 if (value.get('needs_owner') or value.get('attempts',RETRIES)>=RETRIES)
                 and (not value.get('references') or self.observations.unresolved(value['references']))][:3]

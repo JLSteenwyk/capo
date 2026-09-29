@@ -25,6 +25,24 @@ def diagnosis(exc):
     return 'unavailable', 'Inspect the connection and saved run details. Completion is not confirmed.'
 
 
+def cause(run, state):
+    """Plain reason for an automation problem, from recorded state, not provider text."""
+    run = run or {}
+    status = run.get('status')
+    if state == 'missed' or not run: return 'it did not run at its scheduled time'
+    if status == 'undelivered': return 'its message was never posted'
+    if status == 'delivery_unknown' or run.get('delivery_error') == 'unconfirmed':
+        return 'Capo could not confirm its message was posted'
+    summary = run.get('error_summary', '')
+    if 'permission or task scope' in summary: return 'it stopped when a source it tried to read was off-limits'
+    if 'connection' in summary.lower(): return 'the connection kept failing while it ran'
+    if 'usage limit' in summary: return 'the AI usage limit was reached'
+    if status in ('failed', 'expired'): return 'it did not finish in time'
+    if run.get('verification_incomplete'): return 'it stopped partway through'
+    if run.get('outcome_status') == 'partial': return 'it only covered part of what it checks'
+    return 'it reported a problem'
+
+
 class Health:
     def __init__(self, home, config):
         from .capabilities import owner_key
@@ -152,6 +170,7 @@ class Health:
             if state in ('failed','expired','delivery_unknown') or problems or outcome == 'partial' or (state=='sending' and (run or {}).get('delivery_error')=='unconfirmed'): state = 'needs_attention'
             elif state not in ('sent','quiet','cancelled') and now.timestamp() > (run or {}).get('deadline', deadline): state = 'missed'
             results.append({'title': title, 'schedule_id': sid, 'due_at': latest.isoformat(), 'status': state,
+                            'cause': cause(run, state),
                             'next_action': (' '.join(problems[:2]) or (run or {}).get('error_summary') or
                                             ('Slack delivery is unconfirmed. Reconcile the saved message; do not resend blindly.' if (run or {}).get('delivery_error')=='unconfirmed' else '') or
                                             'This check is incomplete. Capo needs to inspect its saved results before retrying.')

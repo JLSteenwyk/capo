@@ -84,7 +84,13 @@ def main():
         os.close(gate)
         if ready != b"1":
             return 125
-        os.execvp(sys.argv[3], sys.argv[3:])
+        try:
+            os.execvp(sys.argv[3], sys.argv[3:])
+        except FileNotFoundError:
+            # The command is absent, e.g. while its CLI updates itself. Report the
+            # conventional "command not found" status so the caller can retry.
+            print(f"{Path(sys.argv[3]).name}: command not found", file=sys.stderr)
+            return 127
     parent_fd, timeout = int(sys.argv[1]), float(sys.argv[2])
     stopped = False
 

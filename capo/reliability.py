@@ -61,6 +61,7 @@ def review(home, config, now):
                 items.append({'id':'request-health:'+key,'kind':'connection','title':'A saved request needs inspection',
                     'status':status,'repeated_failures':sum(bool(r.get('error')) for r in checkpoint.get('receipts',[]))>=3,
                     'url':'https://app.slack.com/archives/'+event['channel']+'/p'+thread.replace('.',''),
+                    'started_at':started,
                     'next_action':'Inspect saved results and current service state. Do not repeat unconfirmed actions.'})
             except (ValueError,KeyError,TypeError,AttributeError,OSError):
                 if not owned:continue

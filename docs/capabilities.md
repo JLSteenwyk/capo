@@ -346,6 +346,19 @@ Automation alerts use stable schedule/status identifiers to avoid repeating the 
 problem merely because its wording changed. Current schedule health takes precedence
 over historical failed runs.
 
+The hourly check always evaluates owner items; Capo's own operational problems never
+replace them. Host code (`capo/issue_text.py`) words each problem from structured
+facts: what is affected, when, a plain cause and what happens next. Problems the
+owner must act on (a login to renew, an unfinished request, an email Capo could not
+review) join the attention list; self-resolving ones share one "Behind the scenes"
+line. Internal bookkeeping such as receipts and checkpoints stays out of Slack, and
+health output identifies requests by time and thread link, never by quoting them.
+A message whose Slack post stays unconfirmed after complete history checks spanning
+a day is recorded as `undelivered`: it is neither resent nor alerted again.
+One excluded GitHub source is withheld as a per-read result instead of aborting a
+multi-repository check, and a provider command that is briefly absent (for example,
+while its CLI updates) is retried as a temporary outage.
+
 ### Bounded follow-ups and fresh state
 
 A failed commitment-review batch no longer blocks other changed sources. Each source

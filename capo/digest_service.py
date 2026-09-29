@@ -66,7 +66,7 @@ class DigestManager:
         return self.db.get(key)
 
     def advance(self,run,now):
-        if run['status'] in ('sent','expired','failed','sending','delivery_unknown'):return
+        if run['status'] in ('sent','expired','failed','sending','delivery_unknown','undelivered'):return
         if now.timestamp() >= run['deadline']:
             run['status']='expired';self.db.save(run,now);return
         if now.timestamp()<run.get('retry_at',0):return
@@ -164,15 +164,16 @@ class DigestManager:
     def _deliver(self,run,now):
         if now.timestamp() < run.get('not_before',0):return
         if run['status'] in ('sending','delivery_unknown'):
+            complete=True
             try:ts=self.reconcile(run)
             except Exception:
-                ts=None
+                ts=None;complete=False
             if ts:
                 self.db.delivered(run,ts,now);return
             # Empty or delayed history is not proof that Slack rejected the post.
             # Preserve uncertainty instead of risking another message.
             from .delivery_recovery import defer
-            defer(run,now.timestamp())
+            defer(run,now.timestamp(),history_complete=complete)
             self.db.save(run,now);return
         if now.timestamp()>=run['deadline']:
             run['status']='expired';self.db.save(run,now);return
