@@ -30,6 +30,9 @@ def owner_message_record(text, event):
         value['sent_at']=datetime.fromtimestamp(float(event['ts']),timezone.utc).isoformat()
     except (KeyError,TypeError,ValueError,OverflowError,OSError):
         value['timestamp_coverage']='Message timestamp unavailable; do not infer source dates.'
+    if event.get('capo_recovered'):
+        value['delivery_note']=('Received late after a connection outage. Resolve relative dates such as "today" '
+                                'or "tomorrow" from sent_at, and say so if the requested time has already passed.')
     return value
 
 
@@ -264,6 +267,12 @@ def ingest(home, config, body):
                 if (prior.get("team_id") == body.get("team_id")
                         and all(previous.get(k) == event.get(k) for k in ("channel", "user", "ts", "text"))
                         and previous.get("type") != event.get("type")):
+                    return False
+                # A message recovered after an outage and its late live delivery
+                # are the same message, whichever arrives first.
+                if ((previous.get("capo_recovered") or event.get("capo_recovered"))
+                        and prior.get("team_id") == body.get("team_id")
+                        and all(previous.get(k) == event.get(k) for k in ("channel", "user", "ts"))):
                     return False
             store.enqueue_slack(body["event_id"], body)
     finally:
@@ -996,10 +1005,23 @@ def serve(home, config_path):
             from .update_runtime import health
             release=os.environ.get('CAPO_RELEASE','development')
             cycle_completed=False
+            recover_missed=True  # Startup and every reconnection check for undelivered messages.
+            recover_at=0
             while True:
-                if health(store.home,connection.connected(),release,cycle_completed):
+                connected=connection.connected()
+                if not connected:recover_missed=True
+                if health(store.home,connected,release,cycle_completed):
                     time.sleep(1)
                     continue
+                if connected and recover_missed and time.monotonic()>=recover_at:
+                    from .slack_backfill import backfill
+                    try:
+                        backfill(store, config, app.client, service.bot_user_id)
+                        recover_missed=False
+                    except Exception:
+                        # Never let recovery stop live handling; retry with a bounded delay.
+                        print("Could not check for missed Slack messages; retrying later.", file=sys.stderr)
+                        recover_at=time.monotonic()+60
                 try:
                     service.tick()
                     cycle_completed=True
