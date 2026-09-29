@@ -504,6 +504,15 @@ Invalid or revoked credentials still require reconnection of the account; a
 watchdog cannot repair revoked access. This mechanism repairs a disconnected
 client; it is not an end-to-end message delivery probe or a process supervisor.
 
+Capo marks the owner's own messages with status reactions (`reactions:write`):
+👀 when it picks a request up, replaced by ✅ once the reply is delivered and the
+request completed, or ⚠️ when it could not finish (a failed or partial outcome).
+For a message that needs no text answer, the conversation can call
+`slack.acknowledge`; Capo then reacts 👍 and posts no reply. Only the current
+authenticated owner message can be acknowledged. Reactions are presentation
+only: Slack errors are ignored and never block or repeat the reply, and durable
+state avoids an API call per service tick while a request is pending.
+
 Socket Mode does not replay events sent during an outage. At startup, after
 each reconnection and every five minutes, the service reads the configured channel and its recently
 active threads (24 hours, at most 20 messages) and queues owner messages that

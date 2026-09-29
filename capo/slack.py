@@ -842,6 +842,8 @@ class SlackService:
 
     def process_messages(self):
         from .conversation import ConversationError, ConversationPending
+        from .slack_status_reactions import StatusReactions, acknowledged
+        reactions = StatusReactions(self.store, self.config, self.client)
 
         for event_id, body in self.store.pending_slack():
             # Recheck policy after restart or configuration changes.
@@ -852,7 +854,9 @@ class SlackService:
                                         (event_id,)).fetchone()
             if row is None:
                 self.activity_status(body["event"])
+                reactions.received(event_id, body["event"])
                 self.pending_review = None
+                failed = False
                 try:
                     text = self.dispatch(event_id, body)
                 except ConversationPending:
@@ -860,13 +864,18 @@ class SlackService:
                 except ConversationError as exc:
                     text = str(exc)
                     self.pending_review = None
+                    failed = True
                 except (ValueError, RuntimeError, OSError) as exc:
                     text = f"Could not handle this request: {exc}"
                     self.pending_review = None
+                    failed = True
                 from .message_format import plain_text
-                data = {"text": plain_text(text), "review": self.pending_review}
+                data = {"text": plain_text(text), "review": self.pending_review, "failed": failed}
                 from .message_format import slack_chunks
                 data["chunks"] = slack_chunks(data["text"])
+                if acknowledged(self.store, event_id) and not failed and not data["review"]:
+                    # The conversation chose a 👍 reaction instead of a text reply.
+                    data.update(text="", chunks=[])
                 self.pending_review = None
                 with self.store.db:
                     self.store.db.execute("INSERT INTO slack_deliveries(event_id,data) VALUES (?,?)",
@@ -903,6 +912,7 @@ class SlackService:
                         self.store.save(objective, "slack_preview_delivered")
             self.store.finish_slack(event_id)
             self.activity_status(body["event"], active=False)
+            reactions.finished(event_id, body["event"], failed=data.get("failed", False))
 
     def tick(self):
         from . import browser_slack

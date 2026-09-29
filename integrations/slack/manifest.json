@@ -18,7 +18,8 @@
         "groups:read",
         "channels:history",
         "groups:history",
-        "files:read"
+        "files:read",
+        "reactions:write"
       ]
     }
   },

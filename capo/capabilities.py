@@ -80,6 +80,8 @@ def shared_tools(home,config,documents,request=None):
     if request and request.get('owner_request') and all(config.get(k) for k in ('team_id', 'channel_id', 'owner_user_id')):
         from .workflow_tools import WorkflowTools
         tools.extend(WorkflowTools(home, config, request).tools())
+        from .slack_status_reactions import AcknowledgeTool
+        tools.append(AcknowledgeTool(home, config, request).tool())
     from .web_tools import WebTools
     tools.extend(WebTools(home).tools())
     from .social_tools import SocialTools, settings as social_settings
@@ -207,8 +209,9 @@ class CapabilityConversation(ConversationRouter):
             key=self.documents.save(directory,result)
             _write(directory/'research.json',result)
             if key:_write(directory/'document.json',{'id':key,'title':result['document_title'],'content':result['document']})
-            reply=result['reply']
+            reply=result['reply'];status=result.get('status','complete')
         except Exception as exc:
+            status='failed'
             from .recovery import RetryLater
             if isinstance(exc, RetryLater):
                 _write(directory/'retry.json', {'retry_at': exc.retry_at})
@@ -230,5 +233,5 @@ class CapabilityConversation(ConversationRouter):
                 from .request_memory import RequestMemory
                 RequestMemory(self.home,owner_key(self.config),context['request_thread']).record(
                     context.get('request_event',str(directory)), 'outcome', {'reply':reply})
-            _write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply}})
+            _write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply},'status':status})
         finally:os.close(fd)
