@@ -156,6 +156,16 @@ class ImprovementCase(unittest.TestCase):
         verify_governance_changes(objective, [{"path": "capo/new_feature.py", "content": "", "delete": False}])
         verify_governance_changes(objective, [{"path": "tests/test_feature.py", "content": "", "delete": False}])
 
+    def test_autonomous_jobs_may_edit_core_modules_but_they_are_recorded(self):
+        from capo.improvement import record_core_changes
+        objective = self.queue()
+        self.assertEqual(record_core_changes(objective, [{"path": "capo/new_feature.py"}]), [])
+        self.assertNotIn("core_changes", objective)
+        self.assertEqual(record_core_changes(objective, [{"path": "capo/slack.py"}, {"path": "CAPO/Runtime.py"}]),
+                         ["capo/runtime.py", "capo/slack.py"])
+        record_core_changes(objective, [{"path": "capo/updater.py"}])
+        self.assertEqual(objective["core_changes"], ["capo/runtime.py", "capo/slack.py", "capo/updater.py"])
+
     def test_ordinary_objective_cannot_bypass_capo_governance(self):
         objective = self.queue()
         objective["kind"] = "development"

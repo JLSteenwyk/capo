@@ -74,6 +74,11 @@ def assess(objective, change_scope='routine'):
         names = [name for name in names if name]
         if not names or (not features and len(names) > 3):
             return refuse('Routine delivery is limited to three changed files.')
+        from .improvement import core_changes
+        touched = core_changes(objective, [{'path': name} for name in names])
+        if touched or objective.get('core_changes'):
+            return refuse('It changes Capo core files ('+', '.join((touched or objective['core_changes'])[:5])+
+                          '), which need your approval before merging.')
         verify_governance_changes(objective, [{'path': name} for name in names])
         source_lines = test_lines = doc_lines = 0
         for name in names:

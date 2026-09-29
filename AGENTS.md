@@ -10,7 +10,7 @@ The platform and CLI are named Capo. The team display name is configurable and d
 
 Run `python3 -m unittest discover -s tests -q` for meaningful runtime/integration changes. Slack support is optional: install with `python3 -m pip install -e '.[slack]'` when testing the real SDK adapter. Unit tests must not invoke live providers or send Slack/GitHub messages.
 
-Self-improvement runs in a separate candidate checkout against frozen original tests and current candidate tests. Do not weaken credential handling, permissions, execution limits, regression checks, or acceptance gates to make a task succeed. Preserve explicitly configured provider selection and surface integration failures.
+Self-improvement runs in a separate candidate checkout against frozen original tests and current candidate tests. Autonomous jobs may edit Capo's core enforcement modules (`CORE_ENFORCEMENT` in `capo/improvement.py`) when an owner request requires it, but such changes never publish or merge automatically: they are held for the owner's approval in the Slack thread. Do not weaken credential handling, permissions, execution limits, regression checks, or acceptance gates to make a task succeed. Preserve explicitly configured provider selection and surface integration failures.
 
 ## Architecture: reusable capabilities first
 

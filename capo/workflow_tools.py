@@ -55,7 +55,7 @@ class WorkflowTools:
                     'routine_scope': ('Python/Markdown feature changes may add source files, functions, classes, interfaces and imports without the routine file-count or changed-line limits. Sensitive configuration, protected enforcement modules, dependencies, migrations, deletions and nonregular files still need review.' if settings.get('automatic_change_scope')=='features' else 'Up to three Python/Markdown files; bounded changes to existing function bodies, tests or prose. No new source interfaces, imports, sensitive configuration or core enforcement changes.'),
                     'public_repository_rule':'Treat code and PR metadata as public. Never publish private conversations, mail, calendar records, personal preferences, credentials, local paths or runtime artifacts. Use synthetic examples. Private-data checks and independent review remain required.',
                     'requirements': 'Passing configured checks, independent review, final acceptance, and verification of the exact candidate. Merge waits for passing GitHub checks and a clean matching PR; then removes the unchanged work branch.',
-                    'outside_routine_scope': 'Owner review is required. Core enforcement changes need review outside autonomous apply.',
+                    'outside_routine_scope': 'Owner review is required. Jobs may change Capo core enforcement modules, but those changes never merge automatically; the owner approves them in the thread.',
                 })
             from .updater import status
             return {'repositories': repositories, 'deployment_status': status(self.home),

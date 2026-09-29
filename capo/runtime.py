@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .communication import STYLE
 from .contracts import DECISION, IMPLEMENTATION, PLAN, REVIEW, validate
-from .improvement import verify_baseline, verify_governance_changes
+from .improvement import record_core_changes, verify_baseline
 from .providers import Providers, run_process
 from .process import CleanupUncertain, reconcile_local
 from .repository import apply_changes, changed_diff, create_workspace, git, snapshot
@@ -268,6 +268,8 @@ class Runtime:
                 "candidate acceptance criteria. "
                 "Give concrete acceptance criteria. This first version handles small text/code changes; "
                 "protected configuration and omitted files cannot be edited. "
+                "Capo core modules may be edited when the objective requires it; such changes are held "
+                "for the owner's approval before merging, so keep them minimal. "
                 "If indispensable information is missing and cannot be inferred safely, return tasks=[] "
                 "and put one concise question for the owner in summary. Do not ask for credentials. "
                 "For entirely new functions or substantial new functionality, first propose the scope "
@@ -309,7 +311,7 @@ class Runtime:
                 for change in report["changes"]:
                     if change["path"] in current["omitted"]:
                         raise ValueError(f"Cannot edit an omitted file: {change['path']}")
-                verify_governance_changes(objective, report["changes"])
+                record_core_changes(objective, report["changes"])
                 apply_changes(workspace, report["changes"])
                 objective["next_task"] = index + 1
                 objective["status"] = "queued"

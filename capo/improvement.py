@@ -98,11 +98,11 @@ CORE_ENFORCEMENT = frozenset({
 })
 
 
-def verify_governance_changes(objective, changes):
-    """Keep autonomous proposals outside existing Capo enforcement modules.
+def core_changes(objective, changes):
+    """Protected Capo enforcement paths touched by these changes.
 
     Detect the pinned source tree as well as the objective kind so using `add`
-    instead of `improve` cannot turn off this boundary.
+    instead of `improve` cannot hide a change to Capo itself.
     """
     is_capo = objective.get("kind") == "self_improvement"
     if not is_capo:
@@ -111,11 +111,32 @@ def verify_governance_changes(objective, changes):
                     "capo/runtime.py", "tests").splitlines()
         is_capo = "capo/runtime.py" in names and any(name.startswith("tests/") for name in names)
     if not is_capo:
-        return
+        return []
     from pathlib import PurePosixPath
+    touched = []
     for change in changes:
         name = str(PurePosixPath(change["path"])).lower()
         if any(name == protected or protected.startswith(name + "/")
                or (protected.endswith(".py") and name.startswith(protected[:-3] + "/"))
                for protected in CORE_ENFORCEMENT):
-            raise ValueError("Core enforcement changes require owner review outside autonomous apply: " + name)
+            touched.append(name)
+    return sorted(set(touched))
+
+
+def record_core_changes(objective, changes):
+    """Autonomous jobs may edit core modules, but such work is held for owner approval.
+
+    The touched paths stay on the objective so automatic publication and merge
+    refuse it; the owner approves the prepared change in Slack instead.
+    """
+    touched = core_changes(objective, changes)
+    if touched:
+        objective["core_changes"] = sorted(set(objective.get("core_changes", [])) | set(touched))
+    return touched
+
+
+def verify_governance_changes(objective, changes):
+    """Refuse automatic delivery of any change to Capo's core enforcement modules."""
+    touched = core_changes(objective, changes)
+    if touched:
+        raise ValueError("Core enforcement changes require owner review before merging: " + ", ".join(touched))

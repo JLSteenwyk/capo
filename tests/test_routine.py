@@ -83,6 +83,18 @@ class RoutineCase(unittest.TestCase):
         self.objective['kind'] = 'self_improvement'
         self.assertFalse(self.accepted({'capo/runtime.py': self.original})['eligible'])
 
+    def test_core_changes_are_held_for_owner_approval_even_in_feature_scope(self):
+        self.objective['kind'] = 'self_improvement'
+        result = self.accepted({'capo/slack.py': 'value = 1\n', 'capo/slack_reactions.py': 'value = 2\n'}, 'features')
+        self.assertFalse(result['eligible'])
+        self.assertIn('capo/slack.py', result['reason']); self.assertIn('your approval', result['reason'])
+        # A recorded core edit is held even if the accepted tree no longer shows it.
+        (self.repo / 'capo/slack.py').unlink()
+        self.objective['core_changes'] = ['capo/slack.py']
+        self.assertFalse(self.accepted({'capo/slack_reactions.py': 'value = 3\n'}, 'features')['eligible'])
+        del self.objective['core_changes']
+        self.assertTrue(self.accepted({'capo/slack_reactions.py': 'value = 4\n'}, 'features')['eligible'])
+
     def test_decorator_rejected(self):
         self.assertFalse(self.accepted({'parser.py': '@staticmethod\n' + self.original})['eligible'])
 
