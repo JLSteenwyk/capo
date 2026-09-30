@@ -53,10 +53,15 @@ class AssignmentTests(unittest.TestCase):
         finish(run,report('new-price'),report());self.assertEqual(run['status'],'ready')
         empty=report(findings=[]);finish(run,empty,report());self.assertEqual(run['status'],'quiet')
         finish(run,report(),empty);self.assertEqual(run['status'],'ready')
+        # Model-written blockers are kept for health checks, not posted as alerts.
         blocked=report(findings=[],blockers=['Mail needs authorization.'])
-        finish(run,blocked,{});self.assertEqual(run['status'],'ready')
-        finish(run,blocked,blocked);self.assertEqual(run['status'],'quiet')
+        finish(run,blocked,{});self.assertEqual(run['status'],'quiet')
         self.assertEqual(run['report']['blockers'],blocked['blockers'])
+        # A host-detected incomplete run is announced plainly; a failed run is never shown as clean.
+        incomplete={'title':'Watch','verification_incomplete':True};finish(incomplete,blocked,{})
+        self.assertEqual(incomplete['status'],'ready')
+        self.assertIn('could not finish',incomplete['payload']['text']);self.assertNotIn('authorization',incomplete['payload']['text'])
+        failed={'title':'Watch','status':'failed'};finish(failed,blocked,{});self.assertEqual(failed['status'],'failed')
 
     def test_report_requires_bounded_sources_and_unique_keys(self):
         with tempfile.TemporaryDirectory() as tmp:

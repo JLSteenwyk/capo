@@ -84,6 +84,16 @@ class Runtime:
         if capacity:
             provider, route = capacity.choose(provider, allowed or [provider])
         context = dict(context, owner_followups=objective.get("followups", []), delegated_provider=provider)
+        from .providers import StructuredOutputError
+        try:
+            return self._attempt(objective, provider, role, schema, context, route)
+        except StructuredOutputError:
+            # One bounded retry for a reply that was not the requested JSON. It
+            # spends the same call budget and adds only a format reminder.
+            context = dict(context, format_retry='Your previous reply was not JSON matching the schema. Return only that JSON.')
+            return self._attempt(objective, provider, role, schema, context, None)
+
+    def _attempt(self, objective, provider, role, schema, context, route):
         if objective["calls"] >= objective["max_calls"]:
             raise ValueError("Objective worker-call budget exhausted")
         objective["calls"] += 1

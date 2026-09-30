@@ -119,24 +119,30 @@ def due_soon(item, today):
 
 
 def finish(run, report, previous, timezone='UTC'):
-    """Deliver changes only; a follow-up in the original's thread adds findings only.
+    """Deliver new findings and due-date reminders only.
 
     A previously reported finding with an action date is shown once more shortly
-    before that date, so an unchanged renewal is not silently dropped.
+    before that date, so an unchanged renewal is not silently dropped. Blockers
+    stay in the saved report: health checks surface incomplete or failed runs in
+    plain language, so model-written coverage notes are never posted as alerts.
+    A follow-up in the original's thread adds new findings only.
     """
     seen = {fingerprint(item) for item in previous.get('findings', [])}
     new = [item for item in report['findings'] if fingerprint(item) not in seen]
     followup = bool(run.get('recovery_of') and run.get('thread_ts'))
-    # Follow-up blockers restate the original's coverage in new words.
-    blockers = [] if followup else [item for item in report['blockers'] if item not in previous.get('blockers', [])]
     today = datetime.fromtimestamp(run.get('created', 0), ZoneInfo(timezone)).date()
     reminded = set(previous.get('reminded', []))
     upcoming = [] if followup else [item for item in report['findings'] if fingerprint(item) in seen
                                     and fingerprint(item) not in reminded and due_soon(item, today)]
     report['reminded'] = sorted(reminded | {fingerprint(item) for item in upcoming})
     run['report'] = report
-    if not new and not blockers and not upcoming:
-        run['status'] = 'quiet'
+    if not new and not upcoming:
+        if run.get('verification_incomplete') and not followup:
+            # A host-detected failure is still announced, in plain words.
+            run.update(status='ready', payload={'text': run['title'] + ': this check could not finish, so nothing new '
+                       'was confirmed. It will run again at its next scheduled time.', 'news': []})
+        elif run.get('status') != 'failed':  # Never mask a failed run as a clean check.
+            run['status'] = 'quiet'
         return
     # Deliver the bounded actual findings, never an empty model preamble.
     lines = ['Follow-up: new since the earlier check' if followup else run['title']]
@@ -149,7 +155,6 @@ def finish(run, report, previous, timezone='UTC'):
         when = date.fromisoformat(item['due'])
         label = 'today' if when == today else when.strftime('%a %b %-d')
         lines.append(f'- Reminder, {label}: ' + finding_text(item) + _link(item))
-    lines.extend('- Needs attention: ' + item for item in blockers[:2])
     run.update(status='ready', payload={'text': '\n'.join(lines), 'news': []})
 
 

@@ -17,6 +17,10 @@ def decode_json(text):
     return value
 
 
+class StructuredOutputError(WorkerError):
+    """The provider answered, but not with JSON matching the requested schema."""
+
+
 class AuthenticationError(WorkerError):
     """Provider login needs attention; safe to identify without exposing output."""
 
@@ -181,6 +185,8 @@ class Providers:
             else:
                 output = run_cli("Grok", argv, cwd, directory, self.timeout)
             envelope = decode_json(output)
+            if envelope.get("structuredOutputError") and envelope.get("stopReason", "end_turn") == "end_turn":
+                raise StructuredOutputError(f"Grok did not return the requested JSON; inspect {directory}")
             if (envelope.get("is_error") or envelope.get("error")
                     or envelope.get("type") == "error"
                     or envelope.get("stopReason", "end_turn") != "end_turn"):
@@ -191,7 +197,10 @@ class Providers:
             if result is None:
                 result = envelope.get("result", envelope.get("text", envelope))
             if isinstance(result, str):
-                result = decode_json(result)
+                try:
+                    result = decode_json(result)
+                except ValueError:
+                    raise StructuredOutputError(f"Grok did not return the requested JSON; inspect {directory}") from None
         else:
             raise ValueError(f"Unknown provider: {provider}")
         if not isinstance(result, dict):
