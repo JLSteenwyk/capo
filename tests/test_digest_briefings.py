@@ -43,16 +43,16 @@ class BriefingTests(unittest.TestCase):
         def run(provider,tools,request,directory,**kwargs):
             requests.append(request)
             tools.call('monitor.report',dict(findings=[],blockers=['Search allowance ran out.'],coverage='Four artist pages.',
-                       checked=['Bon Iver','Lucy Dacus','Regina Spektor']),operation_id='report')
+                       checked=['Example Trio','Sample Duo','Placeholder Band']),operation_id='report')
             return {'status':'partial'}
         with tempfile.TemporaryDirectory() as tmp,patch('capo.digest_briefings.research',side_effect=run):
             home=Path(tmp)
             first=collect(home,config,home/'one',{},provider=object())
-            self.assertEqual(first['text'],'Music & Bay Area concerts\nNothing new for Bon Iver, Lucy Dacus and Regina Spektor. '
+            self.assertEqual(first['text'],'Music & Bay Area concerts\nNothing new for Example Trio, Sample Duo and Placeholder Band. '
                              'The rest weren’t reached today; they’re next in the rotation.')
             self.assertEqual(requests[0]['recently_checked'],[])
             collect(home,config,home/'two',{},provider=object())
-            self.assertEqual({row['name'] for row in requests[1]['recently_checked']},{'Bon Iver','Lucy Dacus','Regina Spektor'})
+            self.assertEqual({row['name'] for row in requests[1]['recently_checked']},{'Example Trio','Sample Duo','Placeholder Band'})
 
     def test_checked_names_are_optional_and_bounded(self):
         from capo.assignment_reports import AssignmentReport
