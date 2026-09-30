@@ -14,7 +14,10 @@ FINDING = object_schema({'key': TEXT, 'version': TEXT, 'summary': TEXT, 'source'
 FINDING['required'] = ['key', 'version', 'summary', 'source']
 DUE_SOON_DAYS = 3
 REPORT = object_schema({'findings': {'type': 'array', 'items': FINDING},
-                        'blockers': TEXTS, 'coverage': TEXT})
+                        'blockers': TEXTS, 'coverage': TEXT, 'checked': TEXTS})
+# `checked` (short names of entities actually inspected) is optional; it lets
+# recurring checks rotate coverage and tell the owner what was covered.
+REPORT['required'] = ['findings', 'blockers', 'coverage']
 
 
 class AssignmentReport:
@@ -26,6 +29,7 @@ class AssignmentReport:
                 'relationship': {'type':'string','enum':['none','direct','related']}, 'why': TEXT})
             finding['required'] = [k for k in finding['required'] if k != 'due']
             self.schema = object_schema({**REPORT['properties'], 'findings':{'type':'array','items':finding}})
+            self.schema['required'] = REPORT['required']
         self.path = directory / 'assignment-report.json'
 
     def record(self, operation_id=None, **report):
@@ -50,6 +54,8 @@ class AssignmentReport:
                                  'not receipt numbers. For private sources without a browser link, use the actual source identifier.')
         if any(not item.strip() or len(item) > 1000 for item in report['blockers']):
             raise ValueError('Use short specific blockers')
+        if len(report.get('checked', [])) > 30 or any(not n.strip() or len(n) > 80 for n in report.get('checked', [])):
+            raise ValueError('List at most 30 checked names, each under 80 characters')
         _write(self.path, report)
         return {'recorded': True, 'saved': True, 'report': report}
 
@@ -63,6 +69,8 @@ class AssignmentReport:
             'Reuse prior keys/versions if facts did not change. Empty findings means nothing actionable in checked sources. '
             'Set due (YYYY-MM-DD) only for a verified deadline, renewal, expiry or event date the owner may need to act on; '
             'the host uses it to remind the owner shortly before that date. '
+            'List in checked the short names of the entities you actually inspected (for example artists or repositories), '
+            'not ones you only planned to check. '
             'Missing access or incomplete essential checks belong in blockers; never treat failures as a clean check. '
             'Ordinary page/window limits belong in coverage, not blockers, unless they prevent the requested check. '
             'Do not request bank access or other integrations that the assignment does not require. '
