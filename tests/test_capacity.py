@@ -72,6 +72,18 @@ class CapacityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.capacity.choose('claude', ['grok'])
 
+    def test_model_at_capacity_marks_provider_limited_so_routing_fails_over(self):
+        from capo.providers import Providers
+        failure = ('{"type":"error","message":"Selected model is at capacity. Please try a different model."}\n'
+                   '{"type":"turn.failed","error":{"message":"Selected model is at capacity. Please try a different model."}}')
+        provider = Providers(timeout=5, config={'grok': {'transport': 'local'}}, capacity=self.capacity)
+        import time
+        with patch('capo.providers.run_cli', return_value=failure), self.assertRaises(RateLimited) as error:
+            provider.call('codex', 'Answer.', {'type': 'object'}, self.root, self.root / 'attempt')
+        self.assertAlmostEqual(error.exception.reset_at, time.time() + 600, delta=30)
+        self.assertEqual(self.capacity.choose('claude', ['claude', 'codex'])[0], 'claude')
+        self.assertEqual(self.capacity.choose('codex', ['codex', 'claude'])[0], 'claude')
+
     def test_refresh_cache_failure_redaction_and_recovery(self):
         probe = Mock(return_value=[window(10)])
         self.capacity.probes = {'codex': probe}

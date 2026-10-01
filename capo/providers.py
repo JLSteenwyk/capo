@@ -52,6 +52,10 @@ def reported_failure(envelope, provider, directory):
         except (TypeError, ValueError, OverflowError):
             pass
         raise RateLimited(reset)
+    if any(word in message for word in ('at capacity', 'try a different model')):
+        # Model capacity is a short-lived limit: mark this provider limited so
+        # routing fails over to an available one instead of failing the request.
+        raise RateLimited(time.time() + 600)
     if any(word in message for word in ('overloaded', 'temporarily unavailable', 'service unavailable')):
         raise ConnectionError(provider + ' is temporarily unavailable.')
     raise WorkerError(f'{provider} reported failure; inspect {directory}')
