@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from json import loads as json_load
 import tempfile
 import unittest
@@ -96,3 +98,46 @@ class RequestMemoryTests(unittest.TestCase):
             self.assertEqual(history['entries'][0]['data']['result']['url'],'https://example.com/official')
             self.assertTrue(history['cursor'])
             self.assertEqual(RequestMemory(home,'other','thread').history('')['entries'],[])
+
+
+class ExperienceSearchTests(unittest.TestCase):
+    def test_search_finds_agreements_across_conversations_newest_first_and_owner_scoped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            RequestMemory(home, 'owner', 'march').record('1', 'owner', {'message': 'We agreed to pay Alex Example $180 per cleaning.',
+                                                                         'sent_at': '2030-03-01T10:00:00+00:00'})
+            RequestMemory(home, 'owner', 'april').record('2', 'outcome', {'reply': 'Booked ALEX example for Friday at the café.'})
+            RequestMemory(home, 'owner', 'other-topic').record('3', 'owner', {'message': 'Pay the electricity bill.'})
+            RequestMemory(home, 'someone-else', 'x').record('4', 'owner', {'message': 'Alex Example costs $500.'})
+            memory = RequestMemory(home, 'owner', '')
+            found = memory.search('alex example')['matches']
+            self.assertEqual([m['kind'] for m in found], ['outcome', 'owner'])          # newest first
+            self.assertNotIn('$500', json.dumps(found))                               # other owner excluded
+            agreement = memory.search('Alex pay')['matches']
+            self.assertEqual(len(agreement), 1)
+            self.assertIn('$180 per cleaning', agreement[0]['excerpt'])
+            self.assertEqual(agreement[0]['sent_at'], '2030-03-01T10:00:00+00:00')
+            self.assertEqual(memory.search('café')['matches'][0]['kind'], 'outcome')   # non-ASCII text matches
+            with self.assertRaises(ValueError):
+                memory.search(' ')
+
+    def test_search_pages_with_a_cursor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            for i in range(11):
+                RequestMemory(home, 'owner', f't{i}').record(str(i), 'owner', {'message': f'Garden visit number {i}'})
+            memory = RequestMemory(home, 'owner', '')
+            first = memory.search('garden visit')
+            self.assertEqual(len(first['matches']), 8)
+            second = memory.search('garden visit', first['cursor'])
+            self.assertEqual(len(second['matches']), 3)
+            self.assertEqual(second['cursor'], '')
+            self.assertFalse({m['id'] for m in first['matches']} & {m['id'] for m in second['matches']})
+
+    def test_search_is_a_shared_tool(self):
+        from capo.capabilities import Documents, owner_key, shared_tools
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp); config = {}
+            RequestMemory(home, owner_key(config), 'thread').record('1', 'owner', {'message': 'Remember the gate code question.'})
+            tools = shared_tools(home, config, Documents(home, owner_key(config)))
+            self.assertEqual(len(tools.call('experience.search', {'query': 'gate code', 'cursor': ''})['matches']), 1)
