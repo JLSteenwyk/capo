@@ -74,6 +74,18 @@ def prior_notices(home,config,exclude_key):
     return seen
 
 
+def drop_empty_headings(text):
+    """Remove an attention heading whose items were all filtered out, and tidy blank lines."""
+    lines=text.splitlines();kept=[]
+    for i,line in enumerate(lines):
+        following=next((l for l in lines[i+1:] if l.strip()),'')
+        if line.startswith('Needs your attention') and not following.startswith('• '):continue
+        if not line.strip() and (not kept or not kept[-1].strip()):continue
+        kept.append(line)
+    while kept and not kept[-1].strip():kept.pop()
+    return '\n'.join(kept)
+
+
 def filter_notices(manager,run,now):
     """Called under the shared delivery lock, before the sending receipt is saved."""
     if run['status']!='ready':return True
@@ -90,13 +102,13 @@ def filter_notices(manager,run,now):
     if not duplicates:return True
     remove={n['line'] for n in duplicates};ids={n['id'] for n in duplicates}
     payload=run['payload']
-    payload['text']='\n'.join(line for line in payload['text'].splitlines() if line not in remove)
+    payload['text']=drop_empty_headings('\n'.join(line for line in payload['text'].splitlines() if line not in remove))
     # A known rejected send may have cached the old wire representation.
     # Only ready reports reach here; uncertain sends retain their exact payload.
     run.pop('wire_text',None);run.pop('wire_mrkdwn',None)
     payload['task_notices']=[n for n in notices if n not in duplicates]
     payload['news']=[n for n in payload.get('news',[]) if n['id'] not in ids]
     # An hourly check may have nothing left; a morning digest retains its outlook.
-    if payload['text'].strip()=='Needs your attention:':run['status']='quiet'
+    if not payload['text'].strip():run['status']='quiet'
     manager.db.save(run,now)
     return run['status']=='ready'

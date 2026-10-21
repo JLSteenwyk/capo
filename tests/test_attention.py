@@ -50,6 +50,20 @@ class AttentionTests(unittest.TestCase):
         hourly.deliver(run,self.now)
         self.assertEqual(self.client.chat_postMessage.call_count,2)
 
+    def test_filtered_hourly_check_drops_its_empty_heading_but_keeps_background(self):
+        tasks=Tasks(self.home,owner_key(self.config))
+        tasks.save('','',fields(due_at='2030-01-07T15:00:00-08:00'),'create')
+        evidence=personal_tasks(self.home,self.config,self.now)[0]
+        notice={'id':evidence['id'],'day':evidence['notice_day'],'line':'• Task deadline'}
+        digest=self.manager(Path('.'));hourly=self.manager(Path('heartbeat'))
+        digest.deliver(self.run_record(digest,'morning','Good morning\n• Task deadline',notice),self.now)
+        text='Needs your attention:\n• Task deadline\n\nBehind the scenes (no action needed): A check did not complete.'
+        hourly.deliver(self.run_record(hourly,'hourly',text,notice),self.now)
+        self.assertEqual(self.client.chat_postMessage.call_count,2)
+        sent=self.client.chat_postMessage.call_args.kwargs['text']
+        self.assertNotIn('Needs your attention',sent)
+        self.assertTrue(sent.startswith('Behind the scenes (no action needed)'))
+
     def test_uncertain_delivery_reserves_notice_across_managers(self):
         notice={'id':'task1','day':'2030-01-07','line':'• Task deadline'}
         digest=self.manager(Path('.'));hourly=self.manager(Path('heartbeat'))
