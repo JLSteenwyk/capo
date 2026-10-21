@@ -513,6 +513,14 @@ authenticated owner message can be acknowledged. Reactions are presentation
 only: Slack errors are ignored and never block or repeat the reply, and durable
 state avoids an API call per service tick while a request is pending.
 
+Owner voice messages (Slack clips or audio files, up to 10 minutes) are transcribed
+in the background on the Capo computer with whisper.cpp, or taken from Slack's
+transcript when it is complete. Only the transcript is kept; the recording is
+deleted after transcription. The transcript joins the request as the owner's
+words, marked as automatic so unclear names, amounts or dates are confirmed
+before consequential actions, and the reply starts with "🎙️ I heard: …" so
+mishearings are visible. See operations.md for setup.
+
 Socket Mode does not replay events sent during an outage. At startup, after
 each reconnection and every five minutes, the service reads the configured channel and its recently
 active threads (24 hours, at most 20 messages) and queues owner messages that

@@ -30,6 +30,26 @@ Keep machine configuration outside the checkout. Runtime state defaults to `~/.l
 
 For Slack, follow [the app setup instructions](slack.md), with actual owner/workspace/channel IDs only in the private configuration. Install the app, invite it into the configured channel, and supply bot/app tokens through a private local environment or credential manager. Never put tokens in chat, command arguments, committed examples, or publication text.
 
+## Voice messages (optional)
+
+Capo transcribes owner voice messages locally with [whisper.cpp](https://github.com/ggml-org/whisper.cpp);
+audio is never sent to another service. When Slack attaches a complete transcript, Capo uses it instead.
+Install `ffmpeg`, then place a `whisper-cli` binary and a model under `CAPO_HOME/tools`:
+
+```sh
+# Either `brew install whisper-cpp`, or build a pinned release:
+git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp
+cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release
+cmake --build whisper.cpp/build --target whisper-cli
+mkdir -p "$CAPO_HOME/tools/bin" "$CAPO_HOME/tools/models"
+cp whisper.cpp/build/bin/whisper-cli "$CAPO_HOME/tools/bin/"
+sh whisper.cpp/models/download-ggml-model.sh small.en "$CAPO_HOME/tools/models"
+```
+
+Verify the model checksum against the whisper.cpp models README. Other locations can be set in
+private configuration with `"voice": {"whisper_cli": "...", "model": "...", "ffmpeg": "..."}`;
+`"voice": {"enabled": false}` turns the feature off.
+
 ## Start and stop
 
 Start Socket Mode in the foreground so startup errors are visible:

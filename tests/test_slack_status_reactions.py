@@ -84,6 +84,13 @@ class StatusReactionTests(unittest.TestCase):
         self.assertEqual(self.reactions()[-1], ('reactions_add', '+1'))
         self.assertEqual(self.store.pending_slack(), [])
 
+    def test_voice_reply_shows_what_was_heard_first(self):
+        directory = self.home / 'slack-audio' / 'conversation' / hashlib.sha256(b'owner-event').hexdigest()
+        directory.mkdir(parents=True)
+        (directory / 'transcript.json').write_text(json.dumps({'text': 'Remind me to water the plants.'}))
+        self.run_message(lambda *a, **k: 'Added a reminder for tonight.')
+        self.assertEqual(self.sent, ['🎙️ I heard: “Remind me to water the plants.”\n\nAdded a reminder for tonight.'])
+
     def test_reaction_errors_never_block_the_reply(self):
         self.client.reactions_add.side_effect = RuntimeError('missing_scope')
         self.client.reactions_remove.side_effect = RuntimeError('no_reaction')

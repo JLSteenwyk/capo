@@ -103,6 +103,8 @@ def context(service,event_id,body,text):
     files=[]
     def add(value):
         for file in value.get('files',[]):
+            # Voice clips are handled by slack_audio, even when Slack defers their file details.
+            if file.get('subtype')=='slack_audio' or file.get('mimetype','').startswith('audio/'):continue
             if file.get('id') and (file.get('mimetype','').startswith('image/') or file.get('file_access')=='check_file_info'):
                 if file['id'] not in files:files.append(file['id'])
     add(event)

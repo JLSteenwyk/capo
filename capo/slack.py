@@ -375,6 +375,11 @@ class SlackService:
         from .repository import git
 
         event = body["event"]
+        from .slack_audio import context as audio_context, AudioError
+        try:
+            text = audio_context(self, event_id, body, text)
+        except AudioError as exc:
+            return str(exc)
         from .slack_images import context as image_context, ImageError
         try:
             text = image_context(self, event_id, body, text)
@@ -869,6 +874,10 @@ class SlackService:
                     text = f"Could not handle this request: {exc}"
                     self.pending_review = None
                     failed = True
+                from .slack_audio import heard
+                spoken = heard(self.store.home, event_id)
+                if spoken:
+                    text = "🎙️ I heard: “" + spoken[:600] + ("…" if len(spoken) > 600 else "") + "”\n\n" + text
                 from .message_format import plain_text
                 data = {"text": plain_text(text), "review": self.pending_review, "failed": failed}
                 from .message_format import slack_chunks
