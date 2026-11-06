@@ -805,3 +805,23 @@ Direct replies, explicit reminders, owner-scheduled deliveries, and uncertain
 Slack sends awaiting reconciliation bypass this hourly filter. It changes neither
 schedules nor external-action permissions. These controls do not classify every
 possible urgent situation; the current supported urgency signals are explicit.
+
+### Cross-automation finding deduplication
+
+Change-only scheduled reports retain structured notices alongside their private
+source report. At delivery, the shared notification lock compares exact source
+identifiers and meaningful fact versions across scheduled, digest and hourly
+ledgers. Matching notices sent within seven days, or still awaiting send reconciliation
+regardless of age, are removed from the outgoing report; failed and quiet reports
+do not reserve notices. Remaining findings are rendered afresh, retaining links and their original
+source report. No arbitrary prose similarity or model-written urgency is used.
+
+Deadline reminders have a separate identity including their verified due date,
+so an earlier change notice does not suppress an approaching-deadline reminder.
+Ordinary owner-scheduled full reports, direct replies and explicit reminder tools
+are outside this change-only filter. Existing per-schedule history still provides
+longer-term unchanged-finding suppression. Cross-automation coverage is limited
+to notices with this structured metadata and matching source/version values;
+older reports and different identifiers cannot be reliably matched. A history
+scan exceeding 2,000 recent sends defers delivery rather than guessing. Uncertain
+wire payloads are reconciled intact and never rewritten by deduplication.

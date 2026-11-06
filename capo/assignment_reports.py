@@ -144,18 +144,13 @@ def finish(run, report, previous, timezone='UTC'):
         elif run.get('status') != 'failed':  # Never mask a failed run as a clean check.
             run['status'] = 'quiet'
         return
-    # Deliver the bounded actual findings, never an empty model preamble.
-    lines = ['Follow-up: new since the earlier check' if followup else run['title']]
-    from .personalization import finding_text
-    for item in new[:3]:
-        lines.append('- ' + finding_text(item) + _link(item))
-    if len(new) > 3:
-        lines.append(f'{len(new)-3} more findings saved. Ask Capo for the full check.')
-    for item in upcoming[:3]:
-        when = date.fromisoformat(item['due'])
-        label = 'today' if when == today else when.strftime('%a %b %-d')
-        lines.append(f'- Reminder, {label}: ' + finding_text(item) + _link(item))
-    run.update(status='ready', payload={'text': '\n'.join(lines), 'news': []})
+    # Keep structured notices so delivery can deduplicate overlapping roles without
+    # matching arbitrary prose or changing the private source report.
+    from .finding_notices import notice, render
+    notices=[notice(item,'change') for item in new]+[notice(item,'reminder') for item in upcoming]
+    heading='Follow-up: new since the earlier check' if followup else run['title']
+    run.update(status='ready', payload={'text':render(heading,notices,today), 'news':[],
+               'finding_notices':notices,'finding_heading':heading,'finding_day':today.isoformat()})
 
 
 def _link(item):

@@ -152,13 +152,15 @@ class DigestManager:
             from .report_freshness import guard
             if not guard(run,now.timestamp()):
                 self.db.save(run,now);return
-            if run['status']=='ready' and run.get('payload',{}).get('task_notices'):
+            if run['status']=='ready' and (run.get('payload',{}).get('task_notices') or run.get('payload',{}).get('finding_notices')):
                 notice_fd=os.open(self.service.store.home/'task-notice.delivery.lock',os.O_RDWR|os.O_CREAT,0o600)
                 try:fcntl.flock(notice_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
                 except BlockingIOError:return
                 from .attention import filter_notices
                 try:
                     if not filter_notices(self,run,now):return
+                    from .finding_notices import filter_findings
+                    if not filter_findings(self,run,now):return
                 except Exception:
                     run['retry_at']=now.timestamp()+60;self.db.save(run,now);return
             self._deliver(run,now)
