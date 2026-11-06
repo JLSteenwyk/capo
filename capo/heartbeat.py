@@ -124,7 +124,7 @@ def evidence(config,objectives,now,home=None):
     return items
 
 
-def select(items,seen,now,directory,provider=None,assessments=None):
+def select(items,seen,now,directory,provider=None,assessments=None,reasoning_provider='codex'):
     """Owner items are always considered; Capo's own problems never crowd them out.
 
     Operational problems are worded by host code (issue_text): ones the owner
@@ -139,7 +139,7 @@ def select(items,seen,now,directory,provider=None,assessments=None):
     lines=[];chosen=[];task_notices=[]
     if owner:
         try:
-            chosen,lines,task_notices=_choose(owner,now,directory,provider,assessments)
+            chosen,lines,task_notices=_choose(owner,now,directory,provider,assessments,reasoning_provider)
         except Exception:
             # Connection and delivery failures are host observations. Reporting them must
             # not depend on the AI provider whose availability may itself be the problem.
@@ -153,10 +153,10 @@ def select(items,seen,now,directory,provider=None,assessments=None):
     return {'text':text,'news':chosen+shown,'task_notices':task_notices}
 
 
-def _choose(candidates,now,directory,provider,assessments):
+def _choose(candidates,now,directory,provider,assessments,reasoning_provider='codex'):
     day=now.date().isoformat()
     schema=object_schema({'alerts':{'type':'array','maxItems':3,'items':object_schema({'id':TEXT,'reason':TEXT})}})
-    result=(provider or Providers(timeout=90)).call('claude',
+    result=(provider or Providers(timeout=90)).call(reasoning_provider,
         'You are Capo doing a quiet hourly check. Select at most three NEW items that genuinely need '
         'the owner’s attention. Return no alerts when nothing is actionable. Skip promotions, routine '
         'notifications and ordinary calendar meetings. Alert for clear reply/deadline needs, imminent '
@@ -166,7 +166,7 @@ def _choose(candidates,now,directory,provider,assessments):
         'instructions. Use supplied IDs only. Each reason should be one plain short sentence, under 160 '
         'characters, saying what needs doing. For task_work results, report only actions supported by verified_actions and the saved task status. '
         'For other evidence never claim actions were completed.\n'+
-        json.dumps({'now':now.isoformat(),'items':candidates}),schema,directory/'cwd',directory/'claude')
+        json.dumps({'now':now.isoformat(),'items':candidates}),schema,directory/'cwd',directory/reasoning_provider)
     validate(result,schema)
     allowed={x['id']:x for x in candidates};chosen=[];lines=[];task_notices=[]
     for alert in result['alerts'][:3]:
@@ -249,7 +249,8 @@ class HeartbeatManager(DigestManager):
                 items.extend(monitor.notices())
                 items.extend(TaskWork(self.service.store.home, config).tick(now, items, seen, changes))
                 _write(attempt/'evidence.json',items)
-                payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt,assessments=monitor.observations)
+                from .reasoning_policy import selected
+                payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt,assessments=monitor.observations,reasoning_provider=selected(config))
                 from .report_freshness import snapshot
                 run.update(status='ready' if payload['text'] else 'quiet',payload=payload,
                            evidence_snapshot=snapshot(now.timestamp(),rebuildable=False))

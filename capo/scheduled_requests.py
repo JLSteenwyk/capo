@@ -119,7 +119,8 @@ class ScheduledManager(DigestManager):
                     readonly.restore(progress.get('state', {}), continuation=True)
                     attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
-                    result=research(Providers(timeout=90,deadline=run['deadline'],effort='medium'),readonly,request,attempt,max_calls=10,recovery=config.get('recovery'),require_source_inspection=True,
+                    from .reasoning_policy import selected,request_recovery
+                    result=research(Providers(timeout=90,deadline=run['deadline'],effort='medium'),readonly,request,attempt,max_calls=10,recovery=request_recovery(config,attempt),reasoning_provider=selected(config,attempt),allow_delegation=True,require_source_inspection=True,
                         instructions=GUIDANCE+f'You are {role[0]}, managed by Capo. {role[1]} '
                         'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
                         'report verified actionable findings, essential access/coverage blockers, and what was actually checked. For email searches, use mail.metadata to triage subject/sender/snippets before reading bodies; prefer targeted searches and read only relevant messages. Do not inherit an old blocker as a current failure without new evidence. '

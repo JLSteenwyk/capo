@@ -40,6 +40,7 @@ def collect(home, config, directory, seen, provider=None):
             registry=shared_tools(home,config,Documents(home,owner_key(config)))
             tools=ReadTools([t for t in registry.tools.values() if not t.mutates and t.name.startswith(('memory.','digest.','clock.','dates.','web.','workers.'))]+[report.tool()])
             recent=recently_checked(home,item['key'])
+            from .reasoning_policy import selected,request_recovery
             result=research(provider or Providers(timeout=90),tools,{'message':item['request'],'previous_findings':previous,'interest_context':interests,
                              'recently_checked':recent},path,
                 instructions=GUIDANCE+'Create a concise personalized briefing using shared read tools. Recall memory.search and digest.read preferences. '
@@ -50,7 +51,7 @@ def collect(home, config, directory, seen, provider=None):
                 'Prefer at most two useful findings. An empty findings list is appropriate when nothing new matches. '
                 'The search allowance is small, so rotate coverage across days: check interests missing from recently_checked, '
                 'or checked longest ago, before ones checked recently. List every entity you actually inspected in checked.',
-                max_calls=10,recovery=config.get('recovery'))
+                max_calls=10,recovery=request_recovery(config,path),reasoning_provider=selected(config,path),allow_delegation=True)
             value=report.read()
             remember_checked(home,item['key'],value.get('checked',[]))
         except Exception as exc:

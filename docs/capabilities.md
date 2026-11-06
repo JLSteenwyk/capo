@@ -692,3 +692,12 @@ conversation checkpoints and recovery journals retain their original provider
 and recovery policy. Codex chief conversations can bind the same bounded,
 read-only specialist tools without granting recursive delegation to workers.
 This step does not yet migrate development-runtime or scheduled-job callers.
+
+The shared reasoning loop now defaults new unpinned requests to Codex. Scheduled
+inspections, briefings, monitoring and delegated task follow-through pass the
+shared host policy explicitly, retaining checkpoint provider and recovery
+journals on resume. Morning digest composition, hourly alert selection and digest
+feedback also use the configured primary. Their existing bounded generation
+retry paths remain in place. Legacy prompt authentication verifies against the
+checkpoint's recorded provider, with Claude retained as the historical default
+when that metadata is absent; the saved prompt hash is still required.

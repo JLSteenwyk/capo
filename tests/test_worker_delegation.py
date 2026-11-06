@@ -104,7 +104,7 @@ class WorkerTests(unittest.TestCase):
     def test_chief_delegates_and_reviews_in_same_loop(self):
         self.provider.call.side_effect=[step('workers.delegate',self.args),finish('Worker comparison: A costs less.'),finish('I reviewed the comparison: A costs less.')]
         result=research(self.provider,self.tools,{'message':'Compare options'},self.directory)
-        self.assertEqual([c.args[0] for c in self.provider.call.call_args_list],['claude','grok','claude'])
+        self.assertEqual([c.args[0] for c in self.provider.call.call_args_list],['codex','grok','codex'])
         self.assertEqual(result['receipts'][0]['result']['provider'],'grok')
         self.assertIn('reviewed',result['reply'])
 

@@ -39,7 +39,7 @@ def bind(state, request, catalog, instructions, max_calls, directory, schema):
         verified = False
         for step in sorted(directory.glob('step-*')):
             try:
-                prompt = legacy_prompt(step, schema)
+                prompt = legacy_prompt(step, schema,state.get('reasoning_provider','claude'))
                 data = json.loads(prompt.splitlines()[-1]) if prompt else None
                 candidates = [instructions]
                 marker = 'Never claim an action succeeded without a successful mutation receipt. '

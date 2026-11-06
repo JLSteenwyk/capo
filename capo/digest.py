@@ -197,7 +197,7 @@ COMPOSE = object_schema({'news': {'type':'array','items': CHOICE},
                          'preparation_event': TEXT, 'upcoming': {'type':'array','items': TEXT}})
 
 
-def compose(evidence, p, seen, directory, provider=None, briefings=''):
+def compose(evidence, p, seen, directory, provider=None, briefings='', reasoning_provider='codex'):
     """Claude chooses relevance; facts, IDs, dates and links stay host-controlled.
 
     Optional briefing sections precede the feedback footer, which stays last.
@@ -222,7 +222,7 @@ def compose(evidence, p, seen, directory, provider=None, briefings=''):
               'Prioritize preference changes; silence is neutral.\n' + json.dumps(dict(
                   preferences=p, interest_context=evidence.get('interest_context',{}), news=available, attention=evidence['attention'], today_events=today, upcoming_events=upcoming, now=evidence['now'])))
     try:
-        decision = (provider or Providers(timeout=120)).call('claude',prompt,COMPOSE,directory,directory/'claude')
+        decision = (provider or Providers(timeout=120)).call(reasoning_provider,prompt,COMPOSE,directory,directory/reasoning_provider)
         validate(decision,COMPOSE)
     except Exception:
         # Verified schedule/task facts still make a useful digest during a model outage.

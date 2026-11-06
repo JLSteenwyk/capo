@@ -19,7 +19,7 @@ def selected(config=None,directory=None,explicit=None):
     if directory is not None:
         checkpoint=directory/'checkpoint.json'
         if checkpoint.exists():
-            saved=json.loads(checkpoint.read_text()).get('reasoning_provider')
+            saved=json.loads(checkpoint.read_text()).get('reasoning_provider','claude')
             if saved is not None:
                 if saved not in PROVIDERS:raise ValueError('Unknown pinned reasoning provider')
                 return saved

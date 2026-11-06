@@ -104,12 +104,16 @@ def complete_reply(result):
     return reply + '\n\n' + content
 
 
-def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False, timing=None, deadline=None, allow_delegation=None):
+def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider=None, require_source_inspection=False, timing=None, deadline=None, allow_delegation=None):
     """Serialize the entire reasoning/tool loop, including external tool calls."""
     import fcntl
     import os
     import time
     from .recovery import RetryLater
+    if reasoning_provider is None:
+        from .reasoning_policy import selected
+        reasoning_provider=selected({},directory)
+        if allow_delegation is None:allow_delegation=True
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(directory/'research.lock', os.O_CREAT | os.O_RDWR, 0o600)
     try:
