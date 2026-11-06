@@ -47,10 +47,10 @@ class AutomationDaysTests(unittest.TestCase):
 
     def test_retired_specialists_are_unavailable_but_other_roles_remain(self):
         config={'disabled_specialists':['shopping_assistant','style_assistant']}
-        self.assertEqual(list(roster(config)['specialists']),['money_saver'])
+        self.assertEqual(list(roster(config)['specialists']),['coding','money_saver','research'])
         with tempfile.TemporaryDirectory() as tmp:
             tools=SpecialistTools(Path(tmp),'owner',config)
-            self.assertEqual([s['role'] for s in tools.list()['specialists']],['money_saver'])
+            self.assertEqual([s['role'] for s in tools.list()['specialists']],['coding','money_saver','research'])
             for role in config['disabled_specialists']:
                 with self.assertRaises(ValueError):tools.read(role)
                 with self.assertRaises(ValueError):tools.remember(role,'test','receipt')

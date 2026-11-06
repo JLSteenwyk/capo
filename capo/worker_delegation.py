@@ -24,7 +24,8 @@ GUIDANCE = (
 
 
 class WorkerTools:
-    def __init__(self, home, owner):
+    def __init__(self, home, owner, config=None):
+        self.config=config
         self.root = Path(home)/'worker-delegations'/hashlib.sha256(owner.encode()).hexdigest()
 
     def records(self):
@@ -44,14 +45,14 @@ class WorkerTools:
 
     def tools(self):
         return [ReadTool('workers.delegate',
-            'Delegate a focused read-only task to Grok or Codex and return its report for chief review. '
-            'Use auto to prefer spare Grok capacity, or an explicit provider for task fit. '
+            'Delegate a focused read-only task to a configured provider and return its report for chief review. '
+            'Use auto for the configured reasoning primary; isolate work only when useful. Explicit provider choices remain available. '
             'Provide objective, necessary context and acceptance criteria. At most two assignments per request, '
             'three read-tool calls per assignment. No recursive agents, private account access or external writes. '
             'Public web search uses Claude; when enabled, social.search uses the separately metered Grok X Search API. Delegated reasoning uses the reported subscription worker. '
             'Reuse completed reports; do not repeat failed assignments in this request.',
             object_schema({'objective':TEXT,'context':TEXT,'acceptance_criteria':TEXT,
-                           'provider':{'type':'string','enum':['auto','grok','codex']}}), self.unbound, handoff=True),
+                           'provider':{'type':'string','enum':['auto','grok','codex','claude']}}), self.unbound, handoff=True),
             ReadTool('workers.activity','Read actual delegated worker assignments, status, duration and provider. Role names do not select providers.',object_schema({}),self.activity)]
 
     def bind(self, tools, runner, directory, request, owner_update=None):
@@ -66,7 +67,7 @@ class WorkerTools:
             for value, maximum in ((objective,2000),(context,16000),(acceptance_criteria,2000)):
                 if not isinstance(value,str) or len(value)>maximum:raise ValueError('Assignment context too large')
             if not objective.strip() or not acceptance_criteria.strip():raise ValueError('Assignment needs objective and acceptance criteria')
-            if provider not in ('auto','grok','codex'):raise ValueError('Unsupported worker')
+            if provider not in ('auto','grok','codex','claude'):raise ValueError('Unsupported worker')
             payload=dict(objective=objective,context=context,acceptance_criteria=acceptance_criteria,provider=provider)
             key=hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()
             root=parent/'worker-assignments';root.mkdir(exist_ok=True,mode=0o700)
@@ -84,7 +85,11 @@ class WorkerTools:
             else:
                 capacity=getattr(runner,'capacity',None)
                 if capacity is None:raise ValueError('Worker capacity interface unavailable')
-                choices=['grok','codex'] if provider=='auto' else [provider]
+                if provider=='auto' and self.config is not None:
+                    from .reasoning_policy import settings
+                    policy=settings(self.config)
+                    choices=[policy['primary']]+([policy['fallback']] if policy['fallback'] else [])
+                else:choices=['grok','codex'] if provider=='auto' else [provider]
                 observed=capacity.snapshot(choices,refresh=True)
                 eligible=[p for p in choices if observed[p]['state']!='exhausted' and observed[p].get('probe_error')!='login_required']
                 history=self.records()
@@ -102,9 +107,9 @@ class WorkerTools:
                     # Weak early evidence must not permanently exclude a worker.
                     penalty=30*sum(r['status']!='reported_complete' for r in recent)/len(recent) if len(recent)>=2 else 0
                     return (50 if remaining is None else remaining)+(10 if p=='grok' else 0)-penalty
-                selected=max(eligible,key=score)
+                selected=eligible[0] if self.config is not None else max(eligible,key=score)
                 row=dict(id=identity,task=objective[:240],provider=selected,status='running',started_at=time.time(),
-                         routing='explicit' if provider!='auto' else 'capacity_and_recent_reliability',
+                         routing='explicit' if provider!='auto' else 'configured_primary' if self.config is not None else 'capacity_and_recent_reliability',
                          capacity=observed,allowed_tools=list(safe.tools),native_calls=0)
                 _write(assignment,row);_write(ledger,row)
             inherited=ReadTools([t for t in safe.tools.values() if t.name in row['allowed_tools']])

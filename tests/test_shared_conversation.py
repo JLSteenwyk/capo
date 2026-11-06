@@ -243,14 +243,14 @@ class SharedConversationTests(unittest.TestCase):
         self.assertEqual(SpecialistTools(self.home, 'another-owner').read('style_assistant')['preferences'], [])
 
     def test_preference_receipt_preserves_role_owner_and_private_permissions(self):
-        tools = SpecialistTools(self.home, owner_key(self.config))
+        tools = SpecialistTools(self.home, owner_key(self.config),origin={'text':'Prefers blue.','event':'owner'})
         tools.remember('style_assistant', 'Prefers blue.', 'operation')
         tools.remember('style_assistant', 'Prefers blue.', 'operation')
         with self.assertRaises(ValueError):
             tools.remember('style_assistant', 'Prefers red.', 'operation')
         self.assertEqual(tools.read('style_assistant')['preferences'], ['Prefers blue.'])
         self.assertEqual(tools.read('shopping_assistant')['preferences'], [])
-        self.assertEqual(tools.path('style_assistant').stat().st_mode & 0o777, 0o600)
+        self.assertEqual(tools.memory.path.stat().st_mode & 0o777, 0o600)
         with self.assertRaises(ValueError):
             tools.read('../outside')
 

@@ -71,11 +71,11 @@ def shared_tools(home,config,documents,request=None):
     from .team_status import TeamStatus
     tools.extend(TeamStatus(home, config).tools())
     from .worker_delegation import WorkerTools
-    tools.extend(WorkerTools(home,owner_key(config)).tools())
+    tools.extend(WorkerTools(home,owner_key(config),config).tools())
     from .capacity import Capacity
     tools.extend(Capacity(home).tools())
     from .specialist_tools import SpecialistTools
-    tools.extend(SpecialistTools(home, owner_key(config), config).tools(writable=bool((request or {}).get('owner_request'))))
+    tools.extend(SpecialistTools(home, owner_key(config), config,(request or {}).get('owner_request')).tools(writable=bool((request or {}).get('owner_request'))))
     if all(config.get(k) for k in ('team_id', 'channel_id', 'owner_user_id')):
         from .digest_tools import DigestTools
         tools.extend(DigestTools(home, config, request).tools(writable=bool((request or {}).get('owner_request'))))

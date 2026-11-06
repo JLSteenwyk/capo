@@ -738,3 +738,28 @@ calendar before use. These preferences do not change host timezone, account
 permissions, existing events, subscriptions or schedules by themselves and never
 authorize invitations, messages or purchases. Existing generic memory tools can
 inspect the same `defaults/` keys; no second source of truth is introduced.
+
+### Task-based expertise and isolated assignments
+
+`roles.py` defines coding, finance (`money_saver`, retaining its existing schedule
+identity), and research expertise independently of model providers. Historic
+shopping/style roles remain available only according to owner configuration;
+this migration does not restart retired automations. Scheduled roles and
+`specialists.list/read` use the same definitions. Capo remains the interface.
+
+Specialist reads include shared owner memory and practical defaults, alongside
+bounded historical role notebooks. New `specialists.remember` writes use the
+same owner-quote-validated PersonalMemory store and transactional receipts as
+other conversations. Historical notebooks remain readable and are not deleted.
+Current owner instructions override all saved context; preferences authorize no
+new actions.
+
+New shared-registry worker assignments default to the configured primary, with
+only its configured fallback eligible for automatic recovery of exhausted or
+repeatedly failing providers. Explicit provider assignments remain possible.
+Each assignment retains isolated context, acceptance criteria, inherited
+read-only tool allowlists, source receipts and bounded execution. Returned
+reports require chief review and cannot authorize writes or recursive agents.
+The legacy WorkerTools constructor without host configuration retains its older
+routing policy for compatibility; new shared conversations supply host policy.
+Legacy specialist conversation runners remain only for previously started work.

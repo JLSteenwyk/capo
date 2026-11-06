@@ -9,11 +9,8 @@ from .contracts import TEXT, object_schema, validate
 from .conversation import ConversationRouter, _write
 from .providers import Providers
 
-ROLES = {
-    'money_saver': ('Money Saver', 'Analyze supplied subscriptions and spending, identify savings, compare service options. Never invent balances, prices, or account access.'),
-    'style_assistant': ('Style Assistant', 'Learn clothing preferences and advise on outfits and wardrobe using supplied descriptions and image evidence.'),
-    'shopping_assistant': ('Shopping Assistant', 'Compare products against needs and budget. Distinguish general advice from verified current prices and availability.'),
-}
+from .roles import ROLES
+
 SCHEMA = object_schema({'reply': TEXT, 'remember': TEXT})
 
 

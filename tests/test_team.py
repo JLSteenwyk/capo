@@ -47,7 +47,7 @@ class TeamTests(unittest.TestCase):
         self.assertTrue(team['connections']['calendar'])
         self.assertFalse(team['connections']['email'])
         self.assertFalse(team['connections']['retail_accounts'])
-        self.assertEqual(len(team['specialists']), 3)
+        self.assertTrue({'coding','money_saver','research'} <= set(team['specialists']))
 
     def test_unknown_role_rejected(self):
         with self.assertRaises(ValueError):Specialist(self.home, '../other', 'owner')

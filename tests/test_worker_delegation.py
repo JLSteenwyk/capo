@@ -141,3 +141,13 @@ class WorkerTests(unittest.TestCase):
         item['kind']='handoff'
         receipts[0]['result']={'status':'failed','handoff_completed':False}
         with self.assertRaises(OutcomeError):assess(json.dumps({'outcomes':[item]}),receipts,self.bound)
+
+    def test_consolidated_auto_worker_keeps_primary_despite_spare_grok_capacity(self):
+        workers=WorkerTools(self.home,'synthetic-owner',{})
+        tools=ReadTools(workers.tools()+[self.tools.tools['web.read']])
+        (self.home/'consolidated').mkdir()
+        bound=bind(tools,self.provider,self.home/'consolidated',{'timezone':'UTC'},None)
+        result=bound.call('workers.delegate',self.args)
+        self.assertEqual(result['provider'],'codex')
+        self.assertEqual(workers.activity()['assignments'][0]['routing'],'configured_primary')
+        self.assertTrue(result['chief_review_required'])

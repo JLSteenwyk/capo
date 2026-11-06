@@ -14,7 +14,7 @@ FIELDS=object_schema({'title':TEXT,'request':TEXT,'weekdays':TEXTS,'time':TEXT,'
 
 # Optional fields keep existing schedules and callers compatible.
 FIELDS['properties'].update({
-    'agent': {'type': 'string', 'enum': ['capo', 'money_saver', 'style_assistant', 'shopping_assistant', 'coding']},
+    'agent': {'type': 'string', 'enum': ['capo', 'money_saver', 'style_assistant', 'shopping_assistant', 'coding', 'research']},
     'delivery': {'type': 'string', 'enum': ['always', 'changes']},
     'tool_prefixes': TEXTS,
     'interval_days': TEXT,
