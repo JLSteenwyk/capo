@@ -539,3 +539,26 @@ the reply identifies confirmed changes separately from an unfinished request.
 Capability outcome status travels into the Slack delivery record so a delivered
 failure reply is not confused with successful execution. Delivery success and
 request outcome remain separate facts.
+
+### Incremental Slack recovery
+
+Production Slack recovery uses `slack_recovery.BackgroundRecovery`, independent
+of the interactive tick loop. Each step reads one API page, alternating channel
+history with a fair rotation of indexed threads. Cursors, scan boundaries and
+completed watermarks persist in a private, owner-scoped JSON file. Read failures
+back off without advancing coverage. On initial setup the recovery floor is 24
+hours before bootstrap; subsequent downtime uses the saved watermark rather than
+a moving 24-hour limit. Historical channel pages are traversed incrementally to
+discover older thread roots; local inbox threads are indexed immediately regardless
+of age. Until discovery finishes, unknown old roots may remain unchecked.
+
+Only the exact owner request's durable inbox receipt establishes receipt; a later
+bot reply is not proof it was answered. Ingestion applies normal authorization
+and live/recovery deduplication, preserving the original timestamp and files.
+The scanner never resends an existing reply or reexecutes a received request.
+Coverage records distinguish complete root discovery, pending pagination and
+indexed threads not yet checked. A large thread index increases revisit time;
+this is bounded background work, not an immediate completeness guarantee. The
+older `slack_backfill` helpers remain for compatibility; the service uses the
+incremental scanner. Stop closes the worker cooperatively; an in-flight SDK read
+can finish after stop, but no new recovery loop begins.
