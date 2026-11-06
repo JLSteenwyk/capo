@@ -651,3 +651,18 @@ accounting; removing the classifier lock alone would permit unbounded CLI
 processes and would not preserve thread ordering. Retain serialization for this
 release and use lifecycle queue measurements to justify any subsequent worker
 pool. The current implementation makes no concurrent-execution guarantee.
+
+### Codex image adapter
+
+The provider adapter accepts bounded image inputs for both Codex and Claude.
+Codex uses explicit `--image=PATH` attachments alongside its existing read-only
+sandbox and structured-output schema. At most three images of up to 4 MB each
+are staged in a private temporary directory with owner-only file permissions.
+Image signatures must match the declared PNG/JPEG/GIF/WebP type. Staged files
+are removed on completion or failure; image bytes are not embedded in prompts
+or command arguments. Grok image input remains unsupported. This adapter does
+not itself change an existing caller's selected provider.
+
+CLI compatibility is based on the installed `codex exec --help` and the
+[official command reference](https://developers.openai.com/codex/cli/reference/).
+Mocked contract tests do not establish live visual interpretation quality.

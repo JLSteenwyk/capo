@@ -1,6 +1,9 @@
 """CLI contracts. Auth remains with each provider; no API client is used."""
 
 import json
+import base64
+import tempfile
+import os
 from pathlib import Path
 
 
@@ -124,8 +127,8 @@ class Providers:
             self.timeout = original_timeout
 
     def _call(self, provider, prompt, schema, cwd, directory, images=None):
-        if images and provider != "claude":
-            raise ValueError("Image input is currently supported by Claude only")
+        if images and provider not in ("claude","codex"):
+            raise ValueError("Image input is supported by Claude and Codex only")
         from .communication import writing_style
         prompt = writing_style() + prompt
         directory.mkdir(parents=True, exist_ok=True)
@@ -143,7 +146,6 @@ class Providers:
                 argv += ["--effort", self.effort]
             input_text = prompt
             if images:
-                import base64
                 if len(images) > 3:
                     raise ValueError("At most three images per request")
                 blocks = [{"type": "text", "text": prompt}]
@@ -173,7 +175,24 @@ class Providers:
             final = directory / "result.json"
             argv = ["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--json",
                     "--output-schema", str(schema_file), "--output-last-message", str(final), "-"]
-            output = run_cli("Codex", argv, cwd, directory, self.timeout, prompt)
+            if images:
+                if len(images)>3:raise ValueError('At most three images per request')
+                extensions={'image/png':'.png','image/jpeg':'.jpg','image/gif':'.gif','image/webp':'.webp'}
+                with tempfile.TemporaryDirectory(prefix='image-input-',dir=directory) as staged:
+                    for index,picture in enumerate(images):
+                        media=picture['media_type']
+                        if media not in extensions:raise ValueError('Unsupported image type')
+                        raw=base64.b64decode(picture['data'],validate=True)
+                        if not raw or len(raw)>4_000_000:raise ValueError('Invalid image size')
+                        from .slack_images import image_type
+                        if image_type(raw)!=media:raise ValueError('Image type does not match its contents')
+                        path=Path(staged)/(str(index)+extensions[media])
+                        fd=os.open(path,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
+                        with os.fdopen(fd,'wb') as handle:handle.write(raw)
+                        argv.insert(-1,'--image='+str(path.resolve()))
+                    output=run_cli('Codex',argv,cwd,directory,self.timeout,prompt)
+            else:
+                output = run_cli("Codex", argv, cwd, directory, self.timeout, prompt)
             for line in output.splitlines():
                 event = json.loads(line)
                 if event.get("type") in ("error", "turn.failed"):
