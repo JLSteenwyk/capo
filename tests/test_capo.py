@@ -66,12 +66,27 @@ class RepositoryCase(unittest.TestCase):
             max_calls=options.get("max_calls", 24), max_rounds=options.get("max_rounds", 3), timeout=10)
         return add_objective(self.store, args, "Fix addition")
 
+    def test_new_objective_planning_and_acceptance_default_to_codex(self):
+        objective=self.objective();fake=FakeProviders()
+        self.assertEqual(objective['orchestrator'],'codex')
+        result=Runtime(self.store,fake).run(objective['id'])
+        self.assertEqual(result['status'],'completed')
+        self.assertEqual(fake.calls[0][0],'codex')
+        self.assertEqual(fake.calls[-1][0],'codex')
+        self.assertTrue(any(provider=='grok' and 'reviewer' in prompt for provider,prompt in fake.calls))
+
+    def test_existing_objective_without_orchestrator_keeps_historical_provider(self):
+        objective=self.objective();objective.pop('orchestrator');self.store.save(objective,'legacy_fixture')
+        fake=FakeProviders();Runtime(self.store,fake).run(objective['id'])
+        self.assertEqual(fake.calls[0][0],'claude')
+        self.assertEqual(fake.calls[-1][0],'claude')
+
     def test_full_cycle_and_patch_replay(self):
         objective = self.objective()
         fake = FakeProviders()
         result = Runtime(self.store, fake).run(objective["id"])
         self.assertEqual(result["status"], "completed")
-        self.assertEqual([provider for provider, _ in fake.calls], ["claude", "codex", "grok", "claude"])
+        self.assertEqual([provider for provider, _ in fake.calls], ["codex", "codex", "grok", "codex"])
         self.assertIn("a - b", (self.repo / "maths.py").read_text())
         patch_file = self.store.home / "artifacts" / objective["id"] / "changes.patch"
         git(self.repo, "apply", "--check", str(patch_file))
@@ -88,6 +103,8 @@ class RepositoryCase(unittest.TestCase):
         fake = FakeProviders()
         fake.capacity = capacity
         objective = self.objective()
+        objective['orchestrator']='claude'
+        self.store.save(objective,'explicit_planner_fixture')
         runtime = Runtime(self.store, fake)
         waiting = runtime.run(objective['id'])
         self.assertEqual(waiting['status'], 'queued')
@@ -111,6 +128,8 @@ class RepositoryCase(unittest.TestCase):
         fake = FakeProviders()
         fake.capacity = capacity
         objective = self.objective()
+        objective['orchestrator']='claude'
+        self.store.save(objective,'explicit_planner_fixture')
         objective['workers'] = ['codex']
         self.store.save(objective, 'pin_worker')
         result = Runtime(self.store, fake).run(objective['id'])
@@ -302,7 +321,7 @@ class RepositoryCase(unittest.TestCase):
         fake = FakeProviders()
         result = Runtime(self.store, fake).run(objective["id"])
         self.assertEqual(result["status"], "completed")
-        self.assertEqual([p for p, _ in fake.calls], ["claude", "codex", "claude", "claude"])
+        self.assertEqual([p for p, _ in fake.calls], ["codex", "codex", "claude", "codex"])
 
     def test_plan_cannot_use_excluded_provider(self):
         objective = self.objective()

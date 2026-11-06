@@ -4,7 +4,7 @@ Capo is the platform. **SPARKITscience** is the default team name for this insta
 
 Slack is the primary human interface. The included [Slack adapter](docs/slack.md) accepts owner-only objectives, provides a short plan and final result, and supports status, cancellation, thread follow-ups, and exact-candidate publication approval. The SPARKITscience workspace connection has been verified live. Natural-language messages can list repository issues, request work, check progress, and ask for a preview; small verified changes can publish draft PRs under an explicitly configured routine policy; broader changes use exact-candidate approval.
 
-Claude Code leads development objectives, delegates implementation to Codex and Grok Build, evaluates reviews, and decides whether the result meets the objective. A local Python runtime owns the queue, checkpoints, process supervision, verification, and artifacts.
+Codex leads new development objectives by default, delegates implementation to configured workers, evaluates independent reviews, and decides whether the result meets the objective. Explicit orchestrator choices and historical objectives retain their selected provider. A local Python runtime owns the queue, checkpoints, process supervision, verification, and artifacts.
 
 This is an early working vertical slice for small changes in **trusted local repositories**. The broader autonomous organization is described in [the architecture](docs/architecture.md). [Dedicated-computer and computer-use plans](docs/computer-use.md) are part of that design.
 
@@ -60,16 +60,16 @@ GitHub commands normally honor `GH_TOKEN`/`GITHUB_TOKEN` and the normal `gh` con
 ## What a run does
 
 1. Creates an independent local clone at the recorded source commit and removes its `origin` remote.
-2. Gives Claude a bounded source snapshot and asks for a plan of 1–6 sequential tasks with acceptance criteria.
+2. Gives the configured orchestrator (Codex by default) a bounded source snapshot and asks for a plan of 1–6 sequential tasks with acceptance criteria.
 3. Calls the selected worker for structured file changes, validates paths, and applies those changes locally.
 4. Runs your verification commands and saves their outputs.
 5. Obtains review from the other provider for each implementation provider used.
-6. Asks Claude to accept or request revision. Completion requires passing checks, approved reviews, and Claude's acceptance together.
+6. Asks the pinned orchestrator to accept or request revision. Completion requires passing checks, approved reviews, and evidence-backed acceptance together.
 7. Writes a delivery report and a replayable patch. The clone retains staged changes for inspection and commit.
 
 Each rejected round feeds the evidence into another implementation pass, up to the configured limit. The default limits are three rounds, 24 provider calls, and 900 seconds per command. Set `--max-rounds`, `--max-calls`, and `--timeout` when adding an objective.
 
-To select a smaller available team explicitly, add `--workers codex --reviewer claude`. Claude still plans and makes the final acceptance decision, with a separate Claude session reviewing Codex's changes. The runtime rejects plans that use an excluded worker or assign implementation to the explicitly selected reviewer. [Capacity-aware routing](docs/subscription-capacity.md) checks quota before delegation and records any switch within the allowed implementation team. A single selected worker and an explicit reviewer stay pinned.
+To select a smaller available team explicitly, add `--workers codex --reviewer claude`. Codex plans and makes the final acceptance decision by default, with a separate Claude session reviewing Codex's changes. Use `--orchestrator claude` to explicitly retain Claude planning and acceptance. The runtime rejects plans that use an excluded worker or assign implementation to the explicitly selected reviewer. [Capacity-aware routing](docs/subscription-capacity.md) checks quota before delegation and records any switch within the allowed implementation team. A single selected worker and an explicit reviewer stay pinned.
 
 Artifacts are in `$CAPO_HOME/artifacts/OBJECTIVE_ID/`: prompts, provider output, structured results, process metadata, test logs, `changes.patch`, and `delivery.md`. Treat them as private project data.
 

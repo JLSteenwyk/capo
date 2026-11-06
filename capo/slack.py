@@ -210,6 +210,8 @@ def validate_config(config):
         workers = settings.get("workers", ["codex", "grok"])
         if not isinstance(workers, list) or not workers or any(w not in ("codex", "grok") for w in workers):
             raise ValueError("Invalid implementation workers")
+        if settings.get("orchestrator","codex") not in ("codex","claude","grok"):
+            raise ValueError("Invalid orchestrator")
         if settings.get("reviewer", "auto") not in ("auto", "claude", "codex", "grok"):
             raise ValueError("Invalid reviewer")
         for name in ("max_calls", "max_rounds", "timeout"):
@@ -697,7 +699,9 @@ class SlackService:
             objective = existing
         else:
             request = resolve_issue_links(settings, request)
+            from .reasoning_policy import selected
             args = argparse.Namespace(repo=Path(settings["path"]), request=request,
+                orchestrator=settings.get("orchestrator",selected(self.config)),
                 check=settings["checks"], workers=settings.get("workers", ["codex", "grok"]),
                 reviewer=settings.get("reviewer", "auto"), max_calls=settings.get("max_calls", 24),
                 max_rounds=settings.get("max_rounds", 3), timeout=settings.get("timeout", 900),

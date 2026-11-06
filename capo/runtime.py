@@ -1,4 +1,4 @@
-"""A bounded, restartable objective loop. Claude owns planning and acceptance."""
+"""A bounded, restartable objective loop. The objective pins its planning and acceptance provider."""
 
 import fcntl
 import json
@@ -265,7 +265,7 @@ class Runtime:
         if objective["plan"] is None:
             plan_schema = json.loads(json.dumps(PLAN))
             plan_schema["properties"]["tasks"]["items"]["properties"]["worker"]["enum"] = implementers
-            plan = self.call(objective, "claude", "planner", plan_schema, dict(context,
+            plan = self.call(objective, objective.get("orchestrator","claude"), "planner", plan_schema, dict(context,
                 instructions=_DELIVERY_SEQUENCE +
                 STYLE +
                 "Plan 1-6 sequential implementation tasks using only available_implementation_workers. "
@@ -357,7 +357,7 @@ class Runtime:
             # Ensure even read-only provider calls did not change the candidate.
             if changed_diff(workspace, objective["base"]) != diff:
                 raise ValueError("Reviewer changed the candidate")
-            decision = self.call(objective, "claude", "acceptance", DECISION, {
+            decision = self.call(objective, objective.get("orchestrator","claude"), "acceptance", DECISION, {
                 "objective": objective["request"], "plan": objective["plan"],
                 "diff": diff, "checks": checks, "reviews": reviews,
                 "instructions": _DELIVERY_SEQUENCE +

@@ -701,3 +701,19 @@ feedback also use the configured primary. Their existing bounded generation
 retry paths remain in place. Legacy prompt authentication verifies against the
 checkpoint's recorded provider, with Claude retained as the historical default
 when that metadata is absent; the saved prompt hash is still required.
+
+### Development orchestrator selection
+
+New CLI development, issue and self-improvement objectives pin `orchestrator` to
+Codex by default. `--orchestrator claude` or `--orchestrator grok` explicitly
+selects another provider. Slack-created objectives use a repository's explicit
+`orchestrator` or the shared reasoning primary. Objectives without the new field
+retain the historical Claude planner/acceptance behavior. Changing defaults does
+not rewrite stored objectives, implementation workers, or explicit reviewers.
+
+The planner and final acceptance calls use that pinned provider. Verification,
+frozen baselines, read-only review, separate candidates, call limits and
+publication approval gates are preserved. Independent development review still
+uses a different provider under the existing runtime policy; that is a remaining
+multi-provider dependency, not automatic fallback or proof that a second chief
+agent is needed.

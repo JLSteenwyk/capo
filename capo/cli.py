@@ -17,7 +17,7 @@ from .store import Store
 
 
 def parser():
-    root = argparse.ArgumentParser(description="Capo — development objectives led by Claude Code")
+    root = argparse.ArgumentParser(description="Capo — development objectives led by Codex")
     root.add_argument("--version", action="version", version=f"capo {__version__}")
     root.add_argument("--team-name", default=os.environ.get("CAPO_TEAM_NAME", "SPARKITscience"),
                       help="Display name for this team (default: SPARKITscience)")
@@ -41,6 +41,7 @@ def parser():
     add.add_argument("--max-rounds", type=int, default=3)
     add.add_argument("--timeout", type=int, default=900)
     add.add_argument("--workers", nargs="+", choices=("codex", "grok"), default=["codex", "grok"])
+    add.add_argument("--orchestrator", choices=("codex", "claude", "grok"), default="codex")
     add.add_argument("--reviewer", choices=("auto", "claude", "codex", "grok"), default="auto")
     issue = commands.add_parser("issue", help="Read a GitHub issue into a local objective")
     issue.add_argument("number", type=int)
@@ -48,6 +49,7 @@ def parser():
     issue.add_argument("--repo", type=Path, required=True)
     issue.add_argument("--check", action="append", required=True)
     issue.add_argument("--workers", nargs="+", choices=("codex", "grok"), default=["codex", "grok"])
+    issue.add_argument("--orchestrator", choices=("codex", "claude", "grok"), default="codex")
     issue.add_argument("--reviewer", choices=("auto", "claude", "codex", "grok"), default="auto")
     issue.add_argument("--self-improvement", action="store_true",
                        help="Freeze Capo's regression suite for an issue about Capo itself")
@@ -55,6 +57,7 @@ def parser():
     improve.add_argument("request", nargs="?", default="Identify and implement one small reliability improvement in Capo.")
     improve.add_argument("--repo", type=Path, default=Path(__file__).resolve().parent.parent)
     improve.add_argument("--workers", nargs="+", choices=("codex", "grok"), default=["codex", "grok"])
+    improve.add_argument("--orchestrator", choices=("codex", "claude", "grok"), default="codex")
     improve.add_argument("--reviewer", choices=("auto", "claude", "codex", "grok"), default="auto")
     improve.add_argument("--max-calls", type=int, default=24)
     improve.add_argument("--max-rounds", type=int, default=3)
@@ -143,6 +146,7 @@ def add_objective(store, args, request, source=None, kind="development"):
         for existing in store.list():
             if existing.get("source") == source and existing["repo"] == str(repo):
                 return existing
+    if getattr(args,"orchestrator","codex") not in ("codex","claude","grok"):raise ValueError("Invalid orchestrator")
     data = store.create({"request": request, "source": source, "repo": str(repo), "kind": kind,
                          "providers_config": load_config(getattr(args, "providers_config", None)),
                          "team_name": team_name,
@@ -151,6 +155,7 @@ def add_objective(store, args, request, source=None, kind="development"):
                          "max_rounds": getattr(args, "max_rounds", 3),
                          "workers": getattr(args, "workers", ["codex", "grok"]),
                          "reviewer": getattr(args, "reviewer", "auto"),
+                         "orchestrator": getattr(args,"orchestrator","codex"),
                          "timeout": getattr(args, "timeout", 900)})
     data["workspace"] = str(store.home / "workspaces" / data["id"])
     store.save(data, "workspace_assigned")

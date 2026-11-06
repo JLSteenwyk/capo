@@ -6,7 +6,7 @@ Keep credentials, tokens, private keys, actual Slack member/workspace/channel ID
 
 Before committing, inspect staged files and check for sensitive values. Do not print suspected secrets in tool output. Ignore rules are a convenience, not proof that a file is safe to publish. PR descriptions should summarize verification without copying private command arguments, local paths, or logs.
 
-The platform and CLI are named Capo. The team display name is configurable and defaults to SPARKITscience. Claude Code remains the primary orchestrator.
+The platform and CLI are named Capo. The team display name is configurable and defaults to SPARKITscience. Codex is the primary reasoning engine and orchestrator for new work. Preserve explicit provider choices and providers pinned by historical checkpoints.
 
 Run `python3 -m unittest discover -s tests -q` for meaningful runtime/integration changes. Slack support is optional: install with `python3 -m pip install -e '.[slack]'` when testing the real SDK adapter. Unit tests must not invoke live providers or send Slack/GitHub messages.
 
