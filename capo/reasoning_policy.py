@@ -42,3 +42,47 @@ def request_recovery(config,directory):
         value=json.loads(path.read_text())
         if 'policy' in value:return value['policy']
     return recovery(config)
+
+
+def direct_call(backend,primary,prompt,schema,cwd,directory,config=None,images=None):
+    """One-shot synthesis/vision: one outage fallback inside the original time budget.
+
+    Shared tool loops keep their durable RecoveringProvider instead. This adapter
+    handles standalone reasoning only; it never invokes or retries a tool action.
+    """
+    import time
+    from .conversation import _write
+    from .recovery import failure
+    chosen=settings(config);fallback=chosen['fallback'] if primary==chosen['primary'] else None
+    if images and fallback not in ('codex','claude'):fallback=None
+    kwargs={'images':images} if images else {}
+    if not fallback:return backend.call(primary,prompt,schema,cwd,directory,**kwargs)
+    directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+    receipt={'primary':primary,'fallback':fallback,'attempts':[]}
+    original=getattr(backend,'deadline',None);limit=getattr(backend,'timeout',None)
+    bounded=type(limit) in (int,float) and limit>0
+    if bounded:backend.deadline=min(original,time.time()+limit) if type(original) in (int,float) else time.time()+limit
+    try:
+        receipt['attempts'].append({'provider':primary})
+        _write(directory/'fallback-receipt.json',receipt)
+        try:
+            result=backend.call(primary,prompt,schema,cwd,directory,**kwargs)
+        except Exception as exc:
+            category,_=failure(exc,time.time())
+            receipt['attempts'][-1]['failure']=category
+            _write(directory/'fallback-receipt.json',receipt)
+            if category not in ('temporary','rate_limit','unavailable'):raise
+            if bounded and time.time()>=backend.deadline:raise
+            receipt['attempts'].append({'provider':fallback})
+            _write(directory/'fallback-receipt.json',receipt)
+            try:result=backend.call(fallback,prompt,schema,cwd,directory/('fallback-'+fallback),**kwargs)
+            except Exception:
+                receipt['fallback_failed']=True
+                _write(directory/'fallback-receipt.json',receipt)
+                raise
+            receipt['selected']=fallback
+        else:receipt['selected']=primary
+        _write(directory/'fallback-receipt.json',receipt)
+        return result
+    finally:
+        if bounded:backend.deadline=original

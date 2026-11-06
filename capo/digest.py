@@ -197,8 +197,8 @@ COMPOSE = object_schema({'news': {'type':'array','items': CHOICE},
                          'preparation_event': TEXT, 'upcoming': {'type':'array','items': TEXT}})
 
 
-def compose(evidence, p, seen, directory, provider=None, briefings='', reasoning_provider='codex'):
-    """Claude chooses relevance; facts, IDs, dates and links stay host-controlled.
+def compose(evidence, p, seen, directory, provider=None, briefings='', reasoning_provider='codex', reasoning_config=None):
+    """The configured provider chooses relevance; facts, IDs, dates and links stay host-controlled.
 
     Optional briefing sections precede the feedback footer, which stays last.
     """
@@ -222,7 +222,8 @@ def compose(evidence, p, seen, directory, provider=None, briefings='', reasoning
               'Prioritize preference changes; silence is neutral.\n' + json.dumps(dict(
                   preferences=p, work_overview=evidence.get('work_overview',{}), interest_context=evidence.get('interest_context',{}), news=available, attention=evidence['attention'], today_events=today, upcoming_events=upcoming, now=evidence['now'])))
     try:
-        decision = (provider or Providers(timeout=120)).call(reasoning_provider,prompt,COMPOSE,directory,directory/reasoning_provider)
+        from .reasoning_policy import direct_call
+        decision = direct_call(provider or Providers(timeout=120),reasoning_provider,prompt,COMPOSE,directory,directory/reasoning_provider,config=reasoning_config)
         validate(decision,COMPOSE)
     except Exception:
         # Verified schedule/task facts still make a useful digest during a model outage.

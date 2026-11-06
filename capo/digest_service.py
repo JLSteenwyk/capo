@@ -104,7 +104,7 @@ class DigestManager:
                 evidence['interest_context']=snapshot(self.service.store.home,config,directory)
                 _write(attempt/'evidence.json',evidence)
                 from .reasoning_policy import selected
-                payload=compose(evidence,p,seen,attempt,briefings=briefings['text'],reasoning_provider=selected(config))
+                payload=compose(evidence,p,seen,attempt,briefings=briefings['text'],reasoning_provider=selected(config),reasoning_config=config)
                 payload['briefing_findings']=briefings['findings']
                 if len(payload['text'])>10000:raise ValueError('Digest too long')
                 from .report_freshness import snapshot

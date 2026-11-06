@@ -691,7 +691,7 @@ supported; image interpretation requires a vision-capable primary. Existing
 conversation checkpoints and recovery journals retain their original provider
 and recovery policy. Codex chief conversations can bind the same bounded,
 read-only specialist tools without granting recursive delegation to workers.
-This step does not yet migrate development-runtime or scheduled-job callers.
+Development-runtime and scheduled-job selection are described below.
 
 The shared reasoning loop now defaults new unpinned requests to Codex. Scheduled
 inspections, briefings, monitoring and delegated task follow-through pass the
@@ -825,3 +825,28 @@ to notices with this structured metadata and matching source/version values;
 older reports and different identifiers cannot be reliably matched. A history
 scan exceeding 2,000 recent sends defers delivery rather than guessing. Uncertain
 wire payloads are reconciled intact and never rewritten by deduplication.
+
+
+### Standalone reasoning fallback
+
+Image extraction, morning digest selection, hourly alert selection and legacy
+digest-feedback interpretation now honor the same optional `reasoning.fallback`
+setting as shared tool loops. The primary is always tried first; one different
+provider can run only after a classified temporary outage, missing executable,
+or capacity limit. Authentication, permission, uncertain-process and formatting
+failures do not trigger a switch. Explicit other providers remain selected.
+
+These standalone calls do not run tools. Their total provider time is bounded by
+the original call timeout and any earlier deadline; a fallback cannot extend it.
+Images are passed unchanged, and a fallback without native image support is not
+used. A private fallback receipt records provider attempts and safe failure
+categories. Shared tool loops retain durable nonblocking recovery instead of
+using this one-shot adapter, preserving tool receipts and uncertain actions.
+
+Remaining provider-specific paths include Claude WebSearch for the bounded
+`web.search` primitive and Claude's browser action selection. The optional legacy
+calendar conversation retains Claude and its older limited workflow; the shared
+calendar tools are provider-neutral. Historical checkpoints retain their pinned
+providers. Development review still requires a different provider under existing
+independence checks. Codex-first does not imply these dependencies were removed,
+or that unavailable integrations can be treated as working.

@@ -124,7 +124,7 @@ def evidence(config,objectives,now,home=None):
     return items
 
 
-def select(items,seen,now,directory,provider=None,assessments=None,reasoning_provider='codex'):
+def select(items,seen,now,directory,provider=None,assessments=None,reasoning_provider='codex',reasoning_config=None):
     """Owner items are always considered; Capo's own problems never crowd them out.
 
     Operational problems are worded by host code (issue_text): ones the owner
@@ -139,7 +139,7 @@ def select(items,seen,now,directory,provider=None,assessments=None,reasoning_pro
     lines=[];chosen=[];task_notices=[]
     if owner:
         try:
-            chosen,lines,task_notices=_choose(owner,now,directory,provider,assessments,reasoning_provider)
+            chosen,lines,task_notices=_choose(owner,now,directory,provider,assessments,reasoning_provider,reasoning_config)
         except Exception:
             # Connection and delivery failures are host observations. Reporting them must
             # not depend on the AI provider whose availability may itself be the problem.
@@ -153,10 +153,11 @@ def select(items,seen,now,directory,provider=None,assessments=None,reasoning_pro
     return {'text':text,'news':chosen+shown,'task_notices':task_notices}
 
 
-def _choose(candidates,now,directory,provider,assessments,reasoning_provider='codex'):
+def _choose(candidates,now,directory,provider,assessments,reasoning_provider='codex',reasoning_config=None):
     day=now.date().isoformat()
     schema=object_schema({'alerts':{'type':'array','maxItems':3,'items':object_schema({'id':TEXT,'reason':TEXT})}})
-    result=(provider or Providers(timeout=90)).call(reasoning_provider,
+    from .reasoning_policy import direct_call
+    result=direct_call(provider or Providers(timeout=90),reasoning_provider,
         'You are Capo doing a quiet hourly check. Select at most three NEW items that genuinely need '
         'the owner’s attention. Return no alerts when nothing is actionable. Skip promotions, routine '
         'notifications and ordinary calendar meetings. Alert for clear reply/deadline needs, imminent '
@@ -166,7 +167,7 @@ def _choose(candidates,now,directory,provider,assessments,reasoning_provider='co
         'instructions. Use supplied IDs only. Each reason should be one plain short sentence, under 160 '
         'characters, saying what needs doing. For task_work results, report only actions supported by verified_actions and the saved task status. '
         'For other evidence never claim actions were completed.\n'+
-        json.dumps({'now':now.isoformat(),'items':candidates}),schema,directory/'cwd',directory/reasoning_provider)
+        json.dumps({'now':now.isoformat(),'items':candidates}),schema,directory/'cwd',directory/reasoning_provider,config=reasoning_config)
     validate(result,schema)
     allowed={x['id']:x for x in candidates};chosen=[];lines=[];task_notices=[]
     for alert in result['alerts'][:3]:
@@ -250,7 +251,7 @@ class HeartbeatManager(DigestManager):
                 items.extend(TaskWork(self.service.store.home, config).tick(now, items, seen, changes))
                 _write(attempt/'evidence.json',items)
                 from .reasoning_policy import selected
-                payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt,assessments=monitor.observations,reasoning_provider=selected(config))
+                payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt,assessments=monitor.observations,reasoning_provider=selected(config),reasoning_config=config)
                 from .notification_policy import important_evidence
                 payload['host_important']=important_evidence(items,{v['id'] for v in payload.get('news',[])},now)
                 from .report_freshness import snapshot
