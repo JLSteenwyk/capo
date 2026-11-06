@@ -787,3 +787,21 @@ Morning digest evidence reuses a compact briefing from this same projection,
 with saved counts and at most three active/waiting/blocked/uncertain entries per
 group. It does not trigger a separate unsolicited overview message or silently
 present unrefreshed task status as a current obligation.
+
+
+### Hourly notification controls
+
+`notifications.read/change` expose owner-scoped operative settings for unsolicited
+hourly checks: local quiet start/end, timezone, and all versus important alerts.
+Changes require an owner request, the current revision, and a durable operation
+receipt. Empty start/end values disable the quiet window. Settings live in private
+runtime storage; preference quotes in memory do not silently alter these settings.
+
+Quiet checks retain their evidence and suppression reason locally. The next check
+reevaluates current sources rather than replaying a stale backlog. Selected
+high-priority saved tasks and selected calendar events starting within two hours
+bypass the filter, using host evidence rather than model-written urgency labels.
+Direct replies, explicit reminders, owner-scheduled deliveries, and uncertain
+Slack sends awaiting reconciliation bypass this hourly filter. It changes neither
+schedules nor external-action permissions. These controls do not classify every
+possible urgent situation; the current supported urgency signals are explicit.

@@ -251,6 +251,8 @@ class HeartbeatManager(DigestManager):
                 _write(attempt/'evidence.json',items)
                 from .reasoning_policy import selected
                 payload=select(items,seen,now.astimezone(ZoneInfo(p['timezone'])),attempt,assessments=monitor.observations,reasoning_provider=selected(config))
+                from .notification_policy import important_evidence
+                payload['host_important']=important_evidence(items,{v['id'] for v in payload.get('news',[])},now)
                 from .report_freshness import snapshot
                 run.update(status='ready' if payload['text'] else 'quiet',payload=payload,
                            evidence_snapshot=snapshot(now.timestamp(),rebuildable=False))

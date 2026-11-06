@@ -53,6 +53,8 @@ def shared_tools(home,config,documents,request=None):
            ReadTool('documents.read','Read a private document using an ID from documents.list.',object_schema({'id':TEXT}),documents.read)]
     from .contacts import Contacts
     tools.extend(Contacts(home,owner_key(config)).tools())
+    from .notification_policy import NotificationPolicy
+    tools.extend(NotificationPolicy(home,owner_key(config),(request or {}).get('owner_request')).tools())
     from .practical_defaults import PracticalDefaults
     tools.extend(PracticalDefaults(home,owner_key(config),(request or {}).get('owner_request')).tools())
     from .personal_memory import PersonalMemory

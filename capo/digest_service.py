@@ -147,6 +147,8 @@ class DigestManager:
             run=self.db.get(run['key'])
             if run['status'] not in ('ready','sending','delivery_unknown'):return
             if now.timestamp()<run.get('retry_at',0):return
+            from .notification_policy import filter_hourly
+            if not filter_hourly(self,run,now):return
             from .report_freshness import guard
             if not guard(run,now.timestamp()):
                 self.db.save(run,now);return
