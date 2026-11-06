@@ -160,10 +160,17 @@ class CapabilityConversation(ConversationRouter):
         self.documents=Documents(home,owner_key(config))
         super().__init__(home/'capabilities'/hashlib.sha256(owner_key(config).encode()).hexdigest())
 
+    def _result(self, directory):
+        route=super()._result(directory)
+        value=json.loads((directory/'outcome.json').read_text()) if (directory/'outcome.json').exists() else {}
+        return {**route,'outcome_status':value.get('status','cancelled' if (directory/'cancelled.json').exists() else 'unknown')}
+
     def _run(self,directory,context,schema,fd):
+        tools=None
         try:
             from .request_updates import latest
-            result=research(Providers(timeout=90),shared_tools(self.home,self.config,self.documents,context),context,directory,
+            tools=shared_tools(self.home,self.config,self.documents,context)
+            result=research(Providers(timeout=90),tools,context,directory,
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
                 'Use team.status for assignments and health.status for connection checks and missing or failed automation runs. Use health.check for a fresh read-only connection probe; never retry uncertain writes or claim a login was renewed without evidence. '
                 'Before asking the owner to supply discoverable information, recover from read errors using their actionable guidance and follow search pagination within the execution budget. Never interpret failed or partial reads as absence. Never blindly retry uncertain writes. '
@@ -222,17 +229,14 @@ class CapabilityConversation(ConversationRouter):
                 _write(directory/'retry.json', {'retry_at': exc.retry_at})
                 os.close(fd)
                 return
+            receipts_path=directory/'receipts.json'
+            receipts=json.loads(receipts_path.read_text()) if receipts_path.exists() else []
+            from .request_outcomes import completion_failure_reply
+            reply=completion_failure_reply(receipts,tools) if tools is not None else 'The request stopped before execution. No completion was confirmed.'
             from .providers import AuthenticationError
-            if isinstance(exc, (AuthenticationError, PermissionError)):
+            if isinstance(exc,(AuthenticationError,PermissionError)):
                 from .recovery import failure_summary
-                reply=failure_summary(exc)
-            else:
-                receipts_path=directory/'receipts.json'
-                receipts=json.loads(receipts_path.read_text()) if receipts_path.exists() else []
-                failed=[r['tool'] for r in receipts if 'error' in r]
-                detail=('The '+failed[-1]+' tool did not return usable evidence.' if failed else
-                        'The reasoning step stopped before I could finish.')
-                reply=detail+' Your request and any action receipts are saved; I have not confirmed completion.'
+                reply+='\n'+failure_summary(exc)
         try:
             if context.get('request_thread'):
                 from .request_memory import RequestMemory

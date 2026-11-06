@@ -532,3 +532,10 @@ resolve from when they were sent. A failed check never blocks live handling and
 is retried after a minute. Slack history bounds are sent with at most six decimal
 places; Slack answers longer bounds with an empty page, which previously hid
 messages from recovery and delivery reconciliation.
+
+Capability-conversation terminal failures reuse the receipt-grounded completion
+renderer. A failed reasoning step does not invalidate an earlier verified action;
+the reply identifies confirmed changes separately from an unfinished request.
+Capability outcome status travels into the Slack delivery record so a delivered
+failure reply is not confused with successful execution. Delivery success and
+request outcome remain separate facts.

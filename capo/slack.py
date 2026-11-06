@@ -428,7 +428,7 @@ class SlackService:
             from .capabilities import CapabilityConversation
             if not hasattr(self, 'capability_conversation'):
                 self.capability_conversation = CapabilityConversation(self.store.home, self.config)
-            reply = self.capability_conversation.poll(event_id, {
+            result = self.capability_conversation.poll(event_id, {
                 'aliases': list(self.config['repositories']),
                 'objectives': [{'id': row['id'], 'status': row['status']} for row in owned],
                 'thread_objective_id': in_thread[0]['id'] if len(in_thread) == 1 else '',
@@ -438,7 +438,9 @@ class SlackService:
                 'team': roster(self.config),
                 'browser_preferences': self.config.get('browser', {}).get('preferences', {}),
                 'timezone': self.config.get('calendar', {}).get('timezone', 'America/Los_Angeles'),
-                'recent_messages': list(reversed(recent))})['reply']
+                'recent_messages': list(reversed(recent))})
+            self.request_outcome_status=result.get('outcome_status','unknown')
+            reply=result['reply']
             table=self.store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workflow_previews'").fetchone()
             preview=self.store.db.execute('SELECT data FROM workflow_previews WHERE event_id=?',(event_id,)).fetchone() if table else None
             if preview:
@@ -862,6 +864,7 @@ class SlackService:
                 reactions.received(event_id, body["event"])
                 self.pending_review = None
                 failed = False
+                self.request_outcome_status='unknown'
                 try:
                     text = self.dispatch(event_id, body)
                 except ConversationPending:
@@ -874,12 +877,13 @@ class SlackService:
                     text = f"Could not handle this request: {exc}"
                     self.pending_review = None
                     failed = True
+                failed=failed or self.request_outcome_status=='failed'
                 from .slack_audio import heard
                 spoken = heard(self.store.home, event_id)
                 if spoken:
                     text = "🎙️ I heard: “" + spoken[:600] + ("…" if len(spoken) > 600 else "") + "”\n\n" + text
                 from .message_format import plain_text
-                data = {"text": plain_text(text), "review": self.pending_review, "failed": failed}
+                data = {"text": plain_text(text), "review": self.pending_review, "failed": failed, "outcome_status": self.request_outcome_status}
                 from .message_format import slack_chunks
                 data["chunks"] = slack_chunks(data["text"])
                 if acknowledged(self.store, event_id) and not failed and not data["review"]:
