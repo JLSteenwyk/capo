@@ -634,3 +634,20 @@ receipts without executing tools. Cancellation stops future work; an in-flight
 external action can still settle and must be reconciled. The reliability review
 recognizes both legacy error outcomes and typed failed outcomes. Delivery of a
 reply remains separate from success of the request it describes.
+
+Read-only timing aggregates are available with `python3 -m capo.request_timing
+--home /PRIVATE/capo-home --days 7`. Counts and median/p90/max wall times separate
+transport-to-host, acknowledgement attempt, queue, first response, execution and
+final delivery. Missing milestones do not become zero-duration successes. These
+new measurements cannot establish historical improvements before deployment.
+The shared `render_outcome` entry point covers validated completion/partial
+reports, terminal failures, cancellation and execution-limit summaries.
+
+Concurrency assessment: the conversation classifier lock currently serializes
+reasoning while each request retains its own research/effect locks. History
+recovery is now independent. Independent-thread model concurrency would require
+separate bounded worker slots, per-thread FIFO admission and provider-capacity
+accounting; removing the classifier lock alone would permit unbounded CLI
+processes and would not preserve thread ordering. Retain serialization for this
+release and use lifecycle queue measurements to justify any subsequent worker
+pool. The current implementation makes no concurrent-execution guarantee.

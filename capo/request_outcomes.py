@@ -78,6 +78,17 @@ def stopped_reply(receipts,tools):
     return text
 
 
+def render_outcome(result,receipts,tools,*,outcome=None,failure=False,stopped=False):
+    """One rendering entry point for normal, partial, failed and stopped work."""
+    if stopped:return stopped_reply(receipts,tools)
+    if failure:return completion_failure_reply(receipts,tools)
+    from .research_tools import complete_reply
+    text=complete_reply(result)
+    unfinished=pending_text(outcome or {})
+    if unfinished:text+='\n\nStill to address:\n'+unfinished
+    return text
+
+
 def assess(encoded,receipts,tools,inventory=None):
     if len(encoded)>12000:raise OutcomeError('Outcome report exceeds its limit')
     report=json.loads(encoded)

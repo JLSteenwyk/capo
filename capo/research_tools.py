@@ -347,7 +347,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             _write(directory/'receipts.json', receipts)
             continue
         if result['action'] == 'finish':
-            from .request_outcomes import assess,pending_text,OutcomeError,completion_failure_reply
+            from .request_outcomes import assess,render_outcome,OutcomeError
             try:
                 from .message_format import strip_transport_tail
                 result={**result,'reply':strip_transport_tail(result['reply']),
@@ -358,9 +358,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                         or bool(result['document_title'].strip()) != bool(result['document'].strip())):
                     raise ValueError('Invalid research response')
                 outcome=assess(result['arguments_json'],receipts,tools,inventory=inventory.read()['items'])
-                rendered=complete_reply(result)
-                unfinished=pending_text(outcome)
-                if unfinished:rendered+='\n\nStill to address:\n'+unfinished
+                rendered=render_outcome(result,receipts,tools,outcome=outcome)
                 if len(rendered)>16000:raise ValueError('Completion report is too long')
             except (ValueError,KeyError,TypeError) as exc:
                 reason=(str(exc)+' ') if isinstance(exc,OutcomeError) else ''
@@ -370,7 +368,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 _write(checkpoint,state)
                 _write(directory/'receipts.json',receipts)
                 if remaining and not repeated:continue
-                completed={'reply':completion_failure_reply(receipts,tools),
+                completed={'reply':render_outcome(None,receipts,tools,failure=True),
                            'status':'partial','stop_reason':'invalid_completion_report','document_title':'','document':'','receipts':receipts}
                 state['result']=completed
                 _write(checkpoint,state)
@@ -383,7 +381,8 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             _write(checkpoint, state)
             return completed
         if not remaining or evidence_size >= evidence_limit:
-            completed={'reply': 'I reached the execution limit before finishing. Results are preserved, but the remaining work is incomplete.',
+            from .request_outcomes import render_outcome
+            completed={'reply':render_outcome(None,receipts,tools,failure=True)+'\nI reached the execution limit before finishing the remaining work.',
                        'status':'partial','stop_reason':'tool_limit' if not remaining else 'evidence_limit',
                        'document_title': '', 'document': '', 'receipts': receipts}
             state['result']=completed

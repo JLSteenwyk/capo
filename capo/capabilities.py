@@ -172,11 +172,11 @@ class CapabilityConversation(ConversationRouter):
         self.budget(event_id)
         directory=self.root/hashlib.sha256(str(event_id).encode()).hexdigest()
         if (directory/'cancelled.json').exists():
-            from .request_outcomes import stopped_reply
+            from .request_outcomes import render_outcome
             path=directory/'receipts.json'
             receipts=json.loads(path.read_text()) if path.exists() else []
             tools=shared_tools(self.home,self.config,self.documents,context)
-            return {'action':'reply','repository':'','objective_id':'','outcome_status':'cancelled','reply':stopped_reply(receipts,tools)}
+            return {'action':'reply','repository':'','objective_id':'','outcome_status':'cancelled','reply':render_outcome(None,receipts,tools,stopped=True)}
         return super().poll(event_id,context)
 
     def progress(self,event_id):
@@ -265,8 +265,8 @@ class CapabilityConversation(ConversationRouter):
                 return
             receipts_path=directory/'receipts.json'
             receipts=json.loads(receipts_path.read_text()) if receipts_path.exists() else []
-            from .request_outcomes import completion_failure_reply
-            reply=completion_failure_reply(receipts,tools) if tools is not None else 'The request stopped before execution. No completion was confirmed.'
+            from .request_outcomes import render_outcome
+            reply=render_outcome(None,receipts,tools,failure=True) if tools is not None else 'The request stopped before execution. No completion was confirmed.'
             if isinstance(exc,TimeoutError):reply+='\nI reached this request’s execution time limit. Inspect saved results before retrying unfinished actions.'
             from .providers import AuthenticationError
             if isinstance(exc,(AuthenticationError,PermissionError)):

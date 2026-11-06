@@ -26,3 +26,14 @@ class TimingTests(unittest.TestCase):
                 with clock.activity('provider','claude'):raise TimeoutError('private error')
             self.assertEqual([v['phase'] for v in clock.read()],['provider_started','provider_finished'])
             with self.assertRaises(ValueError):clock.mark('completed',label='private error text')
+
+    def test_summary_separates_transport_delay_queue_and_execution(self):
+        from capo.request_timing import summary
+        with tempfile.TemporaryDirectory() as tmp:
+            home=Path(tmp);clock=RequestTiming(home,'private-id')
+            for phase,at in [('message',10),('received',100),('acknowledged',102),('execution_started',110),('first_reply',115),('completed',120),('delivered',122)]:clock.mark(phase,at=at)
+            result=summary(home,now=130)
+            self.assertEqual(result['metrics']['delivery_to_host']['median_seconds'],90)
+            self.assertEqual(result['metrics']['queue']['median_seconds'],10)
+            self.assertEqual(result['metrics']['execution']['median_seconds'],10)
+            self.assertNotIn('private-id',str(result))
