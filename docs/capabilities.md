@@ -717,3 +717,24 @@ publication approval gates are preserved. Independent development review still
 uses a different provider under the existing runtime policy; that is a remaining
 multi-provider dependency, not automatic fallback or proof that a second chief
 agent is needed.
+
+### Practical defaults
+
+`defaults.read/save/forget` reuse the private PersonalMemory database and its
+transactional receipts, owner scope and optimistic revisions. Named keys cover
+event duration, calendar, timezone, location, notifications and quiet periods.
+Values are exact owner quotes, not inferred settings or an alternate account
+configuration. Read the current revision before changing or forgetting a default.
+Temporary choices belong to the current request, and inferred suggestions must
+not be saved as explicit defaults.
+
+Ordinary capability conversations receive a snapshot of practical defaults at
+request start. The chief applies relevant quotes while honoring current owner
+instructions, and other roles can discover `defaults.read` in the shared registry.
+For example, an explicitly stated usual meeting duration can avoid an unnecessary
+clarification; an explicit different duration in the current request overrides
+it. A quote mentioning a calendar must still resolve to an accessible discovered
+calendar before use. These preferences do not change host timezone, account
+permissions, existing events, subscriptions or schedules by themselves and never
+authorize invitations, messages or purchases. Existing generic memory tools can
+inspect the same `defaults/` keys; no second source of truth is introduced.
