@@ -16,6 +16,8 @@ class RecoveryTests(unittest.TestCase):
         tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);self.home=Path(tmp.name)
         self.client=Mock();self.client.conversations_history.return_value={'messages':[]}
         self.client.conversations_replies.return_value={'messages':[]}
+        # Production serve initializes Store before starting network workers.
+        initialized=Store(self.home);initialized.db.close()
         self.scan=RecoveryScan(self.home,CONFIG,self.client)
 
     def seed(self,ts,text='Received',thread=None):

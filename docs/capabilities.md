@@ -586,3 +586,18 @@ retries read back state rather than resend. Unsupported fields, scope mismatch,
 stale revisions and foreign organizers are rejected before writing. Material
 facts must come from the owner or verified evidence; tool availability does not
 authorize inventing a time, place or other detail.
+
+### Request lifecycle timing
+
+Private `CAPO_HOME/request-timing.sqlite3` records hashed request identities,
+first message/receipt/acknowledgement/execution/completion/reply/delivery times,
+and provider/tool activity boundaries. It stores catalog names and fixed status
+labels, never transcript bodies, arguments, raw provider errors or credentials.
+First milestones survive restarts without being overwritten; repeated provider
+and tool attempts retain separate activity pairs, including exceptions. These
+measurements separate message-to-receipt delay from execution and delivery.
+An acknowledgement records the best-effort reaction attempt, not proof Slack
+rendered it. Wall-clock activity duration can include host sleep; it must not be
+reported as pure model time. Historical requests are not backfilled using
+filesystem timestamps. Existing deadlines, receipts and authorization remain
+independent of this instrumentation.

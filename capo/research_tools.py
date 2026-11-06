@@ -104,7 +104,7 @@ def complete_reply(result):
     return reply + '\n\n' + content
 
 
-def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False):
+def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False, timing=None):
     """Serialize the entire reasoning/tool loop, including external tool calls."""
     import fcntl
     import os
@@ -123,12 +123,12 @@ def research(provider, tools, request, directory, instructions='', max_calls=6, 
             tools = bind(tools, provider, directory, request, owner_update)
             if 'workers.delegate' in tools.tools:instructions = GUIDANCE + instructions
         elif 'workers.delegate' in tools.tools:raise ValueError('Recursive delegation is prohibited')
-        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update, reasoning_provider, require_source_inspection)
+        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update, reasoning_provider, require_source_inspection, timing)
     finally:
         os.close(fd)
 
 
-def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False):
+def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False, timing=None):
     """Compose tools without a task-type enum; return evidence receipts and a document.
 
     max_calls counts tool attempts, including invalid calls. A final provider turn
@@ -300,7 +300,9 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             })
         )
         prompt = provider_prompt(directory/f'step-{step}', prompt, STEP, reasoning_provider)
-        result = provider.call(reasoning_provider, prompt, STEP, directory/'cwd', directory/f'step-{step}')
+        from contextlib import nullcontext
+        with timing.activity('provider',reasoning_provider) if timing else nullcontext():
+            result = provider.call(reasoning_provider, prompt, STEP, directory/'cwd', directory/f'step-{step}')
         validate(result, STEP)
         if (directory/'cancelled.json').exists():
             raise RecoveryStopped('Research was cancelled')
@@ -414,7 +416,9 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
             updated=superseded()
             if updated is not None:return updated
             tool_attempted = True
-            evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+action_key)
+            from contextlib import nullcontext
+            with timing.activity('tool',result['tool']) if timing else nullcontext():
+                evidence = tools.call(result['tool'], arguments, operation_id=str(directory.resolve())+':'+action_key)
             size = len(json.dumps(evidence))
             ceiling = evidence_limit if result['tool'] in finalizers else evidence_limit - report_reserve
             if size > ceiling - evidence_size:

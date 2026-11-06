@@ -275,6 +275,10 @@ def ingest(home, config, body):
                         and all(previous.get(k) == event.get(k) for k in ("channel", "user", "ts"))):
                     return False
             store.enqueue_slack(body["event_id"], body)
+            from .request_timing import RequestTiming
+            timing=RequestTiming(store.home,body['event_id'])
+            timing.mark('message',at=float(event['ts']))
+            timing.mark('received')
     finally:
         store.db.close()
     return True
@@ -862,6 +866,8 @@ class SlackService:
             if row is None:
                 self.activity_status(body["event"])
                 reactions.received(event_id, body["event"])
+                from .request_timing import RequestTiming
+                RequestTiming(self.store.home,event_id).mark('acknowledged')
                 self.pending_review = None
                 failed = False
                 self.request_outcome_status='unknown'
@@ -908,6 +914,8 @@ class SlackService:
             if index < len(chunks):
                 if not self.send_chunk({**body["event"],"_delivery_key":"reply:"+event_id+":"+str(index)}, chunks[index]):
                     continue
+                from .request_timing import RequestTiming
+                RequestTiming(self.store.home,event_id).mark('first_reply')
                 index += 1
                 with self.store.db:
                     self.store.db.execute("UPDATE slack_deliveries SET next_chunk=? WHERE event_id=?",
@@ -924,6 +932,8 @@ class SlackService:
                         objective["slack_review_digest"] = digest
                         self.store.save(objective, "slack_preview_delivered")
             self.store.finish_slack(event_id)
+            from .request_timing import RequestTiming
+            RequestTiming(self.store.home,event_id).mark('delivered')
             self.activity_status(body["event"], active=False)
             reactions.finished(event_id, body["event"], failed=data.get("failed", False))
 

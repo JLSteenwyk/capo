@@ -167,10 +167,13 @@ class CapabilityConversation(ConversationRouter):
 
     def _run(self,directory,context,schema,fd):
         tools=None
+        from .request_timing import RequestTiming
+        timing=RequestTiming(self.home,context.get('request_event',str(directory)))
+        timing.mark('execution_started')
         try:
             from .request_updates import latest
             tools=shared_tools(self.home,self.config,self.documents,context)
-            result=research(Providers(timeout=90),tools,context,directory,
+            result=research(Providers(timeout=90),tools,context,directory,timing=timing,
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
                 'Use team.status for assignments and health.status for connection checks and missing or failed automation runs. Use health.check for a fresh read-only connection probe; never retry uncertain writes or claim a login was renewed without evidence. '
                 'Before asking the owner to supply discoverable information, recover from read errors using their actionable guidance and follow search pagination within the execution budget. Never interpret failed or partial reads as absence. Never blindly retry uncertain writes. '
@@ -243,4 +246,5 @@ class CapabilityConversation(ConversationRouter):
                 RequestMemory(self.home,owner_key(self.config),context['request_thread']).record(
                     context.get('request_event',str(directory)), 'outcome', {'reply':reply})
             _write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply},'status':status})
+            timing.mark('completed',label=status)
         finally:os.close(fd)
