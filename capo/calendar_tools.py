@@ -275,6 +275,16 @@ class CalendarTools:
             cache=self.primary_cache if calendar_id=='primary' else {eid:row for (cid,eid),row in self.cache.items() if cid==calendar_id}
             return Invitations(home,owner,calendar_id,cache).invite(event_id,contacts.resolve(contact_ids),operation_id)
         tools.append(ReadTool('calendar.invite','Add explicitly owner-requested saved contacts to an inspected event organized by this account. This sends Google guest notifications. Preserves existing guests and all other fields; never guesses addresses or resends an uncertain invitation. Existing recurring events are unsupported. Use contact_ids on calendar.change when creating an event or series with guests.',object_schema({'calendar_id':TEXT,'event_id':TEXT,'contact_ids':TEXTS}),invite,mutates=True))
+        from .calendar_patch import CalendarPatch
+        def patch_fields(calendar_id,event_id,fields,scope,notify_guests,operation_id):
+            calendar_id=self.canonical(calendar_id)
+            if calendar_id!='primary' and self.calendars[calendar_id].get('accessRole')!='owner':
+                raise PermissionError('Calendar patches require an owned calendar')
+            cache=self.primary_cache if calendar_id=='primary' else {eid:row for (cid,eid),row in self.cache.items() if cid==calendar_id}
+            return CalendarPatch(home,owner,calendar_id,cache).patch(event_id,fields,scope,notify_guests,operation_id)
+        field_schema=object_schema({'summary':TEXT,'description':TEXT,'location':TEXT})
+        field_schema['required']=[]
+        tools.append(ReadTool('calendar.patch','Patch explicitly owner-requested summary, description or location on an inspected owned event. Supply only changed fields; preserve existing notes when appending. Scope must explicitly match event, recurring instance or series. notify_guests explicitly chooses Google notifications. Does not change times, guests or recurrence rules. Use only owner-supplied or verified details; never invented facts. Reconcile uncertain writes instead of repeating.',object_schema({'calendar_id':TEXT,'event_id':TEXT,'fields':field_schema,'scope':TEXT,'notify_guests':{'type':'boolean'}}),patch_fields,mutates=True))
         return tools
 
     def tools(self):

@@ -81,6 +81,10 @@ class CalendarActions:
         if id not in self.known_pending:raise ValueError('List pending calendar actions first')
         op,req=self.known_pending[id]
         calendar_id=req['plan'].get('calendar_id','primary')
+        if req['kind']=='calendar-patch':
+            from .calendar_patch import CalendarPatch
+            adapter=CalendarPatch(None,None,calendar_id,{},effects=self.effects)
+            return adapter.reconcile(op,req) or {'confirmed':False,'reply':'Patch remains unconfirmed; no write repeated.'}
         if req['kind']=='calendar-invite':
             from .calendar_invites import confirmed
             client=GoogleCalendar() if calendar_id=='primary' else GoogleCalendar(calendar_id)

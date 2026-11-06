@@ -562,3 +562,27 @@ this is bounded background work, not an immediate completeness guarantee. The
 older `slack_backfill` helpers remain for compatibility; the service uses the
 incremental scanner. Stop closes the worker cooperatively; an in-flight SDK read
 can finish after stop, but no new recovery loop begins.
+
+### Calendar field patches
+
+`calendar.patch` composes with `calendar.event`, research reads and contact
+lookup. It edits an explicitly supplied subset of `summary`, `description` and
+`location`; omitted fields remain unchanged. When appending notes the caller
+must retain the inspected existing description. Clearing description/location
+uses an empty string. Titles cannot be empty. Times, attendees and recurrence
+rules are outside this primitive's allowlist.
+
+Inspect the target first on an owned calendar. The fresh revision must match the
+inspected ETag and the account must organize the fully readable event. Scope is
+explicit: `event`, `instance`, or `series`, matching the actual inspected object.
+An instance uses its own event ID; a series uses its parent event ID. Guest
+notifications are an explicit boolean (`all` versus `none`); adding/removing
+guests continues to use the dedicated invitation tool. This patch capability
+does not expand background personal-calendar grants.
+
+Private snapshots verify both edited fields and unrelated calendar content after
+writing. Lost responses enter the existing pending/reconcile pathway. Identical
+retries read back state rather than resend. Unsupported fields, scope mismatch,
+stale revisions and foreign organizers are rejected before writing. Material
+facts must come from the owner or verified evidence; tool availability does not
+authorize inventing a time, place or other detail.
