@@ -43,3 +43,11 @@ class PolicyTests(unittest.TestCase):
             RecoveringProvider(backend,recovery({'reasoning':{'fallback':'claude'}})).call('codex','prompt',object_schema({}),Path(tmp),Path(tmp)/'step')
         self.assertEqual(backend.call.call_args.args[0],'claude')
         self.assertEqual(backend.capacity.choose.call_args.args,('claude',['claude']))
+
+    def test_existing_request_recovery_policy_is_not_rewritten(self):
+        from capo.reasoning_policy import request_recovery
+        with tempfile.TemporaryDirectory() as tmp:
+            directory=Path(tmp);step=directory/'step-0';step.mkdir()
+            old={'max_attempts':3,'base_delay':30,'fallbacks':{'claude':['codex']}}
+            (step/'recovery.json').write_text(json.dumps({'policy':old}))
+            self.assertEqual(request_recovery({},directory),old)

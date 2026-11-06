@@ -147,6 +147,8 @@ def configure(config_path, client=None):
 def validate_config(config):
     if not isinstance(config, dict):
         raise ValueError("Slack configuration must be an object")
+    from .reasoning_policy import settings as reasoning_settings
+    reasoning_settings(config)
     from .request_budget import settings as budget_settings
     budget_settings(config.get('request_budget'))
     if type(config.get("auto_run", True)) is not bool:

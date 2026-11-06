@@ -91,6 +91,7 @@ class ImageTests(unittest.TestCase):
             self.assertIn('6:15 pm',result)
             self.assertIn('End time',result)
             provider.return_value.call.assert_called_once()
+            self.assertEqual(provider.return_value.call.call_args.args[0],'codex')
             self.assertIn('6:15 pm',context(service,'new',body,'Use that image'))
         other=json.loads(json.dumps(body));other['event'].update(type='app_mention',thread_ts='999.1')
         self.assertEqual(context(service,'other',other,'Another request'),'Another request')

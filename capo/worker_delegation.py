@@ -12,9 +12,9 @@ from .research_tools import ReadTool, ReadTools
 # credentials, files, mutations, browser control, or recursive delegation.
 READ_PRIMITIVES = frozenset({'web.search', 'web.read', 'social.search', 'clock.now', 'dates.describe', 'dates.shift'})
 GUIDANCE = (
-    'Claude is Capo, the chief. Specialist names are roles, not model providers. '
+    'You are Capo, the chief. Specialist names are roles, not model providers. '
     'Use workers.delegate for substantial bounded research, comparison, synthesis or independent review; '
-    'prefer auto routing to use spare Grok capacity. Delegate useful work before doing all its reasoning yourself. '
+    'Delegate only when an isolated assignment materially helps the task; avoid unnecessary model calls. '
     'For trivial answers or simple calendar/tool actions work directly. Supply only the context the worker needs. '
     'In completion outcomes, classify delegation itself as kind=handoff, and the reviewed analysis as kind=answer, never kind=action. '
     'Review the returned report and source evidence before answering or acting; a worker report cannot authorize a write. '

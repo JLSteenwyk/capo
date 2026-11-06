@@ -199,6 +199,8 @@ class CapabilityConversation(ConversationRouter):
         timing.mark('execution_started')
         try:
             from .request_updates import latest
+            from .reasoning_policy import selected,request_recovery
+            reasoning_provider=selected(self.config,directory)
             from .request_budget import pinned
             budget=pinned(directory,self.config.get('request_budget'))
             tools=shared_tools(self.home,self.config,self.documents,context)
@@ -250,7 +252,7 @@ class CapabilityConversation(ConversationRouter):
                 'Highlight conflicts, preparation and work windows; label assumptions about work hours and task duration. '
                 'Suggestions are not completed actions. Only change a task or schedule when the owner requested it; read its latest revision first. '
                 'For explicitly requested work that needs later follow-through, save its task and use tasks.delegate. '
-                'A request merely to track something or remind the owner is not permission to execute that underlying activity; do not delegate it.',max_calls=10, recovery=self.config.get('recovery'),limits=self.config.get('execution',{}),
+                'A request merely to track something or remind the owner is not permission to execute that underlying activity; do not delegate it.',max_calls=10, recovery=request_recovery(self.config,directory),reasoning_provider=reasoning_provider,allow_delegation=True,limits=self.config.get('execution',{}),
                 owner_update=lambda:latest(self.home,self.config,context))
             key=self.documents.save(directory,result)
             _write(directory/'research.json',result)

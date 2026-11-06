@@ -683,3 +683,12 @@ A separate synthetic red-image integration probe verified Codex visual input
 through the adapter. Its private receipt records the result and elapsed time;
 this small smoke check is not an image-quality benchmark or a latency claim for
 ordinary requests.
+
+New ordinary capability conversations and Slack image interpretation now select
+Codex through `reasoning.primary`, with an optional `reasoning.fallback` for shared
+reasoning recovery. The primary can explicitly remain Claude or Grok where
+supported; image interpretation requires a vision-capable primary. Existing
+conversation checkpoints and recovery journals retain their original provider
+and recovery policy. Codex chief conversations can bind the same bounded,
+read-only specialist tools without granting recursive delegation to workers.
+This step does not yet migrate development-runtime or scheduled-job callers.
