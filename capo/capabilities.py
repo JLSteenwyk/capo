@@ -170,6 +170,13 @@ class CapabilityConversation(ConversationRouter):
 
     def poll(self,event_id,context):
         self.budget(event_id)
+        directory=self.root/hashlib.sha256(str(event_id).encode()).hexdigest()
+        if (directory/'cancelled.json').exists():
+            from .request_outcomes import stopped_reply
+            path=directory/'receipts.json'
+            receipts=json.loads(path.read_text()) if path.exists() else []
+            tools=shared_tools(self.home,self.config,self.documents,context)
+            return {'action':'reply','repository':'','objective_id':'','outcome_status':'cancelled','reply':stopped_reply(receipts,tools)}
         return super().poll(event_id,context)
 
     def progress(self,event_id):
@@ -270,6 +277,8 @@ class CapabilityConversation(ConversationRouter):
                 from .request_memory import RequestMemory
                 RequestMemory(self.home,owner_key(self.config),context['request_thread']).record(
                     context.get('request_event',str(directory)), 'outcome', {'reply':reply})
-            _write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply},'status':status})
+            # Publish outcome last: observers can retire the request directory
+            # immediately after seeing this terminal marker.
             timing.mark('completed',label=status)
+            _write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply},'status':status})
         finally:os.close(fd)

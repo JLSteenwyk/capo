@@ -55,7 +55,7 @@ def review(home, config, now):
                 checkpoint=read('checkpoint.json');outcome=read('outcome.json')
                 ready='slack_deliveries' in tables and db.execute('SELECT 1 FROM slack_deliveries WHERE event_id=?',(event_id,)).fetchone() is not None
                 record=dict(pending=not handled,reply_ready=ready,started_at=started,
-                    cancelled=(directory/'cancelled.json').exists(),result=checkpoint.get('result'),failed=bool(outcome.get('error')))
+                    cancelled=(directory/'cancelled.json').exists(),result=checkpoint.get('result'),failed=bool(outcome.get('error') or outcome.get('status')=='failed'))
                 status=classify(record,now.timestamp())
                 if not status:continue
                 items.append({'id':'request-health:'+key,'kind':'connection','title':'A saved request needs inspection',

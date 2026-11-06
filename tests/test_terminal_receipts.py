@@ -33,3 +33,19 @@ class TerminalReceiptTests(unittest.TestCase):
         tools=ReadTools([ReadTool('calendar.change','Change',object_schema({}),Mock(),True)])
         result=completion_failure_reply([{'tool':'calendar.change','uncertain':True,'result':{'verified':True,'reply':'Event created.'}}],tools)
         self.assertNotIn('Event created.',result)
+
+    def test_cancelled_capability_reply_reports_confirmed_and_uncertain_actions(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);router=CapabilityConversation(root,{})
+            directory=router.root/hashlib.sha256(b'event').hexdigest();directory.mkdir()
+            (directory/'cancelled.json').write_text('{}')
+            receipts=[{'tool':'calendar.change','result':{'verified':True,'changed':True,'reply':'Event created.'}},
+                      {'tool':'calendar.change','uncertain':True,'error':'Lost response'}]
+            (directory/'receipts.json').write_text(json.dumps(receipts))
+            tools=ReadTools([ReadTool('calendar.change','Change',object_schema({}),Mock(),True)])
+            with patch('capo.capabilities.shared_tools',return_value=tools):result=router.poll('event',{})
+            self.assertEqual(result['outcome_status'],'cancelled')
+            self.assertIn('Event created.',result['reply'])
+            self.assertIn('Reconcile',result['reply'])
+            tools.tools['calendar.change'].execute.assert_not_called()

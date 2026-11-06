@@ -34,7 +34,7 @@ def successful_action(receipt, tools, kind='action'):
                ('verified','saved','created','deleted','updated','changed','already_exists','queued','completed'))
 
 
-def completion_failure_reply(receipts, tools):
+def _completion_failure_reply(receipts, tools):
     """Report known effects without claiming the entire request was completed."""
     confirmations = []
     for receipt in receipts:
@@ -55,6 +55,27 @@ def completion_failure_reply(receipts, tools):
         return 'I could not verify my answer. No changes were made.'
     return ('I could not verify the completion report. Saved results are preserved; '
             'no successful change could be confirmed from them.')
+
+
+def completion_failure_reply(receipts,tools):
+    text=_completion_failure_reply(receipts,tools)
+    if any(r.get('uncertain') for r in receipts):
+        text+='\nAn action remains unconfirmed. Reconcile it before retrying; do not repeat it.'
+    return text
+
+
+def stopped_reply(receipts,tools):
+    from .request_control import STOPPED
+    confirmations=[]
+    for receipt in receipts:
+        if successful_action(receipt,tools):
+            result=receipt['result']
+            confirmations.append(result.get('reply') or 'Confirmed change from '+receipt['tool']+'.')
+    text=STOPPED
+    if confirmations:text+='\n\nConfirmed before stopping:\n'+'\n'.join(dict.fromkeys(confirmations))[:1500]
+    if any(r.get('uncertain') for r in receipts):
+        text+='\nAn action remains unconfirmed. Reconcile it before retrying; do not repeat it.'
+    return text
 
 
 def assess(encoded,receipts,tools,inventory=None):

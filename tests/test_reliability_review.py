@@ -28,6 +28,13 @@ class ReliabilityTests(unittest.TestCase):
         if result:_write(root/'checkpoint.json',{'result':result})
         return root,ts
 
+    def test_delivered_typed_failure_is_still_a_request_failure(self):
+        root,_=self.request('typed-failure',handled=1)
+        _write(root/'outcome.json',{'status':'failed','route':{'reply':'Confirmed change; unfinished work remains.'}})
+        rows=review(self.home,self.config,self.now)['items']
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]['status'],'request_failed')
+
     def test_pending_partial_waiting_and_owner_scope(self):
         self.request('pending')
         self.request('young',age=10)

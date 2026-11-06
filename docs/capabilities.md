@@ -628,3 +628,9 @@ classifier still serializes owner conversation execution: telemetry is being
 used to assess fair bounded concurrency while preserving thread ordering and
 external-effect locks. A sleeping host or blocked service loop cannot send a
 progress notice until it runs again; keep availability policy enabled.
+
+Cancelled capability conversations also render their successful and uncertain
+receipts without executing tools. Cancellation stops future work; an in-flight
+external action can still settle and must be reconciled. The reliability review
+recognizes both legacy error outcomes and typed failed outcomes. Delivery of a
+reply remains separate from success of the request it describes.
