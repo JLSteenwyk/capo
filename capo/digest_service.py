@@ -99,6 +99,8 @@ class DigestManager:
                 observed=datetime.now(timezone.utc)
                 evidence=collect(config,p,objectives,observed,self.service.store.home)
                 from .personalization import snapshot
+                from .work_overview import WorkOverview
+                evidence['work_overview']=WorkOverview(self.service.store.home,config).briefing()
                 evidence['interest_context']=snapshot(self.service.store.home,config,directory)
                 _write(attempt/'evidence.json',evidence)
                 from .reasoning_policy import selected

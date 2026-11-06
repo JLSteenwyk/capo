@@ -763,3 +763,27 @@ reports require chief review and cannot authorize writes or recursive agents.
 The legacy WorkerTools constructor without host configuration retains its older
 routing policy for compatibility; new shared conversations supply host policy.
 Legacy specialist conversation runners remain only for previously started work.
+
+### Unified work overview
+
+`work.overview` projects existing task, Slack request, development, schedule and
+external-effect ledgers. It creates no competing task store and does not mutate
+saved task status. Groups distinguish active requests, scheduled checks, owner
+questions, blockers, reported completions, cancellations, uncertain actions and
+tracked personal tasks. Completion of a request report, delivery of its reply,
+and completion of an external action remain separate fields. Outcome items keep
+handoffs visible rather than implying the handed-off work finished.
+
+Tracked tasks are saved state, not proof that an email reply or other obligation
+is still owed. The interactive tool attaches fresh source-check results for up
+to 20 open tasks; inspect unchecked/unsupported sources with the relevant tools.
+Newer owner turns in a thread supersede earlier completed questions in the view;
+history remains available under tracked entries. Source links, original
+conversation links, next steps and saved completion evidence are retained.
+Coverage explicitly bounds task pages, recent requests, development entries,
+uncertain effects and displayed group size.
+
+Morning digest evidence reuses a compact briefing from this same projection,
+with saved counts and at most three active/waiting/blocked/uncertain entries per
+group. It does not trigger a separate unsolicited overview message or silently
+present unrefreshed task status as a current obligation.

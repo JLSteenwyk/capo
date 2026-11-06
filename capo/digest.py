@@ -220,7 +220,7 @@ def compose(evidence, p, seen, directory, provider=None, briefings='', reasoning
               'Choose up to three upcoming event IDs over the next seven days, prioritizing explicit deadlines, '
               'important occasions, and meetings needing advance notice. Do not repeat generic advice. '
               'Prioritize preference changes; silence is neutral.\n' + json.dumps(dict(
-                  preferences=p, interest_context=evidence.get('interest_context',{}), news=available, attention=evidence['attention'], today_events=today, upcoming_events=upcoming, now=evidence['now'])))
+                  preferences=p, work_overview=evidence.get('work_overview',{}), interest_context=evidence.get('interest_context',{}), news=available, attention=evidence['attention'], today_events=today, upcoming_events=upcoming, now=evidence['now'])))
     try:
         decision = (provider or Providers(timeout=120)).call(reasoning_provider,prompt,COMPOSE,directory,directory/reasoning_provider)
         validate(decision,COMPOSE)

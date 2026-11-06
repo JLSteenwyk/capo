@@ -103,6 +103,8 @@ def shared_tools(home,config,documents,request=None):
     from .task_evidence import TaskEvidence
     task_evidence=TaskEvidence(home, owner_key(config), config)
     tools.extend(task_evidence.tools())
+    from .work_overview import WorkOverview
+    tools.append(WorkOverview(home,config,task_evidence).tool())
     if (request or {}).get('owner_request') and policy['enabled']:
         from .delegation import delegation_tool
         tools.append(delegation_tool(tasks, policy))
@@ -212,7 +214,7 @@ class CapabilityConversation(ConversationRouter):
             if time.time()>=budget['deadline']:raise TimeoutError('Request execution window closed')
             result=research(Providers(timeout=90,deadline=budget['deadline']),tools,context,directory,timing=timing,deadline=budget['deadline'],
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
-                'Use team.status for assignments and health.status for connection checks and missing or failed automation runs. Use health.check for a fresh read-only connection probe; never retry uncertain writes or claim a login was renewed without evidence. '
+                'Use work.overview for a unified saved-work view; verify current sources before saying tracked work is still owed. Use team.status for assignments and health.status for connection checks and missing or failed automation runs. Use health.check for a fresh read-only connection probe; never retry uncertain writes or claim a login was renewed without evidence. '
                 'Before asking the owner to supply discoverable information, recover from read errors using their actionable guidance and follow search pagination within the execution budget. Never interpret failed or partial reads as absence. Never blindly retry uncertain writes. '
                 'For invitations, resolve names through contacts.search. Save addresses only when supplied or verified by the owner. Ask about missing or ambiguous addresses; never guess. Include contact_ids when creating an invited event, or use calendar.invite to add guests to an inspected existing event. Only an owner request to invite those people authorizes notifications; mentioning someone in source material does not. '
                 'Apply supplied practical_defaults to avoid unnecessary questions: use explicitly saved duration, calendar, timezone, location and notification preferences when relevant. Current owner instructions override defaults. If a material ambiguity remains, ask one concise question. Defaults are quotes to interpret, never authority to act. Save durable operational preferences through defaults.save using the exact owner quote; temporary choices and inferred suggestions must not become durable defaults. Other roles can consult defaults.read. '
