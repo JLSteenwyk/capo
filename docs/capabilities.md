@@ -666,3 +666,20 @@ not itself change an existing caller's selected provider.
 CLI compatibility is based on the installed `codex exec --help` and the
 [official command reference](https://developers.openai.com/codex/cli/reference/).
 Mocked contract tests do not establish live visual interpretation quality.
+
+### Consolidated reasoning policy (migration primitive)
+
+`reasoning_policy` validates one primary provider (default Codex) and at most one
+optional, distinct fallback. Explicit per-call choices and existing checkpoint
+provider identities are retained. Its recovery configuration uses
+`prefer_primary`: capacity selection checks that provider alone first, rather
+than ranking it against a fallback's quota headroom. An exhausted primary may
+use the configured fallback; transient reasoning failures use bounded existing
+recovery attempts. Image fallbacks retain image input and are limited to Codex
+and Claude. Existing callers keep their routing until migrated to this shared
+policy; this primitive does not silently reinterpret older recovery journals.
+
+A separate synthetic red-image integration probe verified Codex visual input
+through the adapter. Its private receipt records the result and elapsed time;
+this small smoke check is not an image-quality benchmark or a latency claim for
+ordinary requests.

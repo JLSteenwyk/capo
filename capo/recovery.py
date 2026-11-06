@@ -33,7 +33,7 @@ class RecoveryStopped(RuntimeError):
 
 def policy(value=None):
     value = {} if value is None else value
-    if not isinstance(value, dict) or set(value) - {'max_attempts', 'base_delay', 'fallbacks'}:
+    if not isinstance(value, dict) or set(value) - {'max_attempts', 'base_delay', 'fallbacks', 'prefer_primary'}:
         raise ValueError('Invalid recovery policy')
     attempts = value.get('max_attempts', 3)
     delay = value.get('base_delay', 30)
@@ -49,7 +49,11 @@ def policy(value=None):
             raise ValueError('Invalid fallback provider')
         if any(type(w) is not str or w not in ('claude', 'codex', 'grok') or w == provider for w in workers) or len(set(workers)) != len(workers):
             raise ValueError('Invalid fallback workers')
-    return dict(max_attempts=attempts, base_delay=delay, fallbacks=fallbacks)
+    preferred=value.get('prefer_primary',False)
+    if type(preferred) is not bool:raise ValueError('prefer_primary must be boolean')
+    result=dict(max_attempts=attempts, base_delay=delay, fallbacks=fallbacks)
+    if preferred:result['prefer_primary']=True
+    return result
 
 
 def failure(exc, now):
@@ -137,21 +141,33 @@ class RecoveringProvider:
             _write(path, state)
             raise RecoveryStopped('Provider retry limit reached')
         choices = [provider] + self.policy['fallbacks'].get(provider, [])
+        if images and self.policy.get('prefer_primary'):
+            choices=[p for p in choices if p in ('codex','claude')]
         selected = choices[min(count, len(choices)-1)]
         # Native image support remains provider-specific; never discard images.
-        if images:
+        if images and not self.policy.get('prefer_primary'):
             selected = provider
         from .capacity import Capacity
         capacity = getattr(self.provider, 'capacity', None)
         if isinstance(capacity, Capacity):
             try:
-                selected, route = capacity.choose(selected, [provider] if images else choices)
+                selected, route = capacity.choose(selected, [selected] if images or self.policy.get('prefer_primary') else choices)
                 state['routing'] = route
             except RateLimited as exc:
                 # No worker was invoked: waiting must not spend an attempt.
-                state.update(status='waiting', retry_at=exc.reset_at)
-                _write(path, state)
-                raise RetryLater(exc.reset_at, 'Waiting for subscription capacity') from None
+                alternatives=[p for p in choices if p!=selected and (not images or p in ('codex','claude'))]
+                if self.policy.get('prefer_primary') and alternatives:
+                    try:
+                        selected,route=capacity.choose(alternatives[0],alternatives)
+                        state['routing']=route
+                    except RateLimited:
+                        state.update(status='waiting',retry_at=exc.reset_at)
+                        _write(path,state)
+                        raise RetryLater(exc.reset_at,'Waiting for subscription capacity') from None
+                else:
+                    state.update(status='waiting', retry_at=exc.reset_at)
+                    _write(path, state)
+                    raise RetryLater(exc.reset_at, 'Waiting for subscription capacity') from None
         attempt = {'provider': selected, 'started_at': now}
         state['attempts'].append(attempt)
         state['status'] = 'running'
