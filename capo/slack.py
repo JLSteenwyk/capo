@@ -147,6 +147,8 @@ def configure(config_path, client=None):
 def validate_config(config):
     if not isinstance(config, dict):
         raise ValueError("Slack configuration must be an object")
+    from .request_budget import settings as budget_settings
+    budget_settings(config.get('request_budget'))
     if type(config.get("auto_run", True)) is not bool:
         raise ValueError("auto_run must be true or false")
     for key, prefix in (("team_id", "T"), ("channel_id", "CG"), ("owner_user_id", "UW")):
@@ -874,6 +876,12 @@ class SlackService:
                 try:
                     text = self.dispatch(event_id, body)
                 except ConversationPending:
+                    conversation=getattr(self,'capability_conversation',None)
+                    progress=conversation.progress(event_id) if conversation and hasattr(conversation,'progress') else ''
+                    if progress:
+                        if self.send_chunk({**body['event'],'_delivery_key':'progress:'+event_id},progress):
+                            from .request_timing import RequestTiming
+                            RequestTiming(self.store.home,event_id).mark('first_reply',label='background')
                     continue
                 except ConversationError as exc:
                     text = str(exc)

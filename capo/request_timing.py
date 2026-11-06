@@ -5,7 +5,7 @@ import time
 from contextlib import contextmanager,closing
 from pathlib import Path
 
-PHASES={'message','received','acknowledged','execution_started','provider_started','provider_finished',
+PHASES={'background','message','received','acknowledged','execution_started','provider_started','provider_finished',
         'tool_started','tool_finished','completed','first_reply','delivered'}
 
 

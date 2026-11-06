@@ -160,6 +160,26 @@ class CapabilityConversation(ConversationRouter):
         self.documents=Documents(home,owner_key(config))
         super().__init__(home/'capabilities'/hashlib.sha256(owner_key(config).encode()).hexdigest())
 
+    def budget(self,event_id):
+        from .request_budget import pinned
+        from .request_timing import RequestTiming
+        timing=RequestTiming(self.home,event_id)
+        received=next((r['at'] for r in timing.read() if r['phase']=='received'),None)
+        directory=self.root/hashlib.sha256(str(event_id).encode()).hexdigest()
+        return pinned(directory,self.config.get('request_budget'),received)
+
+    def poll(self,event_id,context):
+        self.budget(event_id)
+        return super().poll(event_id,context)
+
+    def progress(self,event_id):
+        import time
+        budget=self.budget(event_id)
+        if time.time()<budget['background_at']:return ''
+        from .request_timing import RequestTiming
+        RequestTiming(self.home,event_id).mark('background')
+        return 'This is taking longer than expected. I’m continuing in the background and will post the result here. Saved actions will not be repeated.'
+
     def _result(self, directory):
         route=super()._result(directory)
         value=json.loads((directory/'outcome.json').read_text()) if (directory/'outcome.json').exists() else {}
@@ -172,8 +192,12 @@ class CapabilityConversation(ConversationRouter):
         timing.mark('execution_started')
         try:
             from .request_updates import latest
+            from .request_budget import pinned
+            budget=pinned(directory,self.config.get('request_budget'))
             tools=shared_tools(self.home,self.config,self.documents,context)
-            result=research(Providers(timeout=90),tools,context,directory,timing=timing,
+            import time
+            if time.time()>=budget['deadline']:raise TimeoutError('Request execution window closed')
+            result=research(Providers(timeout=90,deadline=budget['deadline']),tools,context,directory,timing=timing,deadline=budget['deadline'],
                 instructions='You are Capo, chief of staff. Choose and combine tools to fulfill the request. '
                 'Use team.status for assignments and health.status for connection checks and missing or failed automation runs. Use health.check for a fresh read-only connection probe; never retry uncertain writes or claim a login was renewed without evidence. '
                 'Before asking the owner to supply discoverable information, recover from read errors using their actionable guidance and follow search pagination within the execution budget. Never interpret failed or partial reads as absence. Never blindly retry uncertain writes. '
@@ -229,13 +253,14 @@ class CapabilityConversation(ConversationRouter):
             status='failed'
             from .recovery import RetryLater
             if isinstance(exc, RetryLater):
-                _write(directory/'retry.json', {'retry_at': exc.retry_at})
+                _write(directory/'retry.json', {'retry_at': min(exc.retry_at,budget['deadline'])})
                 os.close(fd)
                 return
             receipts_path=directory/'receipts.json'
             receipts=json.loads(receipts_path.read_text()) if receipts_path.exists() else []
             from .request_outcomes import completion_failure_reply
             reply=completion_failure_reply(receipts,tools) if tools is not None else 'The request stopped before execution. No completion was confirmed.'
+            if isinstance(exc,TimeoutError):reply+='\nI reached this request’s execution time limit. Inspect saved results before retrying unfinished actions.'
             from .providers import AuthenticationError
             if isinstance(exc,(AuthenticationError,PermissionError)):
                 from .recovery import failure_summary

@@ -104,7 +104,7 @@ def complete_reply(result):
     return reply + '\n\n' + content
 
 
-def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False, timing=None):
+def research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False, timing=None, deadline=None):
     """Serialize the entire reasoning/tool loop, including external tool calls."""
     import fcntl
     import os
@@ -123,12 +123,12 @@ def research(provider, tools, request, directory, instructions='', max_calls=6, 
             tools = bind(tools, provider, directory, request, owner_update)
             if 'workers.delegate' in tools.tools:instructions = GUIDANCE + instructions
         elif 'workers.delegate' in tools.tools:raise ValueError('Recursive delegation is prohibited')
-        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update, reasoning_provider, require_source_inspection, timing)
+        return _research(provider, tools, request, directory, instructions, max_calls, recovery, limits, owner_update, reasoning_provider, require_source_inspection, timing, deadline)
     finally:
         os.close(fd)
 
 
-def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False, timing=None):
+def _research(provider, tools, request, directory, instructions='', max_calls=6, recovery=None, limits=None, owner_update=None, reasoning_provider='claude', require_source_inspection=False, timing=None, deadline=None):
     """Compose tools without a task-type enum; return evidence receipts and a document.
 
     max_calls counts tool attempts, including invalid calls. A final provider turn
@@ -201,6 +201,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         if context_tool:
             memory = getattr(context_tool.execute, '__self__', None)
     for step in range(len(receipts), max_calls + 1):
+        if deadline is not None and time.time()>=deadline:raise TimeoutError('Request execution window closed')
         if (directory/'cancelled.json').exists():
             raise RecoveryStopped('Research was cancelled')
         updated=superseded()
@@ -303,6 +304,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
         from contextlib import nullcontext
         with timing.activity('provider',reasoning_provider) if timing else nullcontext():
             result = provider.call(reasoning_provider, prompt, STEP, directory/'cwd', directory/f'step-{step}')
+        if deadline is not None and time.time()>=deadline:raise TimeoutError('Request execution window closed')
         validate(result, STEP)
         if (directory/'cancelled.json').exists():
             raise RecoveryStopped('Research was cancelled')
@@ -415,6 +417,7 @@ def _research(provider, tools, request, directory, instructions='', max_calls=6,
                 raise RecoveryStopped('Research was cancelled')
             updated=superseded()
             if updated is not None:return updated
+            if deadline is not None and time.time()>=deadline:raise TimeoutError('Request execution window closed')
             tool_attempted = True
             from contextlib import nullcontext
             with timing.activity('tool',result['tool']) if timing else nullcontext():

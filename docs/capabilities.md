@@ -601,3 +601,30 @@ rendered it. Wall-clock activity duration can include host sleep; it must not be
 reported as pure model time. Historical requests are not backfilled using
 filesystem timestamps. Existing deadlines, receipts and authorization remain
 independent of this instrumentation.
+
+### Interactive and background execution windows
+
+Slack configuration accepts `request_budget` with `interactive_seconds` (default
+120, range 5–120) and `total_seconds` (default 900, range 30–3600, at least the
+interactive window). Private `budget.json` pins receipt time and both boundaries
+before classifier acquisition. Restart or configuration edits cannot extend an
+existing request's allowance. Older requests without a receipt timestamp start
+at first budget initialization; message send time is not treated as queue time
+when delivery was delayed by an outage.
+
+Once the interactive window elapses, a pending request sends one durable progress
+notice through the existing outbox and continues from the same frozen context,
+checkpoints and action receipts. It is background continuation of the original
+authorized work, not a fresh task or a reset tool budget. Provider calls share the
+total deadline, and the host rejects new decisions/actions after it closes.
+Capacity backoff cannot defer the next poll beyond the deadline. An external tool
+already in flight may finish after the boundary within its own timeout; it is
+never killed/replayed merely to meet a response target. Final timeout replies
+retain confirmed actions and distinguish incomplete work. Cancellation and
+restart recovery use the existing request markers.
+
+These defaults are resource boundaries, not measured latency guarantees. The
+classifier still serializes owner conversation execution: telemetry is being
+used to assess fair bounded concurrency while preserving thread ordering and
+external-effect locks. A sleeping host or blocked service loop cannot send a
+progress notice until it runs again; keep availability policy enabled.
