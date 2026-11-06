@@ -1,4 +1,5 @@
 import os
+import json
 import signal
 import subprocess
 import sys
@@ -45,6 +46,16 @@ class ProcessCase(unittest.TestCase):
                     time.sleep(.05)
                 else:
                     self.fail("worker survived supervisor SIGKILL")
+                # Worker disappearance precedes the watchdog's final receipt
+                # write. Wait for that evidence before removing its directory.
+                receipt=root/'attempt'/'worker.json'
+                deadline=time.monotonic()+6
+                while time.monotonic()<deadline:
+                    if receipt.exists() and json.loads(receipt.read_text()).get('cleanup_confirmed') is True:
+                        break
+                    time.sleep(.05)
+                else:
+                    self.fail("watchdog did not confirm worker cleanup")
             finally:
                 if parent.poll() is None:
                     parent.kill()
