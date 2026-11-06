@@ -17,15 +17,15 @@ class TeamTests(unittest.TestCase):
 
     def finish(self, agent, key, message):
         for _ in range(400):
-            try:return agent.poll(key, {'aliases': [], 'objectives': [], 'message': message})
+            try:return agent.poll(key, {'aliases': [], 'objectives': [], 'message': message, 'owner_request':{'event':key,'text':message}})
             except ConversationPending:time.sleep(.005)
         self.fail('Specialist did not finish')
 
-    def test_memory_scoped_by_role_owner_and_replay_cached(self):
+    def test_memory_shared_across_roles_but_scoped_by_owner_and_replay_cached(self):
         style = Specialist(self.home, 'style_assistant', 'owner-a')
         with patch('capo.team.Providers') as provider:
             provider.return_value.call.side_effect = [
-                {'action':'tool','tool':'preferences.remember','arguments_json':json.dumps({'note':'Prefers blue.'}),
+                {'action':'tool','tool':'preferences.remember','arguments_json':json.dumps({'note':'I prefer blue.'}),
                  'reply':'','document_title':'','document':''},
                 {'action':'finish','tool':'','arguments_json':'{}','reply':'I will use that preference.',
                  'document_title':'','document':''}]
@@ -36,11 +36,36 @@ class TeamTests(unittest.TestCase):
             provider.return_value.call.return_value = {'action':'finish','tool':'','arguments_json':'{}',
                 'reply':'Here is some advice.','document_title':'','document':''}
             self.finish(Specialist(self.home, 'style_assistant', 'owner-a'), 'second', 'Suggest an outfit.')
-            self.assertIn('Prefers blue.', provider.return_value.call.call_args.args[1])
-            for role, owner in [('shopping_assistant', 'owner-a'), ('style_assistant', 'owner-b')]:
-                self.finish(Specialist(self.home, role, owner), 'other', 'Help me.')
-                self.assertNotIn('Prefers blue.', provider.return_value.call.call_args.args[1])
-            self.assertEqual((style.root/'memory.sqlite3').stat().st_mode & 0o777, 0o600)
+            self.assertIn('I prefer blue.', provider.return_value.call.call_args.args[1])
+            self.finish(Specialist(self.home, 'shopping_assistant', 'owner-a'), 'other-role', 'Help me.')
+            self.assertIn('I prefer blue.',provider.return_value.call.call_args.args[1])
+            self.finish(Specialist(self.home, 'style_assistant', 'owner-b'), 'other-owner', 'Help me.')
+            self.assertNotIn('I prefer blue.',provider.return_value.call.call_args.args[1])
+            self.assertFalse((style.root/'memory.sqlite3').exists())
+            from capo.personal_memory import PersonalMemory
+            memories=PersonalMemory(self.home,style.owner).search('blue')['memories']
+            self.assertEqual(len(memories),1)
+            self.assertEqual(memories[0]['source_event'],'first')
+            self.assertEqual(PersonalMemory(self.home,style.owner).path.stat().st_mode & 0o777,0o600)
+
+    def test_existing_notebooks_are_read_without_modification(self):
+        import sqlite3
+        agent=Specialist(self.home,'research','owner-a')
+        path=agent.root/'memory.sqlite3'
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE notes(receipt TEXT PRIMARY KEY,note TEXT)')
+            db.execute('INSERT INTO notes VALUES(?,?)',('historical','Historic preference, preserved verbatim.'))
+        original=path.read_bytes()
+        with patch('capo.team.Providers') as provider:
+            provider.return_value.call.return_value={'action':'finish','tool':'','arguments_json':'{}',
+                'reply':'Here is some advice.','document_title':'','document':''}
+            self.finish(agent,'read-history','Help me.')
+            self.assertIn('Historic preference, preserved verbatim.',provider.return_value.call.call_args.args[1])
+        self.assertEqual(path.read_bytes(),original)
+
+    def test_configured_owner_mismatch_is_rejected(self):
+        config={'team_id':'T1','channel_id':'C1','owner_user_id':'U1'}
+        with self.assertRaises(ValueError):Specialist(self.home,'research','other-owner',config)
 
     def test_roster_does_not_claim_missing_connections(self):
         team = roster({'repositories': {'example': {}}, 'calendar': {'enabled': True}})

@@ -58,3 +58,11 @@ class NotificationTests(unittest.TestCase):
         urgent={'key':'owner:heartbeat:two','status':'ready','payload':{'host_important':True}}
         self.assertTrue(filter_hourly(manager,urgent,self.now))
         self.assertEqual(urgent['status'],'ready')
+
+    def test_actionable_host_connection_problem_bypasses_important_only_filter(self):
+        from capo.notification_policy import important_evidence
+        urgent={'id':'auth','kind':'connection','service':'Gmail','status':'authentication'}
+        routine={'id':'network','kind':'connection','service':'Gmail','status':'unavailable'}
+        self.assertTrue(important_evidence([urgent],{'auth'},self.now))
+        self.assertFalse(important_evidence([routine],{'network'},self.now))
+        self.assertFalse(important_evidence([urgent],set(),self.now))

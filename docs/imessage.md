@@ -1,6 +1,6 @@
 # iMessage and Slack
 
-Capo's optional BlueBubbles bridge connects one explicitly linked owner chat to the existing Slack execution queue. Claude Code, tools, memory, task state, cancellation, and publication checks remain shared. There is no second agent or independent calendar-write loop.
+Capo's optional BlueBubbles bridge connects one explicitly linked owner chat to the existing Slack execution queue. The configured reasoning primary, tools, memory, task state, cancellation, and publication checks remain shared. There is no second agent or independent calendar-write loop.
 
 The bridge translates authenticated iMessage input into a canonical owner event only after checking the configured direct chat and sender. It mirrors the owner's text into Slack, queues that event once, and sends “Working on it…” through iMessage. The message's original timestamp is retained for relative-date interpretation. Bot replies from the Slack service are copied to a private transport outbox and delivered to iMessage. Messages sent by Capo's Apple Account are never accepted as owner requests.
 

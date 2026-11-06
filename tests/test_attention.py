@@ -113,3 +113,10 @@ class AttentionTests(unittest.TestCase):
         text=self.client.chat_postMessage.call_args.kwargs['text']
         self.assertNotIn('Old obligation',text)
         self.assertIn('Calendar outlook',text)
+
+    def test_task_notice_retains_conversation_link_for_hourly_selection(self):
+        tasks=Tasks(self.home,owner_key(self.config))
+        source='https://example.invalid/tasks/source'
+        tasks.save('','',fields(due_at='2030-01-07T15:00:00-08:00',sources=[source]),'create-linked')
+        item=personal_tasks(self.home,self.config,self.now,heartbeat=True)[0]
+        self.assertEqual(item['url'],source)

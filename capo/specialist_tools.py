@@ -32,7 +32,7 @@ class SpecialistTools:
         path = self.path(role)
         notes = []
         if path.exists():
-            db = sqlite3.connect(path)
+            db = sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)
             try:
                 notes = [r[0] for r in db.execute('SELECT note FROM notes ORDER BY rowid DESC LIMIT 20')]
             finally:

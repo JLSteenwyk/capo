@@ -1,6 +1,6 @@
 # Morning digest
 
-Capo can send one morning digest to the configured Slack channel. The default is 7:00 a.m. America/Los_Angeles, with retries until 9:00 a.m. It uses your existing Claude Code subscription to select relevant items from fetched evidence.
+Capo can send one morning digest to the configured Slack channel. The default is 7:00 a.m. America/Los_Angeles, with retries until 9:00 a.m. It uses the configured reasoning primary (Codex by default) to select relevant items from fetched evidence.
 
 The digest includes work needing attention, today's primary Google Calendar, conflicts and free gaps in a configurable 9–5 window, and events over the following seven days. Open gaps refer only to the calendar checked; they do not imply you are free across other calendars. Preparation is labeled as a suggestion. GitHub coverage is limited to configured repositories, assigned issues, requested reviews, and your open PRs.
 

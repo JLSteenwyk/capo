@@ -45,7 +45,8 @@ def personal_tasks(home,config,now,horizon_days=7,heartbeat=False):
             elif review_due:status='Review due'
             elif t['priority']=='high':status='High priority'
             else:status='Unfinished; no deadline set'
-            items.append({'id':key,'kind':'personal_task','title':t['title'],'status':status,'url':'',
+            items.append({'id':key,'kind':'personal_task','title':t['title'],'status':status,
+                          'url':t.get('follow_through',{}).get('original_conversation','') or next((v for v in t['sources'] if v.startswith(('https://','http://'))),''),
                           'task_id':t['id'],'due_at':t['due_at'],'priority':t['priority'],
                           'notice_day':day,'dependencies':t['dependencies'],
                           'next_action':t.get('follow_through',{}).get('next_action',''),

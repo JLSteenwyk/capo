@@ -48,7 +48,7 @@ Capo reads up to 100 events over a maximum 31-day window. It asks for a shorter 
 
 Before edits or deletions, Capo checks the event’s latest version and uses Google’s `If-Match` condition. A changed event requires a new request. Creates use a stable event ID. Every attempted write is recorded privately before execution; an interrupted request is never automatically retried. If a network failure leaves the outcome uncertain, check Google Calendar before requesting the change again.
 
-Calendar summaries and requested changes are processed by your Claude Code subscription. Event descriptions, guest addresses, and OAuth credentials are not sent to the planner. Private request records remain under `CAPO_HOME/calendar/`. Calendar requests use up to two Claude calls, plus the normal Slack intent classification, without blocking the Slack service.
+New calendar requests use the shared capability loop and its configured reasoning primary (Codex by default), with bounded inspection, host-validated changes and read-back receipts. The optional historical calendar conversation retains Claude and its older two-call, single-event workflow under `CAPO_HOME/calendar/`; it is a compatibility path, not the default for new requests. Credentials remain with the host adapter. See [shared capabilities](capabilities.md) for current calendar discovery, recurrence, guests, multi-event and patch support.
 
 Automated tests use mocked Google responses. A successful `calendar-check` verifies read access only; live creation, editing, and deletion should be checked with an explicitly requested test event after account connection.
 

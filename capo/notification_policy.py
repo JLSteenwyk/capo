@@ -37,7 +37,7 @@ class NotificationPolicy:
         with closing(sqlite3.connect(self.path)) as db:
             row=db.execute('SELECT revision,data FROM preferences WHERE id=1').fetchone()
         return {'revision':str(row[0]) if row else '', 'preferences':json.loads(row[1]) if row else dict(DEFAULT),
-                'coverage':'Controls unsolicited hourly checks only. Explicit reminders, direct replies and owner-scheduled deliveries bypass this filter. High-priority task alerts and selected calendar events starting within two hours bypass quiet time. Suppressed checks are recorded and the next hourly check reevaluates current evidence.'}
+                'coverage':'Controls unsolicited hourly checks only. Explicit reminders, direct replies and owner-scheduled deliveries bypass this filter. High-priority task alerts, selected imminent calendar events and host-classified owner-action problems bypass quiet time. Suppressed checks are recorded and the next hourly check reevaluates current evidence.'}
 
     def change(self,revision,preferences,operation_id):
         if not self.origin or not self.origin.get('text'):raise PermissionError('An explicit owner request is required')
@@ -94,6 +94,9 @@ def important_evidence(items,selected_ids,now):
     for item in items:
         if item.get('id') not in selected_ids:continue
         if item.get('kind')=='personal_task' and item.get('priority')=='high':return True
+        if item.get('kind')=='connection':
+            from .issue_text import describe
+            if describe(item)[1]:return True
         if item.get('kind')=='calendar':
             value=item.get('start',{}).get('dateTime')
             if value:

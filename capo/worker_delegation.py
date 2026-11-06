@@ -92,8 +92,11 @@ class WorkerTools:
                 else:choices=['grok','codex'] if provider=='auto' else [provider]
                 observed=capacity.snapshot(choices,refresh=True)
                 eligible=[p for p in choices if observed[p]['state']!='exhausted' and observed[p].get('probe_error')!='login_required']
+                # A configured fallback is for capacity, not a substitute for
+                # renewing the explicitly selected account's login.
+                if self.config is not None and observed[choices[0]].get('probe_error')=='login_required':eligible=[]
                 history=self.records()
-                if provider=='auto':
+                if provider=='auto' and self.config is None:
                     def recently_failing(p):
                         recent=[r for r in history if r.get('provider')==p and r.get('status') in ('reported_complete','partial','failed','unassessed')][:2]
                         return len(recent)==2 and all(r['status']=='failed' and time.time()-r.get('started_at',0)<900 for r in recent)
@@ -109,7 +112,7 @@ class WorkerTools:
                     return (50 if remaining is None else remaining)+(10 if p=='grok' else 0)-penalty
                 selected=eligible[0] if self.config is not None else max(eligible,key=score)
                 row=dict(id=identity,task=objective[:240],provider=selected,status='running',started_at=time.time(),
-                         routing='explicit' if provider!='auto' else 'configured_primary' if self.config is not None else 'capacity_and_recent_reliability',
+                         routing='explicit' if provider!='auto' else ('configured_primary' if selected==choices[0] else 'configured_fallback_capacity') if self.config is not None else 'capacity_and_recent_reliability',
                          capacity=observed,allowed_tools=list(safe.tools),native_calls=0)
                 _write(assignment,row);_write(ledger,row)
             inherited=ReadTools([t for t in safe.tools.values() if t.name in row['allowed_tools']])

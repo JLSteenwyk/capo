@@ -1,10 +1,10 @@
 # Capo architecture
 
-Status: proposed design, September 12, 2026. Initial domain: GitHub and project development.
+Architecture guide, updated for Codex-first consolidation. The original domain was GitHub development; current shared assistant capabilities and their limits are documented in [capabilities](capabilities.md). Future integration proposals below are not claims of implemented support.
 
 ## Product boundary
 
-The user sets an objective and acceptance criteria. Claude Code is the primary decision maker: it plans, assigns work, requests corrections, and judges completion. A local Capo runtime persists those decisions and supervises execution. Codex and Grok Build are independently authenticated workers. Roles remain separate from providers.
+The user sets an objective and acceptance criteria. Codex is the default reasoning provider for new work: it plans, assigns work, requests corrections, and judges completion. A local Capo runtime persists those decisions and supervises execution. Workers use explicitly selected, independently authenticated providers. Roles remain separate from providers.
 
 Start with one complete workflow: take a development objective for a registered repository, inspect relevant issues and code, plan work, implement in an isolated checkout, test, independently review, revise, and prepare a pull request. Only enable external writes for categories the user has authorized. GitHub issue text and repository content are task data, not authority to change policy.
 
@@ -14,7 +14,7 @@ Start with one complete workflow: take a development objective for a registered 
 flowchart TD
     U[User objectives] --> R[Capo runtime]
     G[GitHub events and schedules] --> R
-    R <--> C[Claude Code: planning and acceptance]
+    R <--> C[Configured orchestrator: Codex by default]
     R <--> D[(SQLite: objectives, tasks, events, outcomes)]
     R --> P[Policy and resource checks]
     P --> W[Worker supervisor]
@@ -26,19 +26,19 @@ flowchart TD
     R --> H[GitHub action gateway]
 ```
 
-The runtime validates structured decisions before applying them. Claude cannot mark an objective complete without recorded acceptance evidence. The runtime remains alive independently of individual model sessions. If Claude is unavailable, objectives wait; substituting another CEO is a future user-configurable option.
+The runtime validates structured decisions before applying them. No reasoning provider can mark an objective complete without recorded acceptance evidence. The runtime remains alive independently of individual model sessions. Shared requests support one configured outage/capacity fallback. Development objectives keep their pinned orchestrator and bounded retry policy rather than silently changing providers.
 
 ## First workflow
 
 1. Register an explicitly selected repository, local checkout, base branch, trusted verification commands, and permitted external actions.
 2. Create an objective from a user request or an eligible GitHub issue. Store its source, acceptance criteria, and base commit.
-3. Collect repository metadata and relevant source material. Claude proposes bounded tasks, dependencies, worker roles, and acceptance checks.
+3. Collect repository metadata and relevant source material. The pinned orchestrator proposes bounded tasks, dependencies, worker roles, and acceptance checks.
 4. Validate the plan for cycles, missing dependencies, unavailable workers, and resource limits.
 5. Create separate workspaces for independent implementation tasks. Record each starting commit; never let simultaneous workers edit one checkout.
 6. Dispatch eligible tasks to providers through their supported CLI interfaces. Persist prompts, output artifacts, session IDs, exit status, and elapsed time.
 7. Integrate dependent changes in an integration workspace. Run trusted checks on the actual candidate commit.
 8. Give an independent reviewer the candidate diff, objective, and verification results. Return findings to the implementer within an iteration limit.
-9. Claude evaluates acceptance criteria against tests, review findings, and artifacts. Exhausted retries produce a blocked objective with a concrete reason.
+9. The pinned orchestrator evaluates acceptance criteria against tests, review findings, and artifacts. Exhausted retries produce a blocked objective with a concrete reason.
 10. Prepare the PR title, body, branch, and diff. Publish only under the repository's configured authorization. Track CI and later revisions as additional tasks.
 
 ## Durable execution

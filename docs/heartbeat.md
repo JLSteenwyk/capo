@@ -10,9 +10,9 @@ Capo checks hourly at 10 a.m., 11 a.m., noon, 1 p.m., 2 p.m., 3 p.m., and 4 p.m.
 
 Each check reads unread messages among up to 20 inbox entries (headers/snippets only), the primary calendar's next 24 hours, and blocked or awaiting-input Capo objectives belonging to the configured owner. It does not sweep all Slack workspaces or all GitHub repositories. The 7 a.m. digest is separate.
 
-Claude selects at most three actionable items. No actionable item means no Slack message. Identical selected items are suppressed for the rest of that local day; changed content may alert again. Only delivered alerts are marked seen. A private per-hour receipt and bounded generation attempts prevent repeated work after ordinary restarts. The existing durable delivery mechanism reconciles uncertain Slack posts before retrying. Alerts that miss their ten-minute delivery window are not posted late.
+The configured reasoning primary (Codex by default) selects at most three actionable items. No actionable item means no Slack message. Identical selected items are suppressed for the rest of that local day; changed content may alert again. Only delivered alerts are marked seen. A private per-hour receipt and bounded generation attempts prevent repeated work after ordinary restarts. The existing durable delivery mechanism reconciles uncertain Slack posts before retrying. Alerts that miss their ten-minute delivery window are not posted late.
 
-This is a read-only attention check, not authorization to send email, modify calendars, purchase items, or start arbitrary coding tasks. The model currently runs on Claude Code. Evidence, preferences and delivery records remain private under CAPO_HOME/heartbeat. Replies in an alert thread are accepted from the configured owner without an @mention.
+Attention selection does not authorize external actions. Optional delegated task execution is governed separately by saved owner grants and the host policy described in [autonomy](autonomy.md). The model uses the configured reasoning primary. Evidence, preferences and delivery records remain private under CAPO_HOME/heartbeat. Replies in an alert thread are accepted from the configured owner without an @mention.
 
 Optional `heartbeat.weekdays` limits checks to local weekdays (`"0"` Monday
 through `"6"` Sunday). For weekdays only, use `["0","1","2","3","4"]`.

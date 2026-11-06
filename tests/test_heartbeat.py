@@ -88,3 +88,15 @@ class HeartbeatTests(unittest.TestCase):
                 self.assertEqual(evidence(config, [], now, home), [])
             finally:
                 db.close()
+
+    def test_selected_source_links_are_host_rendered_and_invalid_links_omitted(self):
+        now=datetime(2030,1,3,10,tzinfo=ZoneInfo('America/Los_Angeles'))
+        provider=Mock();provider.call.return_value={'alerts':[{'id':'event','reason':'Prepare for the meeting.'},{'id':'private','reason':'Review.'}]}
+        items=[{'id':'event','title':'Meeting','url':'https://calendar.google.com/calendar/event?eid=synthetic'},
+               {'id':'private','title':'Private task','url':'https://user:secret@example.invalid/path'}]
+        result=select(items,{},now,Path('/synthetic'),provider)
+        from capo.message_format import slack_text
+        text=slack_text(result['text'])
+        self.assertIn('<https://calendar.google.com/calendar/event?eid=synthetic|calendar.google.com>',text)
+        self.assertNotIn('secret',text)
+        self.assertNotIn('user:',text)

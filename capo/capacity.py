@@ -200,5 +200,5 @@ class Capacity:
             'Read subscription capacity before delegation or explain worker availability. '
             'Quota percentages are provider windows, not token counts or guarantees. '
             'Native login renewal is automatic. Do not repeat this tool in the same request when a probe fails; report the error and action_required. Cached results cannot change before next_check_at. '
-            'Unknown means no fresh measurement. Claude remains chief; routing cannot expand permissions.',
+            'Unknown means no fresh measurement. The configured reasoning primary stays separate; routing cannot expand permissions.',
             object_schema({}), lambda: self.snapshot(refresh=True))]

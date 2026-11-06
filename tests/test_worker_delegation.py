@@ -151,3 +151,30 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(result['provider'],'codex')
         self.assertEqual(workers.activity()['assignments'][0]['routing'],'configured_primary')
         self.assertTrue(result['chief_review_required'])
+
+    def configured(self):
+        workers=WorkerTools(self.home,'synthetic-owner',{'reasoning':{'fallback':'grok'}})
+        tools=ReadTools(workers.tools()+[self.tools.tools['web.read']])
+        directory=self.home/'configured';directory.mkdir()
+        return workers,bind(tools,self.provider,directory,{},None)
+
+    def test_configured_primary_is_not_displaced_by_prior_unclassified_failures(self):
+        import time
+        workers,bound=self.configured();workers.root.mkdir(parents=True)
+        for i in range(2):(workers.root/f'{i}.json').write_text(json.dumps({'provider':'codex','status':'failed','started_at':time.time()}))
+        self.assertEqual(bound.call('workers.delegate',self.args)['provider'],'codex')
+
+    def test_configured_capacity_fallback_records_actual_routing(self):
+        workers,bound=self.configured()
+        self.provider.capacity=Capacity(self.home/'exhausted',clock=lambda:1800000000,probes={
+            p:lambda used=used:[dict(name='primary',used_percent=used,reset_at=1900000000)] for p,used in [('grok',0),('codex',100)]})
+        self.assertEqual(bound.call('workers.delegate',self.args)['provider'],'grok')
+        self.assertEqual(workers.activity()['assignments'][0]['routing'],'configured_fallback_capacity')
+
+    def test_configured_primary_login_failure_is_surfaced_without_switching_accounts(self):
+        workers,bound=self.configured();self.provider.capacity=Mock()
+        self.provider.capacity.snapshot.return_value={
+            'codex':{'state':'unknown','probe_error':'login_required','remaining_percent':None},
+            'grok':{'state':'available','remaining_percent':100}}
+        self.assertEqual(bound.call('workers.delegate',self.args)['status'],'blocked')
+        self.provider.call.assert_not_called()

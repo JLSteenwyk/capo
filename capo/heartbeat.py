@@ -68,7 +68,7 @@ def evidence(config,objectives,now,home=None):
             for event in events:
                 add('calendar',{'title':event.get('summary','Untitled event'),
                                 'start':event.get('start',{}),'end':event.get('end',{}),
-                                'event_id':event.get('id','')})
+                                'event_id':event.get('id',''),'url':event.get('htmlLink','')})
             connection('calendar')
         except Exception as exc:connection('calendar',exc)
     for alias, repository in list(config.get('repositories', {}).items())[:10]:
@@ -174,7 +174,8 @@ def _choose(candidates,now,directory,provider,assessments,reasoning_provider='co
         key=alert['id']
         if key not in allowed or any(x['id']==key for x in chosen):continue
         item=allowed[key];chosen.append(dict(id=key,day=day))
-        lines.append('• '+item['title'][:120]+': '+' '.join(alert['reason'].split())[:160])
+        from .assignment_reports import _link
+        lines.append('• '+item['title'][:120]+': '+' '.join(alert['reason'].split())[:160]+_link({'source':item.get('url','')}))
         if item.get('kind')=='personal_task':task_notices.append({'id':key,'day':item['notice_day'],'task_id':item['task_id'],'line':lines[-1]})
     if assessments is not None:
         selected_ids = {item['id'] for item in chosen}

@@ -287,6 +287,35 @@ class SharedConversationTests(unittest.TestCase):
         try:self.assertEqual(db.preferences(scope(self.config)),before)
         finally:db.close()
 
+    def test_saved_duration_reaches_calendar_execution_and_current_request_overrides_it(self):
+        from capo.practical_defaults import PracticalDefaults
+        from restart_fixture import Remote,PLAN
+        from datetime import datetime
+        quote='Use 30 minutes for events by default.'
+        defaults=PracticalDefaults(self.home,owner_key(self.config),{'event':'preference','text':quote})
+        defaults.save('event_duration','',quote,'save-duration')
+        remote=Remote(self.home)
+        for number,minutes in enumerate((30,15)):
+            with self.subTest(minutes=minutes):
+                title='Study '+str(number)
+                request='Add '+title+' on November 4, 2030 at 10 a.m.'+(' Make this one 15 minutes.' if minutes==15 else '')
+                body=self.body(request,event='duration-'+str(number))
+                plan=dict(PLAN,title=title,all_day=False,start='2030-11-04T10:00:00-08:00',end=f'2030-11-04T10:{minutes:02d}:00-08:00')
+                with patch('capo.capabilities.Providers') as backend,patch('capo.calendar.GoogleCalendar',return_value=remote),patch('capo.calendar_actions.GoogleCalendar',return_value=remote):
+                    backend.return_value.call.side_effect=[
+                        step('calendar.events',start='2030-11-04T00:00:00-08:00',end='2030-11-05T00:00:00-08:00'),
+                        step('calendar.change',**plan),finish(f'Added {title} for {minutes} minutes.')]
+                    reply=self.run_request(body)
+                    prompt=backend.return_value.call.call_args_list[0].args[1]
+                    self.assertIn(quote,prompt)
+                    self.assertIn(request,prompt)
+                    self.assertNotIn('?',reply)
+                event=next(v for v in remote.state()['events'].values() if v['summary']==title)
+                duration=datetime.fromisoformat(event['end']['dateTime'])-datetime.fromisoformat(event['start']['dateTime'])
+                self.assertEqual(duration.total_seconds(),minutes*60)
+        self.assertEqual(remote.state()['writes'],2)
+        self.assertEqual(defaults.read()['defaults'][0]['statement'],quote)
+
 
 if __name__ == '__main__':
     unittest.main()

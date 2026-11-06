@@ -1,6 +1,6 @@
 # Operating Capo
 
-Capo is a local supervisor for trusted GitHub development projects. Claude Code plans and accepts work; configured Codex and Grok workers implement and review it. SPARKITscience is the default team name; the Slack bot is named `capo`. This runbook covers operating the first development workflow, not the broader [proposed architecture](architecture.md). Consult [validation](validation.md) and the [completion checklist](completion.md) for what has actually been verified.
+Capo is a local supervisor for trusted GitHub development projects. Codex plans and accepts new work by default; explicitly configured workers implement and independently review it. Historical objectives and explicit orchestrator choices remain pinned. SPARKITscience is the default team name; the Slack bot is named `capo`. This runbook covers operating the first development workflow, not the broader [proposed architecture](architecture.md). Consult [validation](validation.md) and the [completion checklist](completion.md) for what has actually been verified.
 
 ## Prepare the agent computer
 

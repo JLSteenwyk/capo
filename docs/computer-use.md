@@ -6,7 +6,7 @@ The planned deployment includes a computer owned by the agent organization. Desi
 
 ## Separate host and capability
 
-A computer is an execution host, not another model. Register a host's OS, available browsers/apps, display sessions, network policy, storage, and worker slots. A computer-use worker combines a reasoning provider with an authorized desktop or browser controller. Claude Code remains the CEO and assigns that worker objectives.
+A computer is an execution host, not another model. Register a host's OS, available browsers/apps, display sessions, network policy, storage, and worker slots. A computer-use worker combines a reasoning provider with an authorized desktop or browser controller. Capo assigns that worker objectives using its configured reasoning primary. Browser action selection currently remains a Claude-specific dependency.
 
 Proposed capabilities include `browser.navigate`, `browser.inspect`, `browser.click`, `desktop.screenshot`, `desktop.click`, `desktop.type`, `desktop.keypress`, and `files.transfer`. The exact adapter depends on the chosen OS and available supported controller; the guided browser worker supports navigation, inspection, clicks, fills, and selections; no native desktop controller is implemented yet.
 

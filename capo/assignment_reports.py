@@ -156,7 +156,9 @@ def finish(run, report, previous, timezone='UTC'):
 def _link(item):
     # Keep internal mail/document IDs in the saved report, not the Slack update.
     try:
-        source = urlsplit(item['source'])
-        return ' (' + item['source'] + ')' if source.scheme in ('https', 'http') and source.netloc and not source.username else ''
+        value=item['source']
+        if not isinstance(value,str) or len(value)>2048 or any(c.isspace() or ord(c)<32 for c in value):return ''
+        source = urlsplit(value)
+        return ' (' + value + ')' if source.scheme in ('https', 'http') and source.hostname and not source.username and not source.password else ''
     except ValueError:
         return ''

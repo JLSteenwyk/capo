@@ -85,16 +85,15 @@ Personalized monitoring findings cite a supplied interest key, describe their re
 ## Subscription worker delegation
 
 `workers.delegate` lets Capo give a focused research, comparison, synthesis, or
-review assignment to Grok or Codex. Roles such as Shopping Assistant remain roles;
-they do not need separate Grok schedules. Claude remains the chief and receives
+review assignment to an explicitly selected provider or the configured reasoning primary.
+Specialist names remain roles; they do not need separate model schedules. Capo receives
 the worker's report and evidence for review before answering or taking action.
 
-`auto` prefers Grok and ranks eligible workers using current quota headroom and
-recent assignment completion outcomes. Two recent failed assignments pause an
-automatic worker choice for fifteen minutes. An explicit `grok` or `codex` choice
-stays pinned. Exhausted workers and known invalid logins are excluded; unknown
-quota is not treated as a full balance. These completion statistics are a modest
-reliability signal, not a measurement of factual correctness or model intelligence.
+For configured shared requests, `auto` keeps the reasoning primary and uses only
+the configured fallback for confirmed capacity exhaustion. A known primary login
+problem is surfaced rather than switching accounts. Explicit provider choices
+stay pinned. Legacy callers without a configuration retain their historical
+quota/reliability routing. Unknown quota is not treated as a full balance.
 
 The caller supplies an objective, necessary context, and acceptance criteria.
 Workers receive that focused input, not the whole conversation or access to
@@ -102,8 +101,8 @@ private accounts. They can use only `web.search`, `web.read`, `clock.now`,
 `dates.describe`, and `dates.shift`, intersected with the caller's actual allowed
 registry. No mutations, recursive delegation, or arbitrary host tools are exposed.
 Native worker isolation remains enforced by the existing provider adapters.
-Public web search currently uses Claude's subscription; Grok handles delegated
-reasoning and synthesis. Selecting Grok does not convert the search backend.
+Public web search currently uses Claude's subscription; the selected worker handles
+reasoning and synthesis. Changing workers does not convert the search backend.
 
 Each parent request permits two distinct assignments. Each assignment permits
 three host read-tool calls and up to four reasoning calls (including its final
@@ -160,7 +159,7 @@ explicit dates preserve historical searches, including older writing samples.
 Receipts retain the actual search window. Recent posts can still describe old
 events, so the post-date filter does not establish event freshness.
 The same primitive supports discussion research, public writing samples, source
-lookup and tweet drafting. Claude remains chief and can delegate synthesis to a
+lookup and tweet drafting. Capo remains chief and can delegate synthesis to a
 subscription worker; eligible workers receive the same scoped search tool.
 
 Enable `social_research` with `enabled: true` and `daily_requests: 5` in private
@@ -799,8 +798,9 @@ runtime storage; preference quotes in memory do not silently alter these setting
 
 Quiet checks retain their evidence and suppression reason locally. The next check
 reevaluates current sources rather than replaying a stale backlog. Selected
-high-priority saved tasks and selected calendar events starting within two hours
-bypass the filter, using host evidence rather than model-written urgency labels.
+high-priority saved tasks, selected calendar events starting within two hours,
+and host-classified operational problems requiring owner action bypass the filter,
+using host evidence rather than model-written urgency labels.
 Direct replies, explicit reminders, owner-scheduled deliveries, and uncertain
 Slack sends awaiting reconciliation bypass this hourly filter. It changes neither
 schedules nor external-action permissions. These controls do not classify every
@@ -850,3 +850,24 @@ calendar tools are provider-neutral. Historical checkpoints retain their pinned
 providers. Development review still requires a different provider under existing
 independence checks. Codex-first does not imply these dependencies were removed,
 or that unavailable integrations can be treated as working.
+
+Legacy specialist conversations now use the same owner-scoped memory as the
+chief and scheduled roles. The `preferences.remember` compatibility alias writes
+through `PersonalMemory` with the host operation receipt and an exact current
+owner quote; it no longer creates or writes a role notebook. Existing notebooks
+are read-only history. Frozen per-request context preserves retry identity, while
+new requests receive shared memories and defaults. Configured owner/account scope
+must agree before a specialist can access shared tools. Role contexts remain
+isolated for execution; preferences for the same owner can cross roles.
+
+Hourly selections retain actual supplied calendar links and task conversation or
+source links. The host appends these URLs after selection; the model does not
+invent them. Link rendering omits credentials, malformed URLs and embedded
+whitespace. Evidence without a reviewable URL remains unlinked rather than using
+a guessed destination.
+
+For configured worker delegation, prior unclassified failures no longer displace
+the reasoning primary. Capacity exhaustion can select only the configured fallback,
+and the activity receipt labels that route explicitly. A primary login failure
+is surfaced as blocked rather than silently switching accounts. Legacy callers
+without a reasoning configuration retain their historical routing behavior.
