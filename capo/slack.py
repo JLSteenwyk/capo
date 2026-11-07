@@ -913,6 +913,19 @@ class SlackService:
                 with self.store.db:
                     self.store.db.execute("INSERT INTO slack_deliveries(event_id,data) VALUES (?,?)",
                                           (event_id, json.dumps(data)))
+                # Catch failures before the shared reasoning loop too (for example
+                # attachment/routing errors). Rich shared-loop capture wins by ID.
+                if authorized(self.config,body,self.store):
+                    try:
+                        from .reliability import Reliability
+                        event=body['event']
+                        Reliability(self.store.home,self.config).capture(event_id,
+                            'failed' if failed else data.get('outcome_status') or 'unknown',
+                            thread=event.get('thread_ts',event.get('ts','')))
+                    except Exception:
+                        # The durable delivery row is the fallback source for the
+                        # next scorecard; telemetry must never block a user reply.
+                        pass
                 index = 0
             else:
                 data, index = json.loads(row[0]), row[1]

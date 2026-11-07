@@ -38,7 +38,7 @@ class RequestTiming:
             return [{'phase':p,'at':a,'label':l} for p,a,l in db.execute('SELECT phase,at,label FROM lifecycle WHERE request=? ORDER BY seq',(self.key,))]
 
 
-def summary(home,days=7,now=None):
+def summary(home,days=7,now=None,request_keys=None):
     """Aggregate observed wall times without exposing request identifiers."""
     if type(days) is not int or not 1<=days<=90:raise ValueError('Choose 1–90 days')
     path=Path(home)/'request-timing.sqlite3'
@@ -48,11 +48,11 @@ def summary(home,days=7,now=None):
         rows=db.execute('SELECT request,phase,MIN(at) FROM lifecycle GROUP BY request,phase').fetchall()
     grouped={}
     for key,phase,at in rows:grouped.setdefault(key,{})[phase]=at
-    selected=[r for r in grouped.values() if r.get('received',0)>=now-days*86400]
+    selected=[r for key,r in grouped.items() if (request_keys is None or key in request_keys) and now-days*86400<=r.get('received',0)<=now]
     metrics={}
     for name,first,last in (('delivery_to_host','message','received'),('acknowledgement','received','acknowledged'),
                             ('queue','received','execution_started'),('first_response','received','first_reply'),
-                            ('execution','execution_started','completed'),('delivery','completed','delivered')):
+                            ('execution','execution_started','completed'),('delivery','completed','delivered'),('end_to_end','received','delivered')):
         values=sorted(r[last]-r[first] for r in selected if first in r and last in r and r[last]>=r[first])
         if values:
             import statistics

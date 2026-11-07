@@ -105,6 +105,8 @@ def shared_tools(home,config,documents,request=None):
     from .task_evidence import TaskEvidence
     task_evidence=TaskEvidence(home, owner_key(config), config)
     tools.extend(task_evidence.tools())
+    from .reliability import Reliability
+    tools.extend(Reliability(home,config).tools())
     from .work_overview import WorkOverview
     tools.append(WorkOverview(home,config,task_evidence).tool())
     if (request or {}).get('owner_request') and policy['enabled']:
@@ -201,7 +203,7 @@ class CapabilityConversation(ConversationRouter):
         return {**route,'outcome_status':value.get('status','cancelled' if (directory/'cancelled.json').exists() else 'unknown')}
 
     def _run(self,directory,context,schema,fd):
-        tools=None
+        tools=None;result={};receipts=[];failure_category=''
         from .request_timing import RequestTiming
         timing=RequestTiming(self.home,context.get('request_event',str(directory)))
         timing.mark('execution_started')
@@ -274,6 +276,9 @@ class CapabilityConversation(ConversationRouter):
                 _write(directory/'retry.json', {'retry_at': min(exc.retry_at,budget['deadline'])})
                 os.close(fd)
                 return
+            from .recovery import failure
+            import time
+            failure_category=failure(exc,time.time())[0]
             receipts_path=directory/'receipts.json'
             receipts=json.loads(receipts_path.read_text()) if receipts_path.exists() else []
             from .request_outcomes import render_outcome
@@ -291,5 +296,11 @@ class CapabilityConversation(ConversationRouter):
             # Publish outcome last: observers can retire the request directory
             # immediately after seeing this terminal marker.
             timing.mark('completed',label=status)
+            try:
+                from .reliability import Reliability
+                Reliability(self.home,self.config).capture(context.get('request_event',str(directory)),status,
+                    result or {'receipts':receipts},context.get('request_thread',''),category=failure_category)
+            except Exception:
+                _write(directory/'reliability-capture-error.json',{'category':'capture_unavailable'})
             _write(directory/'outcome.json',{'route':{'action':'reply','repository':'','objective_id':'','reply':reply},'status':status})
         finally:os.close(fd)

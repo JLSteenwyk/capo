@@ -316,6 +316,17 @@ class SharedConversationTests(unittest.TestCase):
         self.assertEqual(remote.state()['writes'],2)
         self.assertEqual(defaults.read()['defaults'][0]['statement'],quote)
 
+    def test_terminal_failure_is_automatically_captured_without_raw_error_text(self):
+        from capo.reliability import Reliability
+        body=self.body('Check my calendar.','capture-failure')
+        with patch('capo.capabilities.Providers') as backend:
+            backend.return_value.call.side_effect=PermissionError('PRIVATE PROVIDER ERROR')
+            self.run_request(body)
+        report=Reliability(self.home,self.config).report(7)
+        self.assertEqual(report['outcomes'],{'failed':1})
+        self.assertEqual(report['incident_requests'],1)
+        self.assertNotIn('PRIVATE PROVIDER ERROR',str(report))
+
 
 if __name__ == '__main__':
     unittest.main()

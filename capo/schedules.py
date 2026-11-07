@@ -19,6 +19,8 @@ FIELDS['properties'].update({
     'tool_prefixes': TEXTS,
     'interval_days': TEXT,
     'anchor_date': TEXT,
+    'report_tool': TEXT,
+    'report_arguments': TEXT,
 })
 
 
@@ -60,8 +62,13 @@ class Schedules(Tasks):
             elif expected_revision:raise ValueError('New schedules have no revision')
             else:id=hashlib.sha256(operation_id.encode()).hexdigest()
             fields = dict(fields)
-            for name, default in (('agent', 'capo'), ('delivery', 'always'), ('tool_prefixes', []), ('interval_days', '1'), ('anchor_date', '')):
+            for name, default in (('agent', 'capo'), ('delivery', 'always'), ('tool_prefixes', []), ('interval_days', '1'), ('anchor_date', ''), ('report_tool',''), ('report_arguments','{}')):
                 fields.setdefault(name, (previous or {}).get(name, default))
+            if fields['report_tool']:
+                if not re.fullmatch(r'[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*',fields['report_tool']):raise ValueError('Use a registered read-tool name')
+                if fields['delivery']!='always':raise ValueError('Direct reports use delivery=always')
+                if len(fields['report_arguments'])>8000 or not isinstance(json.loads(fields['report_arguments']),dict):raise ValueError('Report arguments must be a bounded JSON object')
+            elif fields['report_arguments']!='{}':raise ValueError('Report arguments require a report tool')
             interval=fields['interval_days']
             if not re.fullmatch(r'[1-9][0-9]?',interval) or not 1<=int(interval)<=28:
                 raise ValueError('Use an interval from 1 to 28 calendar days')
@@ -81,7 +88,7 @@ class Schedules(Tasks):
 
     def tools(self):
         return [ReadTool('schedules.list','List owner-configured recurring read-only requests and their revisions.',object_schema({}),self.list),
-                ReadTool('schedules.save','Create/edit/pause a recurring read-only request after the owner chooses its schedule. Runs the shared tools. Optional agent assigns responsibility; delivery=changes reports only new findings or blockers, always delivers each result. Optional tool_prefixes narrows available read capabilities (for example github. and clock.); an empty list uses all read tools. Existing assignments retain these options when omitted. Optional interval_days (1–28, default 1) and anchor_date (YYYY-MM-DD) repeat on local calendar days from that date; use 2 with adjacent anchors for alternating days, 14 with anchors seven days apart for alternating weekly checks. Weekdays 0 Monday through 6 Sunday further restrict those dates. Empty id/revision creates; edits require current revision. Set enabled=false to stop. Does not alter the existing morning digest or hourly checks. Scheduled requests cannot send email or mutate tasks/calendar.',
+                ReadTool('schedules.save','Create/edit/pause a recurring read-only request after the owner chooses its schedule. Runs the shared tools. Optional agent assigns responsibility; delivery=changes reports only new findings or blockers, always delivers each result. Optional tool_prefixes narrows available read capabilities (for example github. and clock.); an empty list uses all read tools. Optional report_tool and report_arguments (a JSON object string) run one allowed read-only tool directly, without a model; its result must contain bounded text and delivery must be always. Tool arguments still pass host validation. Existing assignments retain these options when omitted. Optional interval_days (1–28, default 1) and anchor_date (YYYY-MM-DD) repeat on local calendar days from that date; use 2 with adjacent anchors for alternating days, 14 with anchors seven days apart for alternating weekly checks. Weekdays 0 Monday through 6 Sunday further restrict those dates. Empty id/revision creates; edits require current revision. Set enabled=false to stop. Does not alter the existing morning digest or hourly checks. Scheduled requests cannot send email or mutate tasks/calendar.',
                          object_schema({'id':TEXT,'expected_revision':TEXT,'fields':FIELDS}),self.save,mutates=True)]
 
 

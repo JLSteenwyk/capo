@@ -871,3 +871,20 @@ the reasoning primary. Capacity exhaustion can select only the configured fallba
 and the activity receipt labels that route explicitly. A primary login failure
 is surfaced as blocked rather than silently switching accounts. Legacy callers
 without a reasoning configuration retain their historical routing behavior.
+
+### Reliability scorecards and private incident review
+
+`reliability.report` produces an owner-scoped scorecard from existing outcome,
+delivery, timing and automation ledgers. `reliability.incidents` exposes bounded
+private metadata for evidence-backed reflection and synthetic regression ideas.
+Terminal shared-loop outcomes and earlier Slack-boundary failures are captured
+without copying prompts, reply bodies or provider error text. The existing
+request-health `review/classify` helpers retain their behavior.
+
+The existing scheduler supports an optional direct read-only report tool with
+host-validated JSON arguments. This lets measured reports run without a model
+call, while preserving restricted registries, occurrence receipts, bounded retries
+and uncertain-send reconciliation. Only unsent direct read reports can rebuild
+an expired snapshot; uncertain Slack sends keep their exact payload. No mutation,
+handoff, verification or finalizer tool can use this path. See the
+[scorecard guide](reliability-scorecard.md) for coverage, privacy and setup.

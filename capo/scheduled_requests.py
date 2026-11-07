@@ -120,16 +120,20 @@ class ScheduledManager(DigestManager):
                     attempt=directory/'execution'
                     attempt.mkdir(parents=True,exist_ok=True,mode=0o700)
                     from .reasoning_policy import selected,request_recovery
-                    result=research(Providers(timeout=90,deadline=run['deadline'],effort='medium'),readonly,request,attempt,max_calls=10,recovery=request_recovery(config,attempt),reasoning_provider=selected(config,attempt),allow_delegation=True,require_source_inspection=True,
-                        instructions=GUIDANCE+f'You are {role[0]}, managed by Capo. {role[1]} '
-                        'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
-                        'report verified actionable findings, essential access/coverage blockers, and what was actually checked. For email searches, use mail.metadata to triage subject/sender/snippets before reading bodies; prefer targeted searches and read only relevant messages. Do not inherit an old blocker as a current failure without new evidence. '
-                        'Previous-check continuation contains host-saved pending source IDs and pagination cursors. Resume those reads/pages first without rereading inspected bodies, then inspect newer sources if budget permits. Recheck stale cursors with a fresh bounded search. Report exactly which windows remain unchecked. Never infer that an inspected excerpt means its full message or attachment was read. '
-                        'For a requested document, return the full document as your output; the host saves it after verification. Do not claim document saving as a completed external action. Use tasks.overview for loose ends and health.status for failed or missed checks when relevant. Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
+                    if s.get('report_tool'):
+                        result=direct_report(readonly,s['report_tool'],s.get('report_arguments','{}'))
+                    else:
+                        result=research(Providers(timeout=90,deadline=run['deadline'],effort='medium'),readonly,request,attempt,max_calls=10,recovery=request_recovery(config,attempt),reasoning_provider=selected(config,attempt),allow_delegation=True,require_source_inspection=True,
+                            instructions=GUIDANCE+f'You are {role[0]}, managed by Capo. {role[1]} '
+                            'This is an owner-scheduled read-only request. If monitor.report is available, call it before finishing; '
+                            'report verified actionable findings, essential access/coverage blockers, and what was actually checked. For email searches, use mail.metadata to triage subject/sender/snippets before reading bodies; prefer targeted searches and read only relevant messages. Do not inherit an old blocker as a current failure without new evidence. '
+                            'Previous-check continuation contains host-saved pending source IDs and pagination cursors. Resume those reads/pages first without rereading inspected bodies, then inspect newer sources if budget permits. Recheck stale cursors with a fresh bounded search. Report exactly which windows remain unchecked. Never infer that an inspected excerpt means its full message or attachment was read. '
+                            'For a requested document, return the full document as your output; the host saves it after verification. Do not claim document saving as a completed external action. Use tasks.overview for loose ends and health.status for failed or missed checks when relevant. Use memory.search and specialists.read for relevant saved preferences. For planning, combine tasks, deadlines, waiting items, calendar availability and relevant email evidence. Identify preparation needs and conflicts; label assumptions about work hours and task durations. Report connection gaps. Never claim suggestions were booked or tasks changed. Give a concise usable plan.')
                     docs.save(directory,result);_write(attempt/'result.json',result)
                     run.pop('error_summary',None);run.pop('verification_incomplete',None)
                     from .report_freshness import from_receipts
                     run['evidence_snapshot']=from_receipts(result.get('receipts',[]),readonly,datetime.now(timezone.utc).timestamp())
+                    if s.get('report_tool'):run['evidence_snapshot']['rebuildable']=True
                     run.update(status='ready',payload={'text':result['reply'],'news':[]},outcome_status=result.get('status','complete'),
                                checked_at=datetime.now(timezone.utc).isoformat())
                     if s.get('delivery')=='changes':
@@ -200,3 +204,17 @@ def tick(service):
         if not (service.store.home/'tasks'/owner/'tasks.sqlite3').exists():return
         service.scheduled_manager=ScheduledManager(service)
     service.scheduled_manager.tick()
+
+
+def direct_report(tools,name,arguments):
+    """One explicit read primitive; all capability permissions/validation still apply."""
+    tool=tools.tools.get(name)
+    if tool is None or tool.mutates or tool.handoff or tool.finalizes or tool.verifies:
+        raise ValueError('Direct scheduled reports require an allowed read-only tool')
+    if len(arguments)>8000:raise ValueError('Report arguments exceed their limit')
+    args=json.loads(arguments)
+    value=tools.call(name,args)
+    if not isinstance(value,dict) or not isinstance(value.get('text'),str) or not value['text'].strip() or len(value['text'])>10000:
+        raise ValueError('Direct report must return nonempty text under 10000 characters')
+    return {'reply':value['text'],'status':'reported_complete','document':'','document_title':'',
+            'receipts':[{'tool':name,'arguments':args,'result':value,'observed_at':time.time()}]}
