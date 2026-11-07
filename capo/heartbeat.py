@@ -23,9 +23,12 @@ def settings(config):
     first,last=p.get('start_hour',10),p.get('end_hour',16)
     if type(first) is not int or type(last) is not int or not 0<=first<=last<=23:
         raise ValueError('Invalid heartbeat hours')
+    notify=p.get('notify_hour')
+    if notify is not None and (type(notify) is not int or not first<=notify<=last):
+        raise ValueError('Notification hour must fall within the heartbeat check hours')
     zone=p.get('timezone',config.get('calendar',{}).get('timezone','America/Los_Angeles'))
     ZoneInfo(zone)
-    return dict(enabled=p.get('enabled',False),start_hour=first,end_hour=last,timezone=zone,weekdays=weekdays(p))
+    return dict(enabled=p.get('enabled',False),start_hour=first,end_hour=last,timezone=zone,weekdays=weekdays(p),notify_hour=notify)
 
 
 def due_slot(now,p):

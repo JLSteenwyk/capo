@@ -100,3 +100,35 @@ class HeartbeatTests(unittest.TestCase):
         self.assertIn('<https://calendar.google.com/calendar/event?eid=synthetic|calendar.google.com>',text)
         self.assertNotIn('secret',text)
         self.assertNotIn('user:',text)
+
+    def test_daily_notification_setting_preserves_hourly_check_slots(self):
+        config={'heartbeat':{'enabled':True,'start_hour':10,'end_hour':16,'notify_hour':15}}
+        policy=settings(config)
+        self.assertEqual(policy['notify_hour'],15)
+        for hour in range(10,17):
+            now=datetime(2030,1,7,hour,tzinfo=ZoneInfo('America/Los_Angeles'))
+            self.assertIsNotNone(due_slot(now,policy))
+        for bad in (9,17,'15',True):
+            with self.assertRaises(ValueError):settings({'heartbeat':dict(config['heartbeat'],notify_hour=bad)})
+
+    def test_quiet_morning_check_runs_and_daily_slot_posts_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store=Store(Path(tmp));self.addCleanup(store.db.close)
+            config={'team_id':'T1','channel_id':'C1','owner_user_id':'U1',
+                    'heartbeat':{'enabled':True,'start_hour':10,'end_hour':16,'notify_hour':15}}
+            client=Mock();client.chat_postMessage.return_value={'ok':True,'ts':'200.001'}
+            service=SimpleNamespace(store=store,config=config,client=client,bot_user_id='BOT')
+            manager=HeartbeatManager(service);self.addCleanup(manager.db.close)
+            now=datetime(2030,1,7,10,tzinfo=ZoneInfo('America/Los_Angeles'))
+            payload={'text':'Needs your attention: review the saved request.','news':[]}
+            with patch('capo.heartbeat.evidence',return_value=[]) as read,patch('capo.heartbeat.select',return_value=payload):
+                manager.tick(now)
+                for worker in manager.workers.values():worker.join(5)
+                manager.tick(now)
+                client.chat_postMessage.assert_not_called()
+                afternoon=now.replace(hour=15)
+                manager.tick(afternoon)
+                for worker in manager.workers.values():worker.join(5)
+                manager.tick(afternoon);manager.tick(afternoon)
+            self.assertEqual(read.call_count,2)
+            client.chat_postMessage.assert_called_once()

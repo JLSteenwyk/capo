@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from datetime import datetime,timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import Mock
 from capo.notification_policy import NotificationPolicy,filter_hourly
 
@@ -66,3 +67,16 @@ class NotificationTests(unittest.TestCase):
         self.assertTrue(important_evidence([urgent],{'auth'},self.now))
         self.assertFalse(important_evidence([routine],{'network'},self.now))
         self.assertFalse(important_evidence([urgent],set(),self.now))
+
+    def test_daily_delivery_hour_keeps_checks_quiet_until_local_time_even_for_urgent_items(self):
+        from types import SimpleNamespace
+        config={'heartbeat':{'enabled':True,'start_hour':10,'end_hour':16,'notify_hour':15,'timezone':'America/Los_Angeles'}}
+        manager=SimpleNamespace(service=SimpleNamespace(config=config,store=SimpleNamespace(home=self.home)),db=Mock())
+        for month in (1,7):
+            for hour in range(10,17):
+                local=datetime(2030,month,7, hour,tzinfo=ZoneInfo('America/Los_Angeles'))
+                run={'key':'owner:heartbeat:slot','status':'ready','payload':{'host_important':True}}
+                self.assertEqual(filter_hourly(manager,run,local.astimezone(timezone.utc)),hour==15)
+                if hour!=15:self.assertEqual(run['notification_reason'],'outside_owner_notification_hour')
+        self.assertTrue(filter_hourly(manager,{'key':'owner:reminder:id','status':'ready'},self.now))
+        self.assertTrue(filter_hourly(manager,{'key':'owner:heartbeat:slot','status':'sending'},self.now))

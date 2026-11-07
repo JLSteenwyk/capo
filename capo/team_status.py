@@ -70,7 +70,7 @@ class TeamStatus:
         digest_settings={key:preferences[key] for key in ('enabled','time','timezone')}
         digest_settings.update(weekdays=weekdays(preferences),next_delivery=next_delivery(now,preferences).isoformat() if preferences['enabled'] else None)
         return {'agents': list(teams.values()), 'heartbeat': {
-            key: self.config.get('heartbeat', {}).get(key) for key in ('enabled', 'start_hour', 'end_hour', 'timezone','weekdays')},
+            key: self.config.get('heartbeat', {}).get(key) for key in ('enabled', 'start_hour', 'end_hour', 'timezone','weekdays','notify_hour')},
             'morning_digest':digest_settings,
             'coverage': 'Standing assignments and their latest run receipts. not_run is not a successful check; quiet means no new alerts in the reported coverage. An agent without assignments is available on demand. Other interactive coding jobs are tracked separately by development tools. Historical reports may predate an assignment edit.'}
 

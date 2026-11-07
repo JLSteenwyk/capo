@@ -72,6 +72,12 @@ class NotificationPolicy:
 
 def filter_hourly(manager,run,now):
     if run.get('status')!='ready' or ':heartbeat:' not in run.get('key',''):return True
+    from .heartbeat import settings
+    policy=settings(manager.service.config)
+    if policy['notify_hour'] is not None and now.astimezone(ZoneInfo(policy['timezone'])).hour!=policy['notify_hour']:
+        run.update(status='quiet',notification_reason='outside_owner_notification_hour')
+        manager.db.save(run,now)
+        return False
     from .capabilities import owner_key
     from .tasks import Tasks
     owner=owner_key(manager.service.config)

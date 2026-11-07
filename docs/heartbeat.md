@@ -18,3 +18,19 @@ Optional `heartbeat.weekdays` limits checks to local weekdays (`"0"` Monday
 through `"6"` Sunday). For weekdays only, use `["0","1","2","3","4"]`.
 Omitting it preserves daily checks. Excluded days do not generate or deliver
 hourly alerts, including pending deliveries. Interactive Slack requests still work.
+
+## Daily delivery with quiet background checks
+
+Optional `heartbeat.notify_hour` selects one local hour for attention-report
+delivery while retaining the configured hourly check window. It must be an
+integer within `start_hour` through `end_hour`; omission preserves the existing
+hourly notification behavior. The check window, weekday restrictions and
+follow-through execution continue independently of this delivery setting.
+
+Outside that hour, prepared attention reports are recorded quietly rather than
+posted or accumulated as stale message text. The selected hour performs a fresh
+assessment of current evidence. The usual occurrence receipt permits one report
+for that slot; an empty assessment still stays quiet. This explicit delivery
+window also applies to items classified important. Explicit reminders, direct
+replies and other owner-scheduled reports use their own delivery paths. Uncertain
+Slack sends reconcile their existing payload rather than creating another post.
