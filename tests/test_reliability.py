@@ -135,3 +135,16 @@ class ReliabilityTests(unittest.TestCase):
         result=self.reporter.report(7,now=self.now)
         signals={r['signal']:r['observations'] for r in result['recurring_signals']}
         self.assertEqual(signals['tool error: web.search'],2)
+
+    def test_completed_execution_is_not_mistaken_for_a_delivered_reply(self):
+        store=Store(self.home)
+        try:
+            store.enqueue_slack('complete-undelivered',{'team_id':'T1','event':{'user':'U1','channel':'C1','ts':str(self.now-100)}})
+            self.reporter.capture('complete-undelivered','reported_complete',at=self.now-100)
+            report=self.reporter.report(7,now=self.now)
+            self.assertEqual(report['outcomes'],{'reported_complete':1})
+            self.assertEqual(report['replies_awaiting_delivery'],1)
+            self.assertIn('Replies awaiting delivery: 1',report['text'])
+            store.finish_slack('complete-undelivered')
+            self.assertEqual(self.reporter.report(7,now=self.now)['replies_awaiting_delivery'],0)
+        finally:store.db.close()

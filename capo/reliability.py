@@ -64,7 +64,7 @@ class Reliability:
     def collect(self,days,now):
         """Backfill old delivery records and collect pending work without inventing outcomes."""
         if type(days) is not int or not 1<=days<=90:raise ValueError('Choose 1–90 days')
-        since=now-days*86400;pending=[];scanned=0;truncated=False;gaps=0
+        since=now-days*86400;pending=[];scanned=0;truncated=False;gaps=0;delivery={}
         with closing(sqlite3.connect(self.path,timeout=10)) as db:
             captured={r[0] for r in db.execute('SELECT id FROM observations')}
         path=self.home/'capo.sqlite3'
@@ -80,6 +80,7 @@ class Reliability:
                         try:at=float(message['ts'])
                         except (KeyError,TypeError,ValueError):gaps+=1;continue
                         timing=RequestTiming(self.home,event)
+                        delivery[timing.key]='processed' if handled else 'awaiting'
                         if timing.key in captured:continue
                         received=next((r['at'] for r in timing.read() if r['phase']=='received'),at)
                         if not since<=received<=now:continue
@@ -87,19 +88,20 @@ class Reliability:
                         if (root/'reliability-capture-error.json').exists():gaps+=1
                         outcome=read_json(root/'outcome.json',{})
                         result=read_json(root/'research.json',{})
-                        delivery={}
+                        saved_delivery={}
                         if 'slack_deliveries' in tables:
                             saved=db.execute('SELECT data FROM slack_deliveries WHERE event_id=?',(event,)).fetchone()
-                            if saved:delivery=json.loads(saved[0])
-                        if not outcome and not delivery and not handled:
+                            if saved:saved_delivery=json.loads(saved[0])
+                        if not outcome and not saved_delivery and not handled:
                             pending.append({'id':timing.key,'received_at':received,'status':'pending'})
                             continue
-                        status=outcome.get('status') or ('failed' if delivery.get('failed') else delivery.get('outcome_status') or 'unknown')
+                        status=outcome.get('status') or ('failed' if saved_delivery.get('failed') else saved_delivery.get('outcome_status') or 'unknown')
                         if not result:result={'receipts':read_json(root/'receipts.json',[])}
                         self.capture(event,status,result,message.get('thread_ts',message.get('ts','')),at=at)
         with closing(sqlite3.connect(self.path,timeout=10)) as db:
             rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM observations WHERE received>=? AND received<=? ORDER BY received DESC,id',(since,now))]
         known={r['id'] for r in rows};rows+= [r for r in pending if r['id'] not in known]
+        for row in rows:row['reply_state']=delivery.get(row['id'],'not_observed')
         return rows,{'scanned_owner_messages':scanned,'scan_limit':5000,'more_history_available':truncated,'source_gaps':gaps}
 
     def automation_evidence(self,days,now):
@@ -144,6 +146,7 @@ class Reliability:
         automation_counts=Counter(r['status'] for r in automation)
         for r in automation_issues:groups[r['source']+' check: '+r['status']]+=1
         value={'days':days,'as_of':now,'requests':len(rows),'outcomes':dict(counts),'incident_requests':len(incidents),
+               'replies_awaiting_delivery':sum(r['reply_state']=='awaiting' and r['status']!='pending' for r in rows),
                'needs_input_requests':sum(bool(r.get('needs_input_items')) for r in rows),
                'review_signals':[{'signal':k,'observations':v} for k,v in groups.most_common(5)],
                'recurring_signals':[{'signal':k,'observations':v} for k,v in groups.most_common() if v>=2][:5],
@@ -177,6 +180,7 @@ class Reliability:
 def render(value):
     c=value['outcomes'];lines=[f"Capo reliability — last {value['days']} days ({value['requests']} requests)",
         f"Reported complete: {c.get('reported_complete',0)+c.get('complete',0)} · Partial: {c.get('partial',0)} · Failed: {c.get('failed',0)} · Pending: {c.get('pending',0)} · Other/unassessed: {sum(v for k,v in c.items() if k not in ('reported_complete','complete','partial','failed','pending'))}"]
+    lines.append(f"Replies awaiting delivery: {value['replies_awaiting_delivery']}.")
     for name,label in [('first_response','First response'),('execution','Execution'),('end_to_end','End-to-end delivery')]:
         m=value['latency']['metrics'].get(name)
         if m:lines.append(f"{label}: median {m['median_seconds']:g}s; p90 {m['p90_seconds']:g}s (n={m['count']}).")

@@ -63,3 +63,9 @@ within the existing bounded generation attempts. An uncertain Slack send retains
 its exact payload and must reconcile; the report is not regenerated or resent
 in that state. The regression suite tests both once-only delivery and stale
 snapshot rebuilding against synthetic data, with model calls forbidden.
+
+Execution outcomes and Slack processing state are separate. The scorecard shows
+terminal requests whose replies are still awaiting delivery, and refreshes that
+state from the existing inbox ledger. A reported-complete execution therefore
+does not imply that its reply was delivered. Processed legacy records without
+an outcome remain unknown; they are not promoted to successful executions.
