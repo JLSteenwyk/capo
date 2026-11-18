@@ -9,6 +9,21 @@ from .message_format import slack_timestamp
 from .store import Store
 
 
+def next_thread(indexed, activity, prefer_recent, now):
+    """Give active threads half the thread turns and keep scanning older ones."""
+    for root, state in indexed.items():
+        if state.get('cursor'):
+            return root
+    if prefer_recent:
+        recent = sorted(
+            (root for root in indexed if activity.get(root, 0) >= now - 86400),
+            key=activity.__getitem__, reverse=True,
+        )[:5]
+        if recent:
+            return min(recent, key=lambda root: indexed[root].get('polled_at', 0))
+    return min(indexed, key=lambda root: indexed[root].get('polled_at', 0))
+
+
 class RecoveryScan:
     def __init__(self, home, config, client):
         self.home,self.config,self.client=home,config,client
@@ -24,18 +39,27 @@ class RecoveryScan:
         try:
             # Locally known threads remain discoverable regardless of root age.
             seen=set()
+            activity={}
             for (data,) in store.db.execute('SELECT data FROM slack_inbox'):
                 body=json.loads(data);event=body.get('event',{})
                 if body.get('team_id')!=self.config['team_id'] or event.get('channel')!=self.config['channel_id']:continue
                 if event.get('ts'):
                     seen.add(event['ts'])
-                    state['threads'].setdefault(event.get('thread_ts',event['ts']),{'polled_at':0})
+                    root=event.get('thread_ts',event['ts'])
+                    state['threads'].setdefault(root,{'polled_at':0})
+                    try:
+                        timestamp=float(event['ts'])
+                    except (ValueError, TypeError):
+                        continue
+                    if timestamp <= now:
+                        activity[root]=max(activity.get(root,0),timestamp)
             history=state['history']
             indexed=state['threads']
             # Alternate lanes; one API page per step, cursors survive restarts.
             use_history=state['lane']=='history' or not indexed
-            target=history if use_history else min(indexed.values(),key=lambda row:row.get('polled_at',0))
-            root=None if use_history else next(k for k,v in indexed.items() if v is target)
+            prefer_recent=state.get('prefer_recent_thread',True)
+            root=None if use_history else next_thread(indexed,activity,prefer_recent,now)
+            target=history if use_history else indexed[root]
             if not target.get('cursor'):
                 target['upper']=now
                 target['lower']=max(state['bootstrap_oldest'],target.get('watermark',state['bootstrap_oldest'])-60)
@@ -71,6 +95,7 @@ class RecoveryScan:
             if not cursor:
                 target.update(watermark=target['upper'],polled_at=now)
                 if use_history:target['discovered']=True
+                else:state['prefer_recent_thread']=not prefer_recent
             # Keep a partial thread at the front until its pagination completes.
             state['lane']='thread' if use_history else 'history'
             state.update(checked_at=now,queued_last_page=queued,coverage={

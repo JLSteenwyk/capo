@@ -92,6 +92,22 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.client.conversations_replies.call_args.kwargs['cursor'],'more')
         self.assertEqual(self.pending()[-1][1]['event']['ts'],str(NOW-20))
 
+    def test_recent_thread_recovers_first_then_old_thread_gets_a_turn_after_restart(self):
+        old_root=str(NOW-30*86400)
+        recent_root=str(NOW-20*86400)
+        self.seed(old_root)
+        self.seed(NOW-60,thread=recent_root)
+        self.scan.step(NOW)
+        self.client.conversations_replies.return_value={'messages':[
+            {'ts':str(NOW-10),'user':'UOWNER','text':'Missed reply'}]}
+        self.assertEqual(self.scan.step(NOW+1),1)
+        self.assertEqual(self.client.conversations_replies.call_args.kwargs['ts'],recent_root)
+        restarted=RecoveryScan(self.home,CONFIG,self.client)
+        restarted.step(NOW+2)
+        self.client.conversations_replies.return_value={'messages':[]}
+        restarted.step(NOW+3)
+        self.assertEqual(self.client.conversations_replies.call_args.kwargs['ts'],old_root)
+
     def test_background_start_returns_while_api_read_is_blocked(self):
         import threading
         entered=threading.Event();release=threading.Event()

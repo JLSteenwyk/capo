@@ -92,3 +92,22 @@ class ReliabilityTests(unittest.TestCase):
         receipts.append({'tool':'mail.thread','result':{},'observed_at':600})
         run={'status':'ready','evidence_snapshot':from_receipts(receipts,tools,1000)}
         self.assertFalse(guard(run,1000));self.assertEqual(run['status'],'failed')
+
+    def test_only_exact_successful_rereads_reconfirm_old_report_evidence(self):
+        from capo.report_freshness import from_receipts
+        from capo.research_tools import ReadTool,ReadTools
+        from capo.contracts import object_schema
+        tools=ReadTools([ReadTool('mail.thread','Read',object_schema({}),lambda:None,fresh_for=300)])
+        original=dict(tool='mail.thread',arguments={'id':'first'},result={'subject':'Original'},observed_at=600)
+        repeat=dict(original,observed_at=950)
+        for candidate,allowed in (
+            (repeat,True),
+            (dict(repeat,arguments={'id':'second'}),False),
+            (dict(repeat,result={'subject':'Changed'}),False),
+            (dict(repeat,error='Read failed'),False),
+        ):
+            with self.subTest(candidate=candidate):
+                run={'status':'ready','evidence_snapshot':from_receipts([original,candidate],tools,1000)}
+                self.assertEqual(guard(run,1000),allowed)
+                if allowed:
+                    self.assertFalse(guard(run,1251))

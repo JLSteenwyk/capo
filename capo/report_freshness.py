@@ -1,5 +1,6 @@
 """Host-owned report snapshot policy; freshness never authorizes replaying effects."""
 import math
+import json
 
 
 def snapshot(observed_at, *, rebuildable=False, max_age=300):
@@ -8,11 +9,22 @@ def snapshot(observed_at, *, rebuildable=False, max_age=300):
 
 def from_receipts(receipts, tools, now):
     observations=[]
-    for receipt in receipts:
+    confirmed=set()
+    for receipt in reversed(receipts):
         tool=tools.tools.get(receipt.get('tool'))
         ttl=getattr(tool,'fresh_for',0)
         if ttl and not tool.mutates and not tool.verifies and 'result' in receipt:
-            observations.append(snapshot(receipt.get('observed_at'),max_age=ttl))
+            observation=snapshot(receipt.get('observed_at'),max_age=ttl)
+            if ('arguments' in receipt and not receipt.get('error') and not receipt.get('uncertain')
+                    and not (isinstance(receipt['result'],dict) and receipt['result'].get('truncated'))):
+                key=json.dumps([tool.name,receipt['arguments'],receipt['result']],sort_keys=True)
+                # An exact repeat confirms the earlier evidence without dating
+                # changed results or other reads as if they were repeated.
+                if key in confirmed:
+                    continue
+                if not stale(observation,now):
+                    confirmed.add(key)
+            observations.append(observation)
     # Reports with no volatile reads retain a bounded delivery window too.
     return {'observations':observations or [snapshot(now,max_age=900)],'rebuildable':False}
 
