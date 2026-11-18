@@ -6,13 +6,48 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from capo.contracts import object_schema
-from capo.providers import run_cli, WorkerError, AuthenticationError
+from capo.providers import Providers, run_cli, WorkerError, AuthenticationError, reported_failure
 from capo.recovery import RateLimited, RetryLater, failure_summary
 from capo.research_tools import ReadTools, ReadTool, research
 from capo.service_errors import check
 
 
 class ServiceErrorTests(unittest.TestCase):
+    def test_provider_auth_errors_are_redacted_on_nonzero_exit_and_saved_resume(self):
+        from capo.recovery import RecoveringProvider
+        diagnostics = (
+            {'status': 401, 'message': 'synthetic-private'},
+            {'message': 'unexpected status 401 Unauthorized: Missing bearer or basic authentication in header; synthetic-private'},
+            {'code': 'refresh_token_reused', 'message': 'synthetic-private'},
+            {'message': 'OAuth session expired; synthetic-private'},
+        )
+        for error in diagnostics:
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                event = {'type': 'turn.failed', 'error': error}
+
+                def run(argv, cwd, directory, timeout, stdin=None):
+                    (directory/'stdout.txt').write_text(json.dumps(event))
+                    raise WorkerError('synthetic-private')
+
+                provider = RecoveringProvider(Providers(config={}, capacity=False),
+                                             {'fallbacks': {'codex': ['claude']}})
+                with patch('capo.providers.run_process', side_effect=run) as invoke:
+                    for _ in range(2):
+                        with self.assertRaises(AuthenticationError) as exc:
+                            provider.call('codex', 'Synthetic request', object_schema({}), root, root/'call')
+                        self.assertNotIn('synthetic-private', str(exc.exception))
+                        self.assertIn('AI login', failure_summary(exc.exception))
+                    self.assertEqual(invoke.call_count, 1)
+                self.assertNotIn('synthetic-private', (root/'call/recovery.json').read_text())
+
+    def test_request_id_containing_401_is_not_an_authentication_failure(self):
+        from capo.subscription_auth import is_auth_error
+        self.assertFalse(is_auth_error('request req_abc401def failed'))
+        with self.assertRaises(WorkerError) as exc:
+            reported_failure({'message': 'request req_abc401def failed'}, 'Codex', Path('.'))
+        self.assertNotIsInstance(exc.exception, AuthenticationError)
+
     def test_retry_after_auth_and_permission_are_classified_without_private_body(self):
         with patch('capo.service_errors.time.time', return_value=100):
             with self.assertRaises(RateLimited) as exc:

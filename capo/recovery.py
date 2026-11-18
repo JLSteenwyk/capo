@@ -113,6 +113,9 @@ class RecoveringProvider:
             validate(state['result'], schema)
             return state['result']
         if state['status'] in ('failed', 'cancelled'):
+            if state['status'] == 'failed' and state['attempts'] and state['attempts'][-1].get('category') == 'authentication':
+                from .providers import AuthenticationError
+                raise AuthenticationError('AI login needs attention. Saved provider work remains stopped.')
             raise RecoveryStopped('Provider work is ' + state['status'])
         if now < state['retry_at']:
             raise RetryLater(state['retry_at'])

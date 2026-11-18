@@ -67,7 +67,7 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             self.call()
         self.now += 1000
-        with self.assertRaises(RecoveryStopped):
+        with self.assertRaises(AuthenticationError):
             self.call()
         self.assertEqual(self.backend.call.call_count, 1)
 

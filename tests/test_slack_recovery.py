@@ -66,6 +66,23 @@ class RecoveryTests(unittest.TestCase):
         worker.scan.step=blocked;worker.run()
         self.assertTrue(worker.scan.path.with_suffix('.error.json').exists())
 
+    def test_error_marker_clears_only_after_a_successful_checkpointed_read(self):
+        from unittest.mock import patch
+        error_path = self.scan.path.with_suffix('.error.json')
+        error_path.write_text('{"status":"read_failed"}')
+        self.client.conversations_history.side_effect = TimeoutError()
+        with self.assertRaises(TimeoutError):
+            self.scan.step(NOW)
+        self.assertTrue(error_path.exists())
+        self.client.conversations_history.side_effect = None
+        with patch('capo.slack_recovery._write', side_effect=OSError('synthetic')):
+            with self.assertRaises(OSError):
+                self.scan.step(NOW+1)
+        self.assertTrue(error_path.exists())
+        self.scan.step(NOW+2)
+        self.assertFalse(error_path.exists())
+        self.assertEqual(json.loads(self.scan.path.read_text())['checked_at'], NOW+2)
+
     def test_thread_pagination_and_original_timestamp_preserved(self):
         root=str(NOW-30*86400);self.seed(root);self.scan.step(NOW)
         self.client.conversations_replies.return_value={'messages':[], 'response_metadata':{'next_cursor':'more'}}

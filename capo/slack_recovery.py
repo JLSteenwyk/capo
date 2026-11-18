@@ -80,6 +80,9 @@ class RecoveryScan:
                 'pagination_pending':bool(history.get('cursor')) or any(v.get('cursor') for v in indexed.values()),
                 'bootstrap_oldest':state['bootstrap_oldest']})
             _write(self.path,state)
+            # A successful read supersedes the previous failure marker. Keep
+            # failed reads visible until a new page is durably checkpointed.
+            self.path.with_suffix('.error.json').unlink(missing_ok=True)
             return queued
         finally:store.db.close()
 

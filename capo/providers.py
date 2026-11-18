@@ -39,10 +39,11 @@ def reported_failure(envelope, provider, directory):
     from datetime import datetime
     import time
     from .recovery import RateLimited
+    from .subscription_auth import is_auth_error
     raw = envelope.get('error')
     data = raw if isinstance(raw, dict) else envelope
     message = str(data.get('message', envelope.get('result', raw or ''))).lower()
-    if any(word in message for word in ('failed to authenticate', 'oauth session expired', 'authentication required')):
+    if data.get('status') == 401 or is_auth_error([message, data.get('code', '')]) or any(word in message for word in ('failed to authenticate', 'oauth session expired')):
         raise AuthenticationError(provider + ' login has expired. Reconnect on the computer running Capo.')
     if data.get('status') == 429 or envelope.get('stopReason') in ('rate_limit', 'quota_exceeded') or any(word in message for word in ('rate limit', 'usage limit', 'hit your limit', 'too many requests')):
         reset = time.time() + 3600
@@ -173,6 +174,7 @@ class Providers:
                 result = decode_json(envelope.get("result", ""))
         elif provider == "codex":
             final = directory / "result.json"
+            final.unlink(missing_ok=True)
             argv = ["codex", "exec", "--model", "gpt-6.2-sol",
                     "--config", 'model_reasoning_effort=' + json.dumps(self.effort or "medium"),
                     "--sandbox", "read-only", "--skip-git-repo-check", "--json",
@@ -195,10 +197,16 @@ class Providers:
                     output=run_cli('Codex',argv,cwd,directory,self.timeout,prompt)
             else:
                 output = run_cli("Codex", argv, cwd, directory, self.timeout, prompt)
-            for line in output.splitlines():
-                event = json.loads(line)
-                if event.get("type") in ("error", "turn.failed"):
-                    reported_failure(event, 'Codex', directory)
+            events = [json.loads(line) for line in output.splitlines() if line.strip()]
+            failed = next((event for event in reversed(events) if event.get('type') == 'turn.failed'), None)
+            if failed is not None:
+                reported_failure(failed, 'Codex', directory)
+            # The CLI emits error events while reconnecting. A fresh structured
+            # result after a successful exit supersedes those interim failures.
+            if not final.exists():
+                error = next((event for event in reversed(events) if event.get('type') == 'error'), None)
+                if error is not None:
+                    reported_failure(error, 'Codex', directory)
             result = decode_json(final.read_text())
         elif provider == "grok":
             argv = ["grok", "--prompt-file", str(prompt_file), "--output-format", "json",

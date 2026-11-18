@@ -503,6 +503,23 @@ Invalid or revoked credentials still require reconnection of the account; a
 watchdog cannot repair revoked access. This mechanism repairs a disconnected
 client; it is not an end-to-end message delivery probe or a process supervisor.
 
+History recovery clears its previous read-failure marker only after a successful
+page is durably checkpointed. Failed reads retain their cursor and marker;
+successful recovery no longer leaves an old failure looking current.
+
+Codex 401 responses and expired/reused token errors are classified as
+authentication failures. A saved stopped call retains that diagnosis on resume
+without retrying or switching providers. Interactive replies and scheduled
+checks use the shared login-attention explanation rather than a generic failure.
+The Codex adapter accepts a fresh structured result after a successful CLI exit
+even if the CLI logged interim reconnect errors. A terminal failed turn still
+fails, and an old result file cannot mask a new failure.
+
+Connection recovery does not make old report evidence fresh. Scheduled reports
+that exceed source-specific freshness limits remain withheld; the existing
+bounded read-only follow-up can inspect current sources. Recovery never resends
+an uncertain Slack message or replays a previously attempted external change.
+
 Capo marks the owner's own messages with status reactions (`reactions:write`):
 👀 when it picks a request up, replaced by ✅ once the reply is delivered and the
 request completed, or ⚠️ when it could not finish (a failed or partial outcome).
