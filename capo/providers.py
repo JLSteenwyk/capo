@@ -173,7 +173,9 @@ class Providers:
                 result = decode_json(envelope.get("result", ""))
         elif provider == "codex":
             final = directory / "result.json"
-            argv = ["codex", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--json",
+            argv = ["codex", "exec", "--model", "gpt-6.2-sol",
+                    "--config", 'model_reasoning_effort=' + json.dumps(self.effort or "medium"),
+                    "--sandbox", "read-only", "--skip-git-repo-check", "--json",
                     "--output-schema", str(schema_file), "--output-last-message", str(final), "-"]
             if images:
                 if len(images)>3:raise ValueError('At most three images per request')

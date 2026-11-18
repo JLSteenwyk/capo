@@ -21,6 +21,8 @@ class CodexImageTests(unittest.TestCase):
         staged=[]
         def run(name,argv,cwd,directory,timeout,prompt):
             self.assertEqual(name,'Codex');self.assertEqual(argv[argv.index('--sandbox')+1],'read-only')
+            self.assertEqual(argv[argv.index('--model')+1],'gpt-6.2-sol')
+            self.assertEqual(argv[argv.index('--config')+1],'model_reasoning_effort="medium"')
             self.assertEqual(argv[-1],'-');self.assertNotIn(self.image['data'],prompt)
             for arg in argv:
                 if arg.startswith('--image='):
